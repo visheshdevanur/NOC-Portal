@@ -75,31 +75,26 @@ export default function StudentDashboard() {
     setErrorMsg(null);
     try {
       if (!user) return;
-      const req = await getStudentClearanceRequest(user.id);
+
+      // Execute all independent database queries simultaneously in a single network round-trip.
+      const [req, deptRes, subsDataRes, subs, depts, templateRes] = await Promise.all([
+        getStudentClearanceRequest(user.id),
+        profile?.department_id ? supabase.from('departments').select('name').eq('id', profile.department_id).single() : Promise.resolve({ data: null }),
+        profile?.semester_id ? supabase.from('subjects').select('*').eq('semester_id', profile.semester_id) : Promise.resolve({ data: null }),
+        getStudentSubjects(user.id),
+        getStudentDues(user.id),
+        supabase.from('hall_ticket_templates').select('*').limit(1).single()
+      ]);
+
       setRequest(req);
-
-      if (!req && profile?.semester_id) {
-         // Fetch all subjects for selection scoped to the student's current semester
-         const { data: subsData } = await supabase.from('subjects').select('*').eq('semester_id', profile.semester_id);
-         if (subsData) setAvailableSubjects(subsData);
-      }
-
-      // Fetch department name from departments table
-      if (profile?.department_id) {
-        const { data: deptData } = await supabase.from('departments').select('name').eq('id', profile.department_id).single();
-        if (deptData) setDepartmentName(deptData.name);
-      }
-
+      
+      if (deptRes.data) setDepartmentName(deptRes.data.name);
+      if (!req && subsDataRes.data) setAvailableSubjects(subsDataRes.data);
+      if (templateRes.data) setHallTemplate(templateRes.data);
+      
       if (req) {
-        const [subs, depts] = await Promise.all([
-          getStudentSubjects(user.id),
-          getStudentDues(user.id)
-        ]);
         setEnrollments(subs as unknown as SubjectEnrollment[]);
         setDeptClearances(depts as any[]);
-        
-        const { data: templateData } = await supabase.from('hall_ticket_templates').select('*').limit(1).single();
-        if (templateData) setHallTemplate(templateData);
       }
     } catch (error: any) {
       console.error('Error fetching student data:', error);
