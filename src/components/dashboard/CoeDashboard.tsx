@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { GraduationCap, Save, FileText, CheckCircle2, Calendar, Upload, Plus, Trash2, X, Image as ImageIcon, Download, Palette, Move, RotateCcw, Layers } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
@@ -435,7 +435,7 @@ export default function CoeDashboard() {
     try {
       const payload = {
         bg_image_url: bgImage,
-        mapping_coordinates: { ...builderCoords, _mode: 'builder' },
+        mapping_coordinates: { ...builderCoords, _mode: 'builder' } as any,
         updated_at: new Date().toISOString(),
       };
 
@@ -460,7 +460,7 @@ export default function CoeDashboard() {
       if (resultError) throw resultError;
 
       // Update local template state
-      setTemplate(prev => prev ? { ...prev, bg_image_url: bgImage, mapping_coordinates: { ...builderCoords, _mode: 'builder' }, template_mode: 'builder' } : null);
+      setTemplate(prev => prev ? { ...prev, bg_image_url: bgImage, mapping_coordinates: { ...builderCoords, _mode: 'builder' } as any, template_mode: 'builder' } : null);
       setSuccessMSG('Visual template mapping saved successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {
@@ -955,7 +955,6 @@ export default function CoeDashboard() {
                       style={{
                         backgroundColor: `${v.color}18`,
                         border: `2px solid ${v.color}60`,
-                        ringColor: v.color,
                       }}
                       onClick={() => setActiveVariable(v.key)}
                     >
