@@ -233,6 +233,8 @@ export default function StaffDashboard() {
         import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key',
         { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
       );
+      
+      const fetchedSemesters = await import('../../lib/api').then(m => m.getSemestersByDepartment(profile.department_id!));
 
       let successCount = 0;
       let errorCount = 0;
@@ -272,11 +274,23 @@ export default function StaffDashboard() {
 
         if (role === 'student') {
           const section = getVal('section');
-          const sem = getVal('semester_id');
+          const semNameOrId = getVal('semester_id');
           const roll = getVal('roll_number');
+          
           if (section) profileData.section = section.toUpperCase();
-          if (sem) profileData.semester_id = sem;
           if (roll) profileData.roll_number = roll;
+          
+          if (semNameOrId) {
+            const matchedSem = fetchedSemesters.find(s => s.name.toLowerCase() === semNameOrId.toLowerCase() || s.id === semNameOrId);
+            if (matchedSem) {
+              profileData.semester_id = matchedSem.id;
+            } else {
+              errorCount++;
+              errorDetails.push(`Row ${i + 1} (${email}): Target semester "${semNameOrId}" not found in database.`);
+              // Need to delete the orphaned auth user because we bail before profile creation
+              continue;
+            }
+          }
         }
 
         const { error: profileError } = await supabase.from('profiles').upsert(profileData);
