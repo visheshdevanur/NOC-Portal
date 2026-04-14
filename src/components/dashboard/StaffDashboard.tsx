@@ -74,6 +74,7 @@ export default function StaffDashboard() {
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [subjectError, setSubjectError] = useState<string | null>(null);
   const [subjectSuccess, setSubjectSuccess] = useState<string | null>(null);
+  const [uploadingSubjectCSV, setUploadingSubjectCSV] = useState(false);
 
   // Semesters State
   const [semestersList, setSemestersList] = useState<Semester[]>([]);
@@ -396,6 +397,106 @@ export default function StaffDashboard() {
       setUserError(getFriendlyErrorMessage(err));
     } finally {
       setUserCreating(false);
+    }
+  };
+
+  const downloadSubjectTemplate = () => {
+    const csvContent = "data:text/csv;charset=utf-8," + 
+      "subject_code,subject_name,semester_name\n" +
+      "CS101,Introduction to Computer Science,Semester 1\n" +
+      "MA202,Calculus II,Semester 2";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "Staff_Mass_Subject_Upload_Template.csv");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const handleSubjectFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !profile?.department_id) return;
+    
+    setUploadingSubjectCSV(true);
+    setSubjectError(null);
+    setSubjectSuccess(null);
+    
+    try {
+      const text = await file.text();
+      // Basic CSV parse handling standard quotes simply (if needed). Assuming standard comma separated here for simplicity based on template
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      
+      if (lines.length < 2) throw new Error("CSV file is empty or missing data rows.");
+      
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const required = ['subject_code', 'subject_name', 'semester_name'];
+      for (const req of required) {
+        if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}`);
+      }
+
+      // Fetch fresh semesters directly to ensure accuracy
+      const fetchedSemesters = await import('../../lib/api').then(m => m.getSemestersByDepartment(profile.department_id!));
+      
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        // Parse simple CSV row
+        const columns = [];
+        let curr = '';
+        let inQuotes = false;
+        for (let char of lines[i]) {
+          if (char === '"' && inQuotes) inQuotes = false;
+          else if (char === '"' && !inQuotes) inQuotes = true;
+          else if (char === ',' && !inQuotes) { columns.push(curr); curr = ''; }
+          else curr += char;
+        }
+        columns.push(curr);
+        
+        const getVal = (colName: string) => (columns[headers.indexOf(colName)] || '').trim();
+        
+        const subject_code = getVal('subject_code').toUpperCase();
+        const subject_name = getVal('subject_name');
+        const semester_name = getVal('semester_name');
+        
+        if (!subject_code || !subject_name || !semester_name) {
+          errorCount++;
+          continue; 
+        }
+
+        const sem = fetchedSemesters.find(s => s.name.toLowerCase() === semester_name.toLowerCase());
+        if (!sem) {
+          errorCount++;
+          continue; // Target semester not found
+        }
+
+        const subjectData = {
+          subject_code,
+          subject_name,
+          semester_id: sem.id,
+          department_id: profile.department_id,
+        };
+
+        const { error } = await supabase.from('subjects').insert(subjectData);
+        if (error) { 
+           errorCount++;
+        } else {
+           successCount++;
+        }
+      }
+      
+      if (errorCount > 0) {
+        setSubjectError(`Uploaded ${successCount} subjects. Encountered errors on ${errorCount} rows (e.g. invalid semester or duplicate codes).`);
+      } else {
+        setSubjectSuccess(`Successfully mass uploaded ${successCount} subjects!`);
+      }
+      fetchSubjects();
+    } catch (err: any) {
+      setSubjectError(getFriendlyErrorMessage(err));
+    } finally {
+      setUploadingSubjectCSV(false);
+      event.target.value = '';
     }
   };
 
@@ -1047,10 +1148,27 @@ export default function StaffDashboard() {
                 onChange={e => setSearchSubjects(e.target.value)}
               />
             </div>
-            <button onClick={() => { fetchSemesters(); setShowCreateSubject(true); }} className="flex items-center gap-2 bg-amber-500 text-white hover:bg-amber-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm">
-              <Plus className="w-5 h-5" />
-              Add Subject
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={downloadSubjectTemplate}
+                className="flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 px-4 py-3 rounded-xl font-medium transition-all shadow-sm"
+                title="Download CSV Template"
+              >
+                <FileWarning className="w-5 h-5 text-muted-foreground" />
+                <span className="hidden sm:inline">Template</span>
+              </button>
+              
+              <label className="flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600 px-4 py-3 rounded-xl font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50" title="Mass Upload CSV">
+                <Plus className="w-5 h-5" />
+                <span className="hidden sm:inline">{uploadingSubjectCSV ? "Uploading..." : "Mass Upload"}</span>
+                <input type="file" accept=".csv" className="hidden" onChange={handleSubjectFileUpload} disabled={uploadingSubjectCSV} />
+              </label>
+
+              <button onClick={() => { fetchSemesters(); setShowCreateSubject(true); }} className="flex items-center gap-2 bg-amber-500 text-white hover:bg-amber-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm">
+                <Plus className="w-5 h-5" />
+                Add Subject
+              </button>
+            </div>
           </div>
 
           {/* Create Subject Modal */}
