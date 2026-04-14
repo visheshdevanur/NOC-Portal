@@ -236,6 +236,7 @@ export default function StaffDashboard() {
 
       let successCount = 0;
       let errorCount = 0;
+      let errorDetails: string[] = [];
 
       for (let i = 1; i < lines.length; i++) {
         const columns = lines[i].split(',').map(c => c.trim());
@@ -248,7 +249,8 @@ export default function StaffDashboard() {
         
         if (!email || !password || !full_name || !['student', 'teacher'].includes(role)) {
           errorCount++;
-          continue; // Skip invalid row dynamically
+          errorDetails.push(`Row ${i + 1} (${email || 'Unknown'}): Missing email, password, full_name or invalid role.`);
+          continue; 
         }
 
         const { data: authData, error: authError } = await tempSupabase.auth.signUp({
@@ -257,6 +259,7 @@ export default function StaffDashboard() {
         
         if (authError || !authData.user) {
           errorCount++;
+          errorDetails.push(`Row ${i + 1} (${email}): Auth error - ${authError?.message || 'Unknown'}`);
           continue;
         }
 
@@ -276,12 +279,18 @@ export default function StaffDashboard() {
           if (roll) profileData.roll_number = roll;
         }
 
-        await supabase.from('profiles').upsert(profileData);
+        const { error: profileError } = await supabase.from('profiles').upsert(profileData);
+        if (profileError) {
+          errorCount++;
+          errorDetails.push(`Row ${i + 1} (${email}): Profile error - ${profileError.message}`);
+          continue;
+        }
+
         successCount++;
       }
       
       if (errorCount > 0) {
-        setUserError(`Uploaded ${successCount} users. Encountered errors on ${errorCount} rows.`);
+        setUserError(`Uploaded ${successCount} users. Encountered errors on ${errorCount} rows. Details: ${errorDetails.slice(0, 3).join(' | ')}${errorDetails.length > 3 ? '...' : ''}`);
       } else {
         setUserSuccess(`Successfully mass uploaded ${successCount} users!`);
       }
@@ -440,6 +449,7 @@ export default function StaffDashboard() {
       
       let successCount = 0;
       let errorCount = 0;
+      let errorDetails: string[] = [];
 
       for (let i = 1; i < lines.length; i++) {
         // Parse simple CSV row
@@ -462,12 +472,14 @@ export default function StaffDashboard() {
         
         if (!subject_code || !subject_name || !semester_name) {
           errorCount++;
+          errorDetails.push(`Row ${i + 1}: Missing code, name, or semester.`);
           continue; 
         }
 
-        const sem = fetchedSemesters.find(s => s.name.toLowerCase() === semester_name.toLowerCase());
+        const sem = fetchedSemesters.find(s => s.name.toLowerCase() === semester_name.toLowerCase() || s.id === semester_name);
         if (!sem) {
           errorCount++;
+          errorDetails.push(`Row ${i + 1} (${subject_code}): Target semester "${semester_name}" not found in database.`);
           continue; // Target semester not found
         }
 
@@ -481,13 +493,14 @@ export default function StaffDashboard() {
         const { error } = await supabase.from('subjects').insert(subjectData);
         if (error) { 
            errorCount++;
+           errorDetails.push(`Row ${i + 1} (${subject_code}): DB Error - ${error.message}`);
         } else {
            successCount++;
         }
       }
       
       if (errorCount > 0) {
-        setSubjectError(`Uploaded ${successCount} subjects. Encountered errors on ${errorCount} rows (e.g. invalid semester or duplicate codes).`);
+        setSubjectError(`Uploaded ${successCount} subjects. Encountered errors on ${errorCount} rows. Details: ${errorDetails.slice(0, 3).join(' | ')}${errorDetails.length > 3 ? '...' : ''}`);
       } else {
         setSubjectSuccess(`Successfully mass uploaded ${successCount} subjects!`);
       }
