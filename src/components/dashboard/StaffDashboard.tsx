@@ -443,7 +443,7 @@ export default function StaffDashboard() {
 
       for (let i = 1; i < lines.length; i++) {
         // Parse simple CSV row
-        const columns = [];
+        const columns: string[] = [];
         let curr = '';
         let inQuotes = false;
         for (let char of lines[i]) {
