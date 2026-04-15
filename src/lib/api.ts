@@ -308,6 +308,84 @@ export const approveHodRequest = async (requestId: string) => {
   return data;
 };
 
+export const getHodStaffApprovedFines = async (departmentId: string) => {
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, section, department_id, roll_number), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+    .eq('remarks', 'Approved by Staff after Fine')
+    .eq('profiles.department_id', departmentId);
+  if (error) throw error;
+  return data;
+};
+
+export const getHodTeacherAssignments = async (departmentId: string) => {
+  // Get all teachers/faculty in the department
+  const { data: teachers, error: tErr } = await supabase
+    .from('profiles')
+    .select('id, full_name, role, section, email, created_at')
+    .eq('department_id', departmentId)
+    .in('role', ['teacher', 'faculty'])
+    .order('full_name');
+  if (tErr) throw tErr;
+
+  // Get subject enrollment data for these teachers
+  const teacherIds = (teachers || []).map(t => t.id);
+  if (teacherIds.length === 0) return [];
+
+  const { data: enrollments, error: eErr } = await supabase
+    .from('subject_enrollment')
+    .select('teacher_id, subject_id, subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
+    .in('teacher_id', teacherIds);
+  if (eErr) throw eErr;
+
+  // Build a map: teacher_id -> { subjects, sections }
+  const assignmentMap: Record<string, { subjects: Record<string, { subject_name: string; subject_code: string; semester: string; sections: Set<string> }> }> = {};
+
+  for (const enrollment of (enrollments || [])) {
+    const tid = enrollment.teacher_id;
+    if (!tid) continue;
+    if (!assignmentMap[tid]) assignmentMap[tid] = { subjects: {} };
+
+    const subj = (enrollment as any).subjects;
+    const studentProfile = (enrollment as any).profiles;
+    const subjectKey = enrollment.subject_id;
+    const section = studentProfile?.section || 'Unassigned';
+    const semesterName = subj?.semesters?.name || 'N/A';
+
+    if (!assignmentMap[tid].subjects[subjectKey]) {
+      assignmentMap[tid].subjects[subjectKey] = {
+        subject_name: subj?.subject_name || 'Unknown',
+        subject_code: subj?.subject_code || '',
+        semester: semesterName,
+        sections: new Set()
+      };
+    }
+    assignmentMap[tid].subjects[subjectKey].sections.add(section);
+  }
+
+  // Merge teachers with their assignments
+  return (teachers || []).map(teacher => ({
+    ...teacher,
+    assignments: assignmentMap[teacher.id]
+      ? Object.values(assignmentMap[teacher.id].subjects).map(s => ({
+          subject_name: s.subject_name,
+          subject_code: s.subject_code,
+          semester: s.semester,
+          sections: Array.from(s.sections)
+        }))
+      : []
+  }));
+};
+
+export const getAccountsApprovedDues = async () => {
+  const { data, error } = await supabase
+    .from('student_dues')
+    .select('*, profiles!student_dues_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name))')
+    .eq('status', 'completed');
+  if (error) throw error;
+  return data;
+};
+
 // =======================
 // NOTIFICATIONS
 // =======================

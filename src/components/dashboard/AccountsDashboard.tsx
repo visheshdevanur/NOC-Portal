@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { getAllStudentDues, getAllDepartments, getSemestersByDepartment } from '../../lib/api';
-import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft } from 'lucide-react';
+import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues } from '../../lib/api';
+import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft, FileCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type StudentDues = {
@@ -39,13 +39,25 @@ export default function AccountsDashboard() {
   const [selectedSemesterName, setSelectedSemesterName] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
 
+  // Tab state
+  type AccountsTab = 'dues' | 'staffApprovals';
+  const [activeTab, setActiveTab] = useState<AccountsTab>('dues');
+
+  // Staff Approvals state
+  const [approvedDues, setApprovedDues] = useState<StudentDues[]>([]);
+  const [loadingApproved, setLoadingApproved] = useState(false);
+  const [searchApproved, setSearchApproved] = useState('');
+  const [selectedApprovalDept, setSelectedApprovalDept] = useState<string | null>(null);
+
   useEffect(() => {
     fetchDues();
     fetchDepartments();
+    fetchApprovedDues();
 
     const channel = supabase.channel('accounts-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'student_dues' }, () => {
         fetchDues();
+        fetchApprovedDues();
       })
       .subscribe();
 
@@ -95,6 +107,18 @@ export default function AccountsDashboard() {
       setError(`Dues: ${err?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchApprovedDues = async () => {
+    setLoadingApproved(true);
+    try {
+      const data = await getAccountsApprovedDues();
+      setApprovedDues(data as unknown as StudentDues[]);
+    } catch (err: any) {
+      console.error('[Accounts] Failed to fetch approved dues:', err);
+    } finally {
+      setLoadingApproved(false);
     }
   };
 
@@ -236,6 +260,34 @@ export default function AccountsDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Tabs */}
+      <div className="bg-card rounded-2xl p-1.5 shadow-sm border border-border flex gap-1 w-full md:w-max">
+        <button
+          onClick={() => setActiveTab('dues')}
+          className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
+            activeTab === 'dues'
+              ? 'bg-emerald-500 text-white shadow-md'
+              : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          College Dues
+        </button>
+        <button
+          onClick={() => setActiveTab('staffApprovals')}
+          className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
+            activeTab === 'staffApprovals'
+              ? 'bg-emerald-500 text-white shadow-md'
+              : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+          }`}
+        >
+          <FileCheck className="w-4 h-4" />
+          Staff Approvals
+        </button>
+      </div>
+      {activeTab === 'dues' && (
+      <>
           {/* Global Search */}
           <div className="relative w-full">
             <input
@@ -521,6 +573,106 @@ export default function AccountsDashboard() {
             </div>
           )}
         </>
+      )}
+      </>
+      )}
+
+      {/* ========= STAFF APPROVALS TAB ========= */}
+      {activeTab === 'staffApprovals' && (
+        <div className="space-y-6">
+          <div className="bg-card rounded-2xl p-5 shadow-sm border border-border">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2 mb-1">
+              <FileCheck className="w-5 h-5 text-emerald-500" />
+              College Fee Due Approvals by Staff
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              Students whose college fee dues were cleared/approved by staff from different departments.
+            </p>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+            <div className="relative flex-1 w-full md:max-w-sm">
+              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search by student name or roll no..."
+                className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
+                value={searchApproved}
+                onChange={e => setSearchApproved(e.target.value)}
+              />
+            </div>
+            <select
+              className="px-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-medium"
+              value={selectedApprovalDept || ''}
+              onChange={e => setSelectedApprovalDept(e.target.value || null)}
+            >
+              <option value="">All Departments</option>
+              {departmentsList.map(dept => (
+                <option key={dept.id} value={dept.id}>{dept.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+            {loadingApproved ? (
+              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading staff approvals...</div>
+            ) : (() => {
+              const filtered = approvedDues.filter(d => {
+                const matchesSearch = !searchApproved ||
+                  d.profiles?.full_name?.toLowerCase().includes(searchApproved.toLowerCase()) ||
+                  d.profiles?.roll_number?.toLowerCase().includes(searchApproved.toLowerCase());
+                const matchesDept = !selectedApprovalDept || d.profiles?.department_id === selectedApprovalDept;
+                return matchesSearch && matchesDept;
+              });
+
+              return filtered.length === 0 ? (
+                <div className="p-12 text-center flex flex-col items-center">
+                  <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-4">
+                    <FileCheck className="w-10 h-10 text-emerald-500/50" />
+                  </div>
+                  <h3 className="text-xl font-bold text-foreground">No Staff Approvals</h3>
+                  <p className="text-muted-foreground mt-2">No college fee dues have been approved by staff yet.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
+                        <th className="p-4 font-semibold">Student Name</th>
+                        <th className="p-4 font-semibold">Roll Number</th>
+                        <th className="p-4 font-semibold">Department</th>
+                        <th className="p-4 font-semibold">Semester / Section</th>
+                        <th className="p-4 font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filtered.map(d => (
+                        <tr key={d.id} className="hover:bg-secondary/20 transition-colors">
+                          <td className="p-4 font-medium text-foreground">{d.profiles?.full_name || 'Unknown'}</td>
+                          <td className="p-4 text-muted-foreground font-mono text-sm font-bold tracking-widest">{d.profiles?.roll_number || 'N/A'}</td>
+                          <td className="p-4">
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                              {d.profiles?.departments?.name || '—'}
+                            </span>
+                          </td>
+                          <td className="p-4 text-sm text-muted-foreground">
+                            {d.profiles?.semesters?.name || '—'}
+                            {d.profiles?.section ? ` · Sec ${d.profiles.section}` : ''}
+                          </td>
+                          <td className="p-4">
+                            <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                              Approved
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
       )}
     </div>
   );

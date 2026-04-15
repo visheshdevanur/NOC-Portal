@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
 import {
   getHodPendingRequests, approveHodRequest, getUsersByDeptAndRoles,
-  getDepartmentById, getHodDepartmentStudents
+  getDepartmentById, getHodDepartmentStudents, getHodStaffApprovedFines,
+  getHodTeacherAssignments
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X,
-  Trash2, UserPlus, Download, User, ChevronDown, ChevronRight
+  Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
+  GraduationCap, BookOpen, Eye
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -45,7 +47,21 @@ const getClearanceReq = (student: UserProfile): ClearanceInfo | null => {
   return student.clearance_requests;
 };
 
-type TabType = 'approvals' | 'users' | 'students';
+type TeacherWithAssignments = {
+  id: string;
+  full_name: string;
+  role: string;
+  email?: string;
+  created_at: string;
+  assignments: {
+    subject_name: string;
+    subject_code: string;
+    semester: string;
+    sections: string[];
+  }[];
+};
+
+type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'teacherDetails';
 
 export default function HodDashboard() {
   const { user, profile } = useAuth();
@@ -73,12 +89,25 @@ export default function HodDashboard() {
   const [expandedSems, setExpandedSems] = useState<Set<string>>(new Set());
   const [searchStudents, setSearchStudents] = useState('');
 
+  // Fine Approvals state
+  const [approvedFines, setApprovedFines] = useState<any[]>([]);
+  const [loadingFines, setLoadingFines] = useState(false);
+  const [searchFines, setSearchFines] = useState('');
+
+  // Teacher Details state
+  const [teacherAssignments, setTeacherAssignments] = useState<TeacherWithAssignments[]>([]);
+  const [loadingTeacherDetails, setLoadingTeacherDetails] = useState(false);
+  const [searchTeachers, setSearchTeachers] = useState('');
+  const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     if (user && profile?.department_id) {
       fetchDeptName();
       if (activeTab === 'approvals') fetchRequests();
       if (activeTab === 'users') fetchUsers();
       if (activeTab === 'students') fetchStudents();
+      if (activeTab === 'fineApprovals') fetchApprovedFines();
+      if (activeTab === 'teacherDetails') fetchTeacherDetails();
     }
   }, [user, activeTab, profile?.department_id]);
 
@@ -129,6 +158,26 @@ export default function HodDashboard() {
       setDepartmentUsers(data as UserProfile[]);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
+  };
+
+  const fetchApprovedFines = async () => {
+    if (!profile?.department_id) return;
+    setLoadingFines(true);
+    try {
+      const data = await getHodStaffApprovedFines(profile.department_id);
+      setApprovedFines(data || []);
+    } catch (err) { console.error(err); }
+    finally { setLoadingFines(false); }
+  };
+
+  const fetchTeacherDetails = async () => {
+    if (!profile?.department_id) return;
+    setLoadingTeacherDetails(true);
+    try {
+      const data = await getHodTeacherAssignments(profile.department_id);
+      setTeacherAssignments(data as TeacherWithAssignments[]);
+    } catch (err) { console.error(err); }
+    finally { setLoadingTeacherDetails(false); }
   };
 
   const handleApprove = async (id: string) => {
@@ -272,7 +321,9 @@ export default function HodDashboard() {
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'approvals', label: 'Clearances', icon: <Activity className="w-4 h-4" /> },
+    { id: 'fineApprovals', label: 'Fine Approvals', icon: <FileCheck className="w-4 h-4" /> },
     { id: 'users', label: 'Staff & Teachers', icon: <Users className="w-4 h-4" /> },
+    { id: 'teacherDetails', label: 'Teacher Details', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> }
   ];
 
@@ -281,6 +332,43 @@ export default function HodDashboard() {
     if (next.has(semName)) next.delete(semName);
     else next.add(semName);
     setExpandedSems(next);
+  };
+
+  const toggleTeacher = (teacherId: string) => {
+    const next = new Set(expandedTeachers);
+    if (next.has(teacherId)) next.delete(teacherId);
+    else next.add(teacherId);
+    setExpandedTeachers(next);
+  };
+
+  // Filter teachers by search
+  const filteredTeacherDetails = teacherAssignments.filter(t =>
+    t.full_name?.toLowerCase().includes(searchTeachers.toLowerCase()) ||
+    t.assignments.some(a =>
+      a.subject_name?.toLowerCase().includes(searchTeachers.toLowerCase()) ||
+      a.subject_code?.toLowerCase().includes(searchTeachers.toLowerCase()) ||
+      a.sections.some(s => s.toLowerCase().includes(searchTeachers.toLowerCase()))
+    )
+  );
+
+  const handleExportTeacherCSV = () => {
+    if (teacherAssignments.length === 0) { alert('No data to export.'); return; }
+    const header = 'Teacher Name,Role,Subject Name,Subject Code,Semester,Sections\n';
+    const rows: string[] = [];
+    for (const t of teacherAssignments) {
+      if (t.assignments.length === 0) {
+        rows.push(`"${t.full_name}","${t.role}","No assignments","","",""`);
+      } else {
+        for (const a of t.assignments) {
+          rows.push(`"${t.full_name}","${t.role}","${a.subject_name}","${a.subject_code}","${a.semester}","${a.sections.join(', ')}"`);
+        }
+      }
+    }
+    const blob = new Blob([header + rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'teacher_details_export.csv'; a.click();
+    URL.revokeObjectURL(url);
   };
 
   // Filter students by search
@@ -645,6 +733,273 @@ export default function HodDashboard() {
                     )}
                   </div>
                 )
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========= FINE APPROVALS TAB ========= */}
+      {activeTab === 'fineApprovals' && (
+        <div className="space-y-4">
+          <div className="bg-card rounded-2xl p-5 shadow-sm border border-border">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2 mb-1">
+              <FileCheck className="w-5 h-5 text-emerald-500" />
+              Attendance Fine Approvals by Staff
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              Students whose attendance fines were approved (overridden) by staff in your department.
+            </p>
+          </div>
+
+          <div className="relative w-full md:max-w-xs">
+            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by student or subject..."
+              className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
+              value={searchFines}
+              onChange={e => setSearchFines(e.target.value)}
+            />
+          </div>
+
+          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+            {loadingFines ? (
+              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading approved fines...</div>
+            ) : (() => {
+              const filtered = approvedFines.filter(item =>
+                item.profiles?.full_name?.toLowerCase().includes(searchFines.toLowerCase()) ||
+                item.subjects?.subject_name?.toLowerCase().includes(searchFines.toLowerCase()) ||
+                item.subjects?.subject_code?.toLowerCase().includes(searchFines.toLowerCase()) ||
+                item.profiles?.roll_number?.toLowerCase().includes(searchFines.toLowerCase())
+              );
+              return filtered.length === 0 ? (
+                <div className="p-12 text-center flex flex-col items-center">
+                  <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-4">
+                    <FileCheck className="w-10 h-10 text-emerald-500/50" />
+                  </div>
+                  <h3 className="text-xl font-bold text-foreground">No Fine Approvals</h3>
+                  <p className="text-muted-foreground mt-2">No attendance fines have been approved by staff yet.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
+                        <th className="p-4 font-semibold">Student Name</th>
+                        <th className="p-4 font-semibold">Roll No</th>
+                        <th className="p-4 font-semibold">Section</th>
+                        <th className="p-4 font-semibold">Subject</th>
+                        <th className="p-4 font-semibold text-center">Attendance %</th>
+                        <th className="p-4 font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filtered.map(item => (
+                        <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
+                          <td className="p-4 font-medium text-foreground">{item.profiles?.full_name}</td>
+                          <td className="p-4 text-muted-foreground font-mono text-sm">{item.profiles?.roll_number || '—'}</td>
+                          <td className="p-4">
+                            <span className="px-2 py-1 bg-secondary rounded-md text-xs font-medium">{item.profiles?.section || 'None'}</span>
+                          </td>
+                          <td className="p-4">
+                            <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
+                            <div className="text-xs text-muted-foreground">{item.subjects?.subject_code}</div>
+                          </td>
+                          <td className="p-4 text-center">
+                            <span className="text-amber-600 dark:text-amber-400 font-bold">{item.attendance_pct}%</span>
+                          </td>
+                          <td className="p-4">
+                            <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                              Fine Approved
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+        </div>
+      )}
+
+      {/* ========= TEACHER DETAILS TAB ========= */}
+      {activeTab === 'teacherDetails' && (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-4 rounded-2xl shadow-sm border border-border">
+            <div>
+              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <GraduationCap className="w-5 h-5 text-emerald-500" />
+                Teacher Details & Section Assignments
+              </h2>
+              <p className="text-muted-foreground text-sm">View all teachers and their assigned subjects with sections.</p>
+            </div>
+            <button
+              onClick={handleExportTeacherCSV}
+              disabled={teacherAssignments.length === 0}
+              className="flex items-center gap-2 bg-emerald-500 text-white hover:bg-emerald-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm disabled:opacity-50"
+            >
+              <Download className="w-5 h-5" />
+              Export CSV
+            </button>
+          </div>
+
+          {/* Search */}
+          <div className="relative w-full md:max-w-sm">
+            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by teacher, subject, or section..."
+              className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
+              value={searchTeachers}
+              onChange={e => setSearchTeachers(e.target.value)}
+            />
+          </div>
+
+          {/* Stats Summary */}
+          {!loadingTeacherDetails && teacherAssignments.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-card rounded-2xl p-5 shadow-sm border border-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-purple-500/10 rounded-xl flex items-center justify-center">
+                    <GraduationCap className="w-5 h-5 text-purple-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{teacherAssignments.length}</p>
+                    <p className="text-xs text-muted-foreground">Total Teachers</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-card rounded-2xl p-5 shadow-sm border border-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center">
+                    <BookOpen className="w-5 h-5 text-emerald-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">
+                      {teacherAssignments.filter(t => t.assignments.length > 0).length}
+                    </p>
+                    <p className="text-xs text-muted-foreground">With Assignments</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-card rounded-2xl p-5 shadow-sm border border-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center">
+                    <Users className="w-5 h-5 text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">
+                      {teacherAssignments.filter(t => t.assignments.length === 0).length}
+                    </p>
+                    <p className="text-xs text-muted-foreground">No Assignments</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Teacher Cards */}
+          <div className="space-y-4">
+            {loadingTeacherDetails ? (
+              <div className="p-8 text-center text-muted-foreground animate-pulse bg-card rounded-3xl shadow-sm border border-border">Loading teacher details...</div>
+            ) : filteredTeacherDetails.length === 0 ? (
+              <div className="p-12 text-center flex flex-col items-center bg-card rounded-3xl shadow-sm border border-border">
+                <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-4">
+                  <GraduationCap className="w-10 h-10 text-emerald-500/50" />
+                </div>
+                <h3 className="text-xl font-bold text-foreground">No Teachers Found</h3>
+                <p className="text-muted-foreground mt-2">No teachers or faculty are assigned to your department yet.</p>
+              </div>
+            ) : (
+              filteredTeacherDetails.map(teacher => {
+                const isExpanded = expandedTeachers.has(teacher.id);
+                const hasAssignments = teacher.assignments.length > 0;
+                return (
+                  <div key={teacher.id} className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden transition-all hover:shadow-md">
+                    <button
+                      onClick={() => toggleTeacher(teacher.id)}
+                      className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg ${
+                          hasAssignments ? 'bg-gradient-to-br from-purple-500 to-indigo-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'
+                        }`}>
+                          {teacher.full_name?.charAt(0)?.toUpperCase() || 'T'}
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-foreground">{teacher.full_name}</h3>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${roleColors[teacher.role] || 'bg-secondary text-foreground'}`}>
+                              {teacher.role}
+                            </span>
+                            {hasAssignments ? (
+                              <span className="text-xs text-muted-foreground">
+                                {teacher.assignments.length} subject{teacher.assignments.length !== 1 ? 's' : ''} · {[...new Set(teacher.assignments.flatMap(a => a.sections))].length} section{[...new Set(teacher.assignments.flatMap(a => a.sections))].length !== 1 ? 's' : ''}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-amber-500 font-medium">No sections assigned</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Eye className="w-4 h-4 text-muted-foreground" />
+                        {isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                      </div>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="border-t border-border p-5 bg-secondary/10">
+                        {!hasAssignments ? (
+                          <div className="text-center py-6 text-muted-foreground">
+                            <BookOpen className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                            <p className="text-sm">This teacher has no subjects or sections assigned yet.</p>
+                            <p className="text-xs mt-1">Assign subjects from the Staff Dashboard.</p>
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
+                                  <th className="p-3 font-semibold">Subject Name</th>
+                                  <th className="p-3 font-semibold">Subject Code</th>
+                                  <th className="p-3 font-semibold">Semester</th>
+                                  <th className="p-3 font-semibold">Assigned Sections</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border">
+                                {teacher.assignments.map((assignment, idx) => (
+                                  <tr key={idx} className="hover:bg-secondary/20 transition-colors">
+                                    <td className="p-3 font-medium text-foreground">{assignment.subject_name}</td>
+                                    <td className="p-3 text-sm text-muted-foreground font-mono">{assignment.subject_code}</td>
+                                    <td className="p-3">
+                                      <span className="px-2.5 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-md text-xs font-bold">
+                                        {assignment.semester}
+                                      </span>
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {assignment.sections.map(sec => (
+                                          <span key={sec} className="px-2.5 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-md text-xs font-bold">
+                                            {sec}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
               })
             )}
           </div>
