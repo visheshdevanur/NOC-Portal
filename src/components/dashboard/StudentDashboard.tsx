@@ -156,6 +156,13 @@ export default function StudentDashboard() {
 
   const generatePDF = () => {
     if (request?.current_stage !== 'cleared') return;
+    // Block if IA attendance insufficient
+    const iaCheck: Record<string, number> = {};
+    iaRecords.forEach(r => {
+      if (r.is_present) iaCheck[r.subject_id] = (iaCheck[r.subject_id] || 0) + 1;
+    });
+    const iaSubjects = Object.keys(iaCheck);
+    if (iaRecords.length > 0 && iaSubjects.some(sid => (iaCheck[sid] || 0) < 2)) return;
 
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
@@ -405,6 +412,17 @@ export default function StudentDashboard() {
   const allFacultyCleared = enrollments.length > 0 && enrollments.every(e => e.status === 'completed');
   const allDeptCleared = deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed');
 
+  // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
+  const iaBySubject: Record<string, { present: number; total: number }> = {};
+  iaRecords.forEach(r => {
+    if (!iaBySubject[r.subject_id]) iaBySubject[r.subject_id] = { present: 0, total: 0 };
+    iaBySubject[r.subject_id].total++;
+    if (r.is_present) iaBySubject[r.subject_id].present++;
+  });
+  const iaSubjectIds = Object.keys(iaBySubject);
+  const allIAEligible = iaSubjectIds.length === 0 || iaSubjectIds.every(sid => iaBySubject[sid].present >= 2);
+  const canDownloadHallTicket = isHodApproved && allIAEligible;
+
   return (
     <div className="space-y-8 fade-in">
       {/* Error Display */}
@@ -429,18 +447,27 @@ export default function StudentDashboard() {
         </div>
         
         {/* Hall Ticket Download */}
-        <div className={`p-6 rounded-2xl border-2 transition-all flex items-center gap-4 ${isHodApproved ? "bg-emerald-500/10 border-emerald-500/30" : "bg-secondary border-border"}`}>
+        <div className={`p-6 rounded-2xl border-2 transition-all flex flex-col sm:flex-row items-start sm:items-center gap-4 ${canDownloadHallTicket ? "bg-emerald-500/10 border-emerald-500/30" : "bg-secondary border-border"}`}>
           <div className="flex-1">
             <h3 className="font-semibold text-foreground text-lg">Hall Ticket</h3>
-            <p className={`text-sm ${isHodApproved ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
-              {isHodApproved ? 'Ready to download' : 'Requires Final Approval'}
+            <p className={`text-sm ${canDownloadHallTicket ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+              {canDownloadHallTicket
+                ? 'Ready to download'
+                : !isHodApproved
+                  ? 'Requires Final Approval'
+                  : 'Blocked: Insufficient IA Attendance'}
             </p>
+            {isHodApproved && !allIAEligible && (
+              <p className="text-xs text-destructive mt-1 font-medium">
+                ⚠ You must attend at least 2 IAs in every subject to download your hall ticket.
+              </p>
+            )}
           </div>
           <button
             onClick={generatePDF}
-            disabled={!isHodApproved}
+            disabled={!canDownloadHallTicket}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all shadow-sm ${
-              isHodApproved
+              canDownloadHallTicket
                 ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md hover:-translate-y-0.5"
                 : "bg-secondary text-muted-foreground cursor-not-allowed"
             }`}

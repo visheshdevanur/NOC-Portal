@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../lib/useAuth';
 import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
-import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, CheckCircle2, XCircle, Users } from 'lucide-react';
+import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet } from 'lucide-react';
 
 type SubjectEnrollment = {
   id: string;
@@ -15,7 +15,7 @@ type SubjectEnrollment = {
   created_at: string;
   updated_at: string;
   subjects: { subject_name: string; subject_code: string };
-  profiles: { full_name: string; section?: string | null; semester_id?: string | null; semesters?: { name: string } | null } | null;
+  profiles: { full_name: string; roll_number?: string | null; section?: string | null; semester_id?: string | null; semesters?: { name: string } | null } | null;
 };
 
 type TeacherSubject = {
@@ -54,6 +54,8 @@ export default function FacultyDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
+  const [csvUploadMsg, setCsvUploadMsg] = useState<string | null>(null);
+  const clearanceCsvRef = useRef<HTMLInputElement>(null);
 
   // === Manage IAs Tab State ===
   const [teacherSubjects, setTeacherSubjects] = useState<TeacherSubject[]>([]);
@@ -69,6 +71,9 @@ export default function FacultyDashboard() {
   const [newIAAttendance, setNewIAAttendance] = useState<AttendanceMap>({});
   // For viewing existing IAs
   const [expandedIA, setExpandedIA] = useState<number | null>(null);
+  // CSV for IA
+  const iaCsvRef = useRef<HTMLInputElement>(null);
+  const [iaCsvMsg, setIaCsvMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -108,7 +113,6 @@ export default function FacultyDashboard() {
         setSelectedSemester(initialSem);
       }
       
-      // Auto-select first section based on the prevailing semester if missing
       const activeSem = selectedSemester || initialSem;
       if (activeSem) {
         const secs = Array.from(new Set(typedData.filter(s => s.profiles?.semester_id === activeSem).map(s => s.profiles?.section || 'Unassigned'))).sort();
@@ -150,14 +154,15 @@ export default function FacultyDashboard() {
   };
 
   const handleAddIA = () => {
-    // Initialize all students as absent by default
+    // Initialize all students as PRESENT by default
     const initialMap: AttendanceMap = {};
     enrolledStudents.forEach(s => {
-      initialMap[s.student_id] = false;
+      initialMap[s.student_id] = true;
     });
     setNewIAAttendance(initialMap);
     setShowNewIAForm(true);
     setSaveSuccess(null);
+    setIaCsvMsg(null);
   };
 
   const handleSaveIA = async () => {
@@ -186,6 +191,165 @@ export default function FacultyDashboard() {
     } finally {
       setSavingIA(false);
     }
+  };
+
+  // ==================== CSV HELPERS ====================
+
+  // Download IA CSV template
+  const downloadIATemplate = () => {
+    const headers = ['roll_number', 'student_name', 'status'];
+    const rows = enrolledStudents.map(s => [
+      s.profiles?.roll_number || '',
+      s.profiles?.full_name || '',
+      'Present'
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    downloadCSV(csvContent, `IA_Template_${selectedSubjectId?.substring(0, 8)}.csv`);
+  };
+
+  // Upload IA CSV
+  const handleIACSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIaCsvMsg(null);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length < 2) { setIaCsvMsg('Error: CSV must have a header row and at least one data row.'); return; }
+
+        const header = lines[0].toLowerCase().split(',').map(h => h.trim());
+        const rollIdx = header.indexOf('roll_number');
+        const statusIdx = header.indexOf('status');
+        if (rollIdx === -1 || statusIdx === -1) { setIaCsvMsg('Error: CSV must have "roll_number" and "status" columns.'); return; }
+
+        // Build a roll -> student_id map
+        const rollMap = new Map<string, string>();
+        enrolledStudents.forEach(s => {
+          if (s.profiles?.roll_number) rollMap.set(s.profiles.roll_number.toLowerCase().trim(), s.student_id);
+        });
+
+        const updatedMap: AttendanceMap = { ...newIAAttendance };
+        let matched = 0;
+        let unmatched = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(',').map(c => c.trim());
+          const roll = (cols[rollIdx] || '').toLowerCase().trim();
+          const status = (cols[statusIdx] || '').toLowerCase().trim();
+          const studentId = rollMap.get(roll);
+          if (studentId) {
+            updatedMap[studentId] = status === 'present' || status === 'p' || status === 'yes' || status === '1';
+            matched++;
+          } else {
+            unmatched++;
+          }
+        }
+
+        setNewIAAttendance(updatedMap);
+        setIaCsvMsg(`✅ Imported: ${matched} matched, ${unmatched} unmatched.`);
+      } catch (err: any) {
+        setIaCsvMsg(`Error: ${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+    // Reset input so same file can be re-uploaded
+    e.target.value = '';
+  };
+
+  // Download attendance % CSV template for the clearance tab
+  const downloadAttendanceTemplate = () => {
+    const headers = ['roll_number', 'student_name', 'subject_code', 'subject_name', 'attendance_pct'];
+    const rows = filtered.map(s => [
+      s.profiles?.roll_number || '',
+      s.profiles?.full_name || '',
+      s.subjects.subject_code,
+      s.subjects.subject_name,
+      s.attendance_pct !== null ? s.attendance_pct.toString() : ''
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+    const semName = allSemesters.find(s => s.id === selectedSemester)?.name || 'All';
+    downloadCSV(csvContent, `Attendance_${semName}_Section${selectedSection || 'All'}.csv`);
+  };
+
+  // Upload attendance % CSV
+  const handleAttendanceCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvUploadMsg(null);
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length < 2) { setCsvUploadMsg('Error: CSV must have header + data rows.'); return; }
+
+        const header = lines[0].toLowerCase().replace(/"/g, '').split(',').map(h => h.trim());
+        const rollIdx = header.indexOf('roll_number');
+        const pctIdx = header.indexOf('attendance_pct');
+        const codeIdx = header.indexOf('subject_code');
+        if (rollIdx === -1 || pctIdx === -1) { setCsvUploadMsg('Error: CSV needs "roll_number" and "attendance_pct" columns.'); return; }
+
+        // Build a lookup: roll+subjectCode -> enrollment record
+        const enrollmentMap = new Map<string, SubjectEnrollment>();
+        students.forEach(s => {
+          const key = `${(s.profiles?.roll_number || '').toLowerCase().trim()}_${s.subjects.subject_code.toLowerCase().trim()}`;
+          enrollmentMap.set(key, s);
+        });
+
+        let updated = 0;
+        let errors = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].replace(/"/g, '').split(',').map(c => c.trim());
+          const roll = (cols[rollIdx] || '').toLowerCase().trim();
+          const pctStr = cols[pctIdx] || '';
+          const code = codeIdx !== -1 ? (cols[codeIdx] || '').toLowerCase().trim() : '';
+          const pct = parseInt(pctStr);
+          if (isNaN(pct) || pct < 0 || pct > 100) { errors++; continue; }
+
+          // Try to find matching enrollment
+          let enrollment: SubjectEnrollment | undefined;
+          if (code) {
+            enrollment = enrollmentMap.get(`${roll}_${code}`);
+          } else {
+            // If no subject code column, find first match by roll number in filtered
+            enrollment = filtered.find(s => (s.profiles?.roll_number || '').toLowerCase().trim() === roll);
+          }
+
+          if (enrollment) {
+            const status = pct >= 85 ? 'completed' : 'rejected';
+            const remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
+            try {
+              await markFacultySubjectStatus(enrollment.id, status, pct, remarks);
+              updated++;
+            } catch { errors++; }
+          } else {
+            errors++;
+          }
+        }
+
+        setCsvUploadMsg(`✅ Updated: ${updated} students. ${errors > 0 ? `${errors} errors/unmatched.` : ''}`);
+        await fetchData();
+      } catch (err: any) {
+        setCsvUploadMsg(`Error: ${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const downloadCSV = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleAttendanceChange = (id: string, pctString: string) => {
@@ -306,7 +470,7 @@ export default function FacultyDashboard() {
                     key={sem.id}
                     onClick={() => {
                       setSelectedSemester(sem.id);
-                      setSelectedSection(null); // Reset section when changing semester
+                      setSelectedSection(null);
                     }}
                     className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
                       selectedSemester === sem.id
@@ -337,6 +501,32 @@ export default function FacultyDashboard() {
                   ))}
                 </div>
               )}
+
+              {/* CSV Actions Bar for Clearance */}
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-secondary/5">
+                <FileSpreadsheet className="w-4 h-4 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground">Bulk Actions:</span>
+                <button
+                  onClick={downloadAttendanceTemplate}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors border border-border"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download Template
+                </button>
+                <button
+                  onClick={() => clearanceCsvRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Upload CSV
+                </button>
+                <input ref={clearanceCsvRef} type="file" accept=".csv" className="hidden" onChange={handleAttendanceCSVUpload} />
+                {csvUploadMsg && (
+                  <span className={`text-xs font-medium ${csvUploadMsg.startsWith('Error') ? 'text-destructive' : 'text-emerald-600'}`}>
+                    {csvUploadMsg}
+                  </span>
+                )}
+              </div>
               
               {/* Table */}
               {filtered.length === 0 ? (
@@ -348,6 +538,7 @@ export default function FacultyDashboard() {
                         <thead>
                           <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
                             <th className="px-6 py-4 font-semibold">Student Name</th>
+                            <th className="px-6 py-4 font-semibold">Roll No</th>
                             <th className="px-6 py-4 font-semibold">Subject</th>
                             <th className="px-6 py-4 font-semibold">Attendance %</th>
                             <th className="px-6 py-4 font-semibold">Status</th>
@@ -358,6 +549,7 @@ export default function FacultyDashboard() {
                           {filtered.map(student => (
                             <tr key={student.id} className="hover:bg-secondary/20 transition-colors">
                               <td className="px-6 py-4 font-medium text-foreground">{student.profiles?.full_name || 'Unknown'}</td>
+                              <td className="px-6 py-4 text-sm text-muted-foreground">{student.profiles?.roll_number || 'N/A'}</td>
                               <td className="px-6 py-4">
                                 <div className="text-sm font-medium">{student.subjects.subject_name}</div>
                                 <div className="text-xs text-muted-foreground">{student.subjects.subject_code}</div>
@@ -475,12 +667,28 @@ export default function FacultyDashboard() {
                   {/* New IA Form */}
                   {showNewIAForm && (
                     <div className="mb-6 border-2 border-primary/30 rounded-2xl overflow-hidden bg-primary/5">
-                      <div className="bg-primary/10 px-6 py-4 border-b border-primary/20 flex justify-between items-center">
+                      <div className="bg-primary/10 px-6 py-4 border-b border-primary/20 flex flex-wrap justify-between items-center gap-3">
                         <h3 className="font-bold text-foreground text-lg flex items-center gap-2">
                           <Users className="w-5 h-5 text-primary" />
                           IA-{iaCount + 1} — Mark Attendance
                         </h3>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          {/* CSV actions */}
+                          <button
+                            onClick={downloadIATemplate}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors border border-border"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            CSV Template
+                          </button>
+                          <button
+                            onClick={() => iaCsvRef.current?.click()}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-violet-500/15 text-violet-600 rounded-lg hover:bg-violet-500/25 transition-colors border border-violet-500/30"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            Upload CSV
+                          </button>
+                          <input ref={iaCsvRef} type="file" accept=".csv" className="hidden" onChange={handleIACSVUpload} />
                           <button
                             onClick={() => {
                               const allPresent: AttendanceMap = {};
@@ -503,6 +711,13 @@ export default function FacultyDashboard() {
                           </button>
                         </div>
                       </div>
+                      {iaCsvMsg && (
+                        <div className={`mx-6 mt-3 p-3 rounded-xl text-xs font-medium border ${
+                          iaCsvMsg.startsWith('Error') ? 'bg-destructive/10 text-destructive border-destructive/20' : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                        }`}>
+                          {iaCsvMsg}
+                        </div>
+                      )}
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                           <thead>
@@ -560,7 +775,7 @@ export default function FacultyDashboard() {
                       </div>
                       <div className="px-6 py-4 border-t border-primary/20 flex justify-end gap-3">
                         <button
-                          onClick={() => setShowNewIAForm(false)}
+                          onClick={() => { setShowNewIAForm(false); setIaCsvMsg(null); }}
                           className="px-5 py-2.5 text-sm font-medium text-muted-foreground bg-secondary rounded-xl hover:bg-secondary/80 transition-colors"
                         >
                           Cancel
