@@ -3,13 +3,14 @@ import { useAuth } from '../../lib/useAuth';
 import {
   getUsersByDeptAndRoles,
   getSubjectsByDepartment, createSubject, deleteSubject, getDepartmentSections,
-  assignTeacherToSection, updateSubjectAPI, getDepartmentById, getStaffAttendanceFines, overrideAttendanceFine, getSemestersByDepartment, createSemester, updateUserAPI
+  assignTeacherToSection, updateSubjectAPI, getDepartmentById, getStaffAttendanceFines, overrideAttendanceFine, getSemestersByDepartment, createSemester, updateUserAPI,
+  updateStudentPaidAmount, promoteStudents
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import {
   X, Search, BookOpen, Users, UserPlus,
-  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning
+  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, ArrowUpRight
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -35,7 +36,7 @@ type Subject = {
   semesters?: { name: string } | null;
 };
 
-type TabType = 'users' | 'subjects' | 'sections' | 'attendances' | 'semesters' | 'dues';
+type TabType = 'users' | 'subjects' | 'sections' | 'attendances' | 'semesters' | 'dues' | 'promote';
 
 type Semester = {
   id: string;
@@ -107,6 +108,13 @@ export default function StaffDashboard() {
   const [searchSemesters, setSearchSemesters] = useState('');
   const [searchSubjects, setSearchSubjects] = useState('');
 
+  // Promote state
+  const [promoteSrcSem, setPromoteSrcSem] = useState('');
+  const [promoteTgtSem, setPromoteTgtSem] = useState('');
+  const [promoting, setPromoting] = useState(false);
+  const [promoteMsg, setPromoteMsg] = useState<string | null>(null);
+  const [promoteErr, setPromoteErr] = useState<string | null>(null);
+
   useEffect(() => {
     if (profile?.department_id) {
       fetchDeptName();
@@ -126,7 +134,7 @@ export default function StaffDashboard() {
     if (activeTab === 'sections') fetchSectionData();
     if (activeTab === 'subjects') fetchSubjects();
     if (activeTab === 'attendances') fetchAttendances();
-    if (activeTab === 'semesters') fetchSemesters();
+    if (activeTab === 'semesters' || activeTab === 'promote') fetchSemesters();
     if (activeTab === 'dues') fetchDues();
   }, [activeTab, profile?.department_id]);
 
@@ -147,6 +155,38 @@ export default function StaffDashboard() {
       fetchDues();
     } catch (err: any) {
       alert("Failed to approve due: " + getFriendlyErrorMessage(err));
+    }
+  };
+
+  const handlePaidAmountUpdate = async (dueId: string, paidAmount: number) => {
+    try {
+      await updateStudentPaidAmount(dueId, paidAmount);
+      // Update local state
+      setDepartmentDues(prev => prev.map(d => d.id === dueId ? { ...d, paid_amount: paidAmount } : d));
+    } catch (err: any) {
+      alert('Failed to update paid amount: ' + getFriendlyErrorMessage(err));
+    }
+  };
+
+  const handlePromote = async () => {
+    if (!promoteSrcSem || !promoteTgtSem || !profile?.department_id) return;
+    if (promoteSrcSem === promoteTgtSem) { setPromoteErr('Source and target semesters must be different.'); return; }
+    const srcName = semestersList.find(s => s.id === promoteSrcSem)?.name || promoteSrcSem;
+    const tgtName = semestersList.find(s => s.id === promoteTgtSem)?.name || promoteTgtSem;
+    if (!confirm(`Promote ALL students from "${srcName}" → "${tgtName}"? This will reset their clearance journey, enrollments, and dues.`)) return;
+    setPromoting(true);
+    setPromoteMsg(null);
+    setPromoteErr(null);
+    try {
+      const count = await promoteStudents(promoteSrcSem, promoteTgtSem, profile.department_id);
+      setPromoteMsg(`✅ Successfully promoted ${count} student${count !== 1 ? 's' : ''} from ${srcName} to ${tgtName}.`);
+      setPromoteSrcSem('');
+      setPromoteTgtSem('');
+      fetchUsers();
+    } catch (err: any) {
+      setPromoteErr('Failed: ' + getFriendlyErrorMessage(err));
+    } finally {
+      setPromoting(false);
     }
   };
 
@@ -693,6 +733,7 @@ export default function StaffDashboard() {
     { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'sections', label: 'Section Assign', icon: <Link2 className="w-4 h-4" /> },
     { id: 'dues', label: 'College Dues', icon: <FileWarning className="w-4 h-4 text-amber-500" /> },
+    { id: 'promote', label: 'Promote', icon: <ArrowUpRight className="w-4 h-4 text-blue-500" /> },
   ];
 
   return (
@@ -1454,7 +1495,7 @@ export default function StaffDashboard() {
                   Department College Dues Status
                 </h2>
                 <p className="text-muted-foreground text-sm mt-1">
-                  View students pending college fee dues in your department and approve payment clearance.
+                  View students pending college fee dues. Enter paid amounts and approve payment clearance.
                 </p>
               </div>
               <div className="relative w-full md:max-w-xs">
@@ -1488,6 +1529,7 @@ export default function StaffDashboard() {
                           <th className="p-4 font-semibold">Roll Number</th>
                           <th className="p-4 font-semibold">Section & Sem</th>
                           <th className="p-4 font-semibold">Fine (₹)</th>
+                          <th className="p-4 font-semibold">Paid (₹)</th>
                           <th className="p-4 font-semibold text-right">Actions</th>
                         </tr>
                       </thead>
@@ -1501,6 +1543,18 @@ export default function StaffDashboard() {
                               {d.profiles?.semesters?.name ? ` · ${d.profiles.semesters.name}` : ''}
                             </td>
                             <td className="p-4 font-bold text-destructive">₹{d.fine_amount || 0}</td>
+                            <td className="p-4">
+                              <input
+                                type="number"
+                                min="0"
+                                className="w-24 p-2 border border-border rounded-xl text-sm bg-background focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                                defaultValue={d.paid_amount || 0}
+                                onBlur={e => {
+                                  const val = parseInt(e.target.value) || 0;
+                                  if (val !== (d.paid_amount || 0)) handlePaidAmountUpdate(d.id, val);
+                                }}
+                              />
+                            </td>
                             <td className="p-4 text-right">
                                <button
                                  onClick={() => handleApproveDue(d.id)}
@@ -1517,6 +1571,80 @@ export default function StaffDashboard() {
                 );
               })()}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========= PROMOTE TAB ========= */}
+      {activeTab === 'promote' && (
+        <div className="space-y-6">
+          <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2 mb-2">
+              <ArrowUpRight className="w-5 h-5 text-blue-500" />
+              Promote Students to Next Semester
+            </h2>
+            <p className="text-muted-foreground text-sm mb-6">
+              Move all students from one semester to the next. This resets their clearance requests, subject enrollments, IA records, and college dues.
+            </p>
+
+            {promoteMsg && (
+              <div className="p-4 mb-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
+                <span>{promoteMsg}</span>
+                <button onClick={() => setPromoteMsg(null)}><X className="w-4 h-4" /></button>
+              </div>
+            )}
+            {promoteErr && (
+              <div className="p-4 mb-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
+                <span>{promoteErr}</span>
+                <button onClick={() => setPromoteErr(null)}><X className="w-4 h-4" /></button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">From Semester (Source)</label>
+                <select
+                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={promoteSrcSem}
+                  onChange={e => setPromoteSrcSem(e.target.value)}
+                >
+                  <option value="">Select source semester...</option>
+                  {semestersList.map(sem => (
+                    <option key={sem.id} value={sem.id}>{sem.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">To Semester (Target)</label>
+                <select
+                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={promoteTgtSem}
+                  onChange={e => setPromoteTgtSem(e.target.value)}
+                >
+                  <option value="">Select target semester...</option>
+                  {semestersList.map(sem => (
+                    <option key={sem.id} value={sem.id}>{sem.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {promoteSrcSem && (
+              <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl mb-6">
+                <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                  📊 Students in selected source semester: <strong>{departmentUsers.filter(u => u.role === 'student' && u.semester_id === promoteSrcSem).length}</strong>
+                </p>
+              </div>
+            )}
+
+            <button
+              onClick={handlePromote}
+              disabled={promoting || !promoteSrcSem || !promoteTgtSem || promoteSrcSem === promoteTgtSem}
+              className="bg-blue-500 text-white hover:bg-blue-600 px-8 py-3 rounded-xl font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <ArrowUpRight className="w-5 h-5" />
+              {promoting ? 'Promoting...' : 'Promote All Students'}
+            </button>
           </div>
         </div>
       )}

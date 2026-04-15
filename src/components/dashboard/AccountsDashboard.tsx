@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues } from '../../lib/api';
+import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues, updateStudentDueFee } from '../../lib/api';
 import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft, FileCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -77,10 +77,8 @@ export default function AccountsDashboard() {
   const fetchDepartments = async () => {
     try {
       const data = await getAllDepartments();
-      console.log('[Accounts] Departments fetched:', data);
       setDepartmentsList(data || []);
     } catch (err: any) {
-      console.error('[Accounts] Failed to fetch departments:', err);
       setError(`Departments: ${err?.message || 'Unknown error'}`);
     }
   };
@@ -88,10 +86,8 @@ export default function AccountsDashboard() {
   const fetchSemesters = async (deptId: string) => {
     try {
       const data = await getSemestersByDepartment(deptId);
-      console.log('[Accounts] Semesters fetched:', data);
       setSemestersList(data || []);
     } catch (err: any) {
-      console.error('[Accounts] Failed to fetch semesters:', err);
       setError(`Semesters: ${err?.message || 'Unknown error'}`);
     }
   };
@@ -100,10 +96,8 @@ export default function AccountsDashboard() {
     setLoading(true);
     try {
       const data = await getAllStudentDues();
-      console.log('[Accounts] Dues fetched:', data?.length, 'records', data);
       setDues(data as unknown as StudentDues[]);
     } catch (err: any) {
-      console.error('[Accounts] Failed to fetch dues:', err);
       setError(`Dues: ${err?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
@@ -116,9 +110,20 @@ export default function AccountsDashboard() {
       const data = await getAccountsApprovedDues();
       setApprovedDues(data as unknown as StudentDues[]);
     } catch (err: any) {
-      console.error('[Accounts] Failed to fetch approved dues:', err);
+      // silently fail
     } finally {
       setLoadingApproved(false);
+    }
+  };
+
+  const handleManualFeeUpdate = async (dueId: string, fineAmount: number) => {
+    try {
+      await updateStudentDueFee(dueId, fineAmount);
+      // Update local state
+      setDues(prev => prev.map(d => d.id === dueId ? { ...d, fine_amount: fineAmount, status: fineAmount > 0 ? 'pending' : 'completed' } : d));
+      setSuccess(`Fee updated to ₹${fineAmount}. Status: ${fineAmount > 0 ? 'Pending' : 'Cleared'}.`);
+    } catch (err: any) {
+      setError('Failed to update fee: ' + (err?.message || 'Unknown'));
     }
   };
 
@@ -548,8 +553,19 @@ export default function AccountsDashboard() {
                           <tr key={d.id} className="hover:bg-secondary/40 transition-colors">
                             <td className="p-5 font-medium text-foreground text-sm sm:text-base">{d.profiles?.full_name || 'Unknown'}</td>
                             <td className="p-5 text-sm text-muted-foreground font-bold tracking-widest">{d.profiles?.roll_number || 'N/A'}</td>
-                            <td className="p-5 font-bold text-foreground">
-                              {(d.fine_amount || 0) > 0 ? `₹${d.fine_amount}` : '₹0'}     
+                         <td className="p-5 font-bold text-foreground">
+                              <input
+                                type="number"
+                                min="0"
+                                className={`w-28 p-2 border rounded-xl text-sm bg-background focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold ${
+                                  (d.fine_amount || 0) > 0 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
+                                }`}
+                                defaultValue={d.fine_amount || 0}
+                                onBlur={e => {
+                                  const val = parseInt(e.target.value) || 0;
+                                  if (val !== (d.fine_amount || 0)) handleManualFeeUpdate(d.id, val);
+                                }}
+                              />
                             </td>
                             <td className="p-5">
                               <span className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
@@ -560,8 +576,15 @@ export default function AccountsDashboard() {
                                 {d.status}
                               </span>
                             </td>
-                            <td className="p-5 text-right text-muted-foreground text-sm italic">
-                               Managed via Upload
+                            <td className="p-5 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => handleManualFeeUpdate(d.id, 0)}
+                                  className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                >
+                                  Clear
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -642,6 +665,7 @@ export default function AccountsDashboard() {
                         <th className="p-4 font-semibold">Roll Number</th>
                         <th className="p-4 font-semibold">Department</th>
                         <th className="p-4 font-semibold">Semester / Section</th>
+                        <th className="p-4 font-semibold">Paid (₹)</th>
                         <th className="p-4 font-semibold">Status</th>
                       </tr>
                     </thead>
@@ -658,6 +682,9 @@ export default function AccountsDashboard() {
                           <td className="p-4 text-sm text-muted-foreground">
                             {d.profiles?.semesters?.name || '—'}
                             {d.profiles?.section ? ` · Sec ${d.profiles.section}` : ''}
+                          </td>
+                          <td className="p-4 font-bold text-foreground">
+                            ₹{(d as any).paid_amount || 0}
                           </td>
                           <td className="p-4">
                             <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">

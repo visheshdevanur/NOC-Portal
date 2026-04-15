@@ -527,6 +527,48 @@ export const getSemestersByDepartment = async (departmentId: string) => {
 };
 
 // =======================
+// STAFF: PAID AMOUNT
+// =======================
+export const updateStudentPaidAmount = async (dueId: string, paidAmount: number) => {
+  const { data, error } = await supabase
+    .from('student_dues')
+    .update({ paid_amount: paidAmount, updated_at: new Date().toISOString() } as any)
+    .eq('id', dueId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// =======================
+// ACCOUNTS: MANUAL FEE ENTRY
+// =======================
+export const updateStudentDueFee = async (dueId: string, fineAmount: number) => {
+  const status = fineAmount > 0 ? 'pending' : 'completed';
+  const { data, error } = await supabase
+    .from('student_dues')
+    .update({ fine_amount: fineAmount, status, updated_at: new Date().toISOString() } as any)
+    .eq('id', dueId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// =======================
+// SEMESTER PROMOTION
+// =======================
+export const promoteStudents = async (sourceSemesterId: string, targetSemesterId: string, departmentId: string) => {
+  const { data, error } = await supabase.rpc('promote_students_to_semester', {
+    p_source_semester_id: sourceSemesterId,
+    p_target_semester_id: targetSemesterId,
+    p_department_id: departmentId,
+  });
+  if (error) throw error;
+  return data as number;
+};
+
+// =======================
 // IA ATTENDANCE
 // =======================
 
