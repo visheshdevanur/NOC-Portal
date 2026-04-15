@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { getFacultyPendingStudents, markFacultySubjectStatus } from '../../lib/api';
+import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
-import { Search } from 'lucide-react';
+import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, CheckCircle2, XCircle, Users } from 'lucide-react';
+
 type SubjectEnrollment = {
   id: string;
   student_id: string;
@@ -17,13 +18,57 @@ type SubjectEnrollment = {
   profiles: { full_name: string; section?: string | null; semester_id?: string | null; semesters?: { name: string } | null } | null;
 };
 
+type TeacherSubject = {
+  id: string;
+  subject_name: string;
+  subject_code: string;
+  semester_id: string;
+  semesters: { name: string } | null;
+};
+
+type StudentRecord = {
+  student_id: string;
+  profiles: { id: string; full_name: string; roll_number: string | null; section: string | null; semester_id: string | null } | null;
+};
+
+type IARecord = {
+  id: string;
+  student_id: string;
+  subject_id: string;
+  teacher_id: string;
+  ia_number: number;
+  is_present: boolean;
+  profiles: { full_name: string; roll_number: string | null; section: string | null } | null;
+};
+
+type AttendanceMap = Record<string, boolean>; // student_id -> is_present
+
 export default function FacultyDashboard() {
   const { user } = useAuth();
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'clearance' | 'manage-ia'>('clearance');
+
+  // === Clearance Tab State (existing) ===
   const [students, setStudents] = useState<SubjectEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
+
+  // === Manage IAs Tab State ===
+  const [teacherSubjects, setTeacherSubjects] = useState<TeacherSubject[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+  const [iaCount, setIaCount] = useState(0);
+  const [iaRecords, setIaRecords] = useState<IARecord[]>([]);
+  const [enrolledStudents, setEnrolledStudents] = useState<StudentRecord[]>([]);
+  const [iaLoading, setIaLoading] = useState(false);
+  const [savingIA, setSavingIA] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  // For new IA form
+  const [showNewIAForm, setShowNewIAForm] = useState(false);
+  const [newIAAttendance, setNewIAAttendance] = useState<AttendanceMap>({});
+  // For viewing existing IAs
+  const [expandedIA, setExpandedIA] = useState<number | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -35,6 +80,13 @@ export default function FacultyDashboard() {
       return () => { supabase.removeChannel(channel); }
     }
   }, [user]);
+
+  // Load IA data when subject changes
+  useEffect(() => {
+    if (selectedSubjectId && user) {
+      loadIAData(selectedSubjectId);
+    }
+  }, [selectedSubjectId]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -65,10 +117,74 @@ export default function FacultyDashboard() {
         }
       }
 
+      // Also load teacher subjects for IA tab
+      const subjects = await getTeacherSubjectsList(user!.id);
+      setTeacherSubjects(subjects as TeacherSubject[]);
+
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadIAData = async (subjectId: string) => {
+    if (!user) return;
+    setIaLoading(true);
+    try {
+      const [count, records, studentsList] = await Promise.all([
+        getIACountForSubject(subjectId, user.id),
+        getIAAttendanceForSubject(subjectId, user.id),
+        getStudentsForSubject(subjectId, user.id)
+      ]);
+      setIaCount(count);
+      setIaRecords(records as unknown as IARecord[]);
+      setEnrolledStudents(studentsList as unknown as StudentRecord[]);
+      setShowNewIAForm(false);
+      setExpandedIA(null);
+    } catch (err) {
+      console.error('Error loading IA data:', err);
+    } finally {
+      setIaLoading(false);
+    }
+  };
+
+  const handleAddIA = () => {
+    // Initialize all students as absent by default
+    const initialMap: AttendanceMap = {};
+    enrolledStudents.forEach(s => {
+      initialMap[s.student_id] = false;
+    });
+    setNewIAAttendance(initialMap);
+    setShowNewIAForm(true);
+    setSaveSuccess(null);
+  };
+
+  const handleSaveIA = async () => {
+    if (!user || !selectedSubjectId) return;
+    setSavingIA(true);
+    setSaveSuccess(null);
+    try {
+      const newIANumber = iaCount + 1;
+      const records = Object.entries(newIAAttendance).map(([studentId, isPresent]) => ({
+        student_id: studentId,
+        subject_id: selectedSubjectId,
+        teacher_id: user.id,
+        ia_number: newIANumber,
+        is_present: isPresent
+      }));
+      
+      await saveIAAttendance(records);
+      setSaveSuccess(`IA-${newIANumber} saved successfully!`);
+      setShowNewIAForm(false);
+      
+      // Reload data
+      await loadIAData(selectedSubjectId);
+    } catch (err: any) {
+      console.error('Error saving IA:', err);
+      setSaveSuccess(`Error: ${err?.message || 'Failed to save'}`);
+    } finally {
+      setSavingIA(false);
     }
   };
 
@@ -94,6 +210,15 @@ export default function FacultyDashboard() {
     }
   };
 
+  // Group IA records by ia_number
+  const iasByNumber: Record<number, IARecord[]> = {};
+  iaRecords.forEach(r => {
+    if (!iasByNumber[r.ia_number]) iasByNumber[r.ia_number] = [];
+    iasByNumber[r.ia_number].push(r);
+  });
+  const iaNumbers = Object.keys(iasByNumber).map(Number).sort((a, b) => a - b);
+
+  // Clearance tab filters
   const semestersMap = new Map();
   students.forEach(s => {
       const id = s.profiles?.semester_id;
@@ -120,131 +245,426 @@ export default function FacultyDashboard() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-2">Faculty Dashboard</h1>
-            <p className="text-muted-foreground">Manage student clearance and attendance for your subjects.</p>
+            <p className="text-muted-foreground">Manage student clearance and internal assessments.</p>
           </div>
-          <div className="relative">
-             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-             <input 
-               type="text" 
-               placeholder="Search students or subjects..." 
-               className="pl-10 pr-4 py-2 bg-secondary border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary w-full md:w-64"
-               value={searchTerm}
-               onChange={e => setSearchTerm(e.target.value)}
-             />
-          </div>
+          {activeTab === 'clearance' && (
+            <div className="relative">
+               <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+               <input 
+                 type="text" 
+                 placeholder="Search students or subjects..." 
+                 className="pl-10 pr-4 py-2 bg-secondary border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary w-full md:w-64"
+                 value={searchTerm}
+                 onChange={e => setSearchTerm(e.target.value)}
+               />
+            </div>
+          )}
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex gap-2 mt-6">
+          <button
+            onClick={() => setActiveTab('clearance')}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
+              activeTab === 'clearance'
+                ? 'bg-primary text-primary-foreground shadow-md'
+                : 'bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            Student Clearance
+          </button>
+          <button
+            onClick={() => setActiveTab('manage-ia')}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
+              activeTab === 'manage-ia'
+                ? 'bg-primary text-primary-foreground shadow-md'
+                : 'bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+            }`}
+          >
+            <ClipboardList className="w-4 h-4" />
+            Manage IAs
+          </button>
         </div>
       </div>
 
-      <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-muted-foreground">Loading students...</div>
-        ) : students.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">No students assigned to your subjects yet.</div>
-        ) : (
-          <div className="flex flex-col">
-            {/* Semester Tabs */}
-            <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/10 scrollbar-hide">
-              {allSemesters.length === 0 ? (
-                <span className="text-sm font-medium text-muted-foreground px-4 py-2">No active semesters</span>
-              ) : allSemesters.map(sem => (
-                <button
-                  key={sem.id}
-                  onClick={() => {
-                    setSelectedSemester(sem.id);
-                    setSelectedSection(null); // Reset section when changing semester
-                  }}
-                  className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
-                    selectedSemester === sem.id
-                      ? 'bg-amber-500 text-white shadow-md scale-100'
-                      : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-                  }`}
-                >
-                  {sem.name}
-                </button>
-              ))}
-            </div>
-
-            {/* Section Tabs */}
-            {selectedSemester && (
-              <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/30 scrollbar-hide">
-                {allSections.map(section => (
+      {/* ======================== CLEARANCE TAB ======================== */}
+      {activeTab === 'clearance' && (
+        <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+          {loading ? (
+            <div className="p-8 text-center text-muted-foreground">Loading students...</div>
+          ) : students.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">No students assigned to your subjects yet.</div>
+          ) : (
+            <div className="flex flex-col">
+              {/* Semester Tabs */}
+              <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/10 scrollbar-hide">
+                {allSemesters.length === 0 ? (
+                  <span className="text-sm font-medium text-muted-foreground px-4 py-2">No active semesters</span>
+                ) : allSemesters.map(sem => (
                   <button
-                    key={section}
-                    onClick={() => setSelectedSection(section)}
-                    className={`px-6 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-200 ${
-                      selectedSection === section
-                        ? 'bg-primary text-primary-foreground shadow-sm scale-100'
+                    key={sem.id}
+                    onClick={() => {
+                      setSelectedSemester(sem.id);
+                      setSelectedSection(null); // Reset section when changing semester
+                    }}
+                    className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
+                      selectedSemester === sem.id
+                        ? 'bg-amber-500 text-white shadow-md scale-100'
                         : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
                     }`}
                   >
-                    Section {section}
+                    {sem.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Section Tabs */}
+              {selectedSemester && (
+                <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/30 scrollbar-hide">
+                  {allSections.map(section => (
+                    <button
+                      key={section}
+                      onClick={() => setSelectedSection(section)}
+                      className={`px-6 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-200 ${
+                        selectedSection === section
+                          ? 'bg-primary text-primary-foreground shadow-sm scale-100'
+                          : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
+                      }`}
+                    >
+                      Section {section}
+                    </button>
+                  ))}
+                </div>
+              )}
+              
+              {/* Table */}
+              {filtered.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">No students match your search in this section.</div>
+              ) : (
+                  <div className="overflow-x-auto p-4">
+                    <div className="border border-border rounded-2xl overflow-hidden bg-card">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
+                            <th className="px-6 py-4 font-semibold">Student Name</th>
+                            <th className="px-6 py-4 font-semibold">Subject</th>
+                            <th className="px-6 py-4 font-semibold">Attendance %</th>
+                            <th className="px-6 py-4 font-semibold">Status</th>
+                            <th className="px-6 py-4 font-semibold text-right">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {filtered.map(student => (
+                            <tr key={student.id} className="hover:bg-secondary/20 transition-colors">
+                              <td className="px-6 py-4 font-medium text-foreground">{student.profiles?.full_name || 'Unknown'}</td>
+                              <td className="px-6 py-4">
+                                <div className="text-sm font-medium">{student.subjects.subject_name}</div>
+                                <div className="text-xs text-muted-foreground">{student.subjects.subject_code}</div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <input 
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    className={`w-20 p-2 border rounded-xl text-sm bg-background transition-colors focus:ring-2 focus:ring-primary focus:outline-none ${
+                                      (student.attendance_pct || 0) < 85 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
+                                    }`}
+                                    value={student.attendance_pct === null ? '' : student.attendance_pct}
+                                    onChange={e => handleAttendanceChange(student.id, e.target.value)}
+                                    onBlur={() => updateAttendance(student.id)}
+                                  />
+                                  <span className="text-xs text-muted-foreground font-medium">Min 85%</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                  student.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                  student.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
+                                  'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                }`}>
+                                  {student.status.toUpperCase()}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right text-sm text-muted-foreground font-medium">
+                                {student.remarks || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======================== MANAGE IAs TAB ======================== */}
+      {activeTab === 'manage-ia' && (
+        <div className="space-y-6">
+          {/* Subject Selector */}
+          <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
+            <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-primary" />
+              Select Subject
+            </h2>
+            {teacherSubjects.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No subjects assigned to you yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                {teacherSubjects.map(sub => (
+                  <button
+                    key={sub.id}
+                    onClick={() => setSelectedSubjectId(sub.id)}
+                    className={`px-5 py-3 rounded-2xl font-medium transition-all duration-200 border ${
+                      selectedSubjectId === sub.id
+                        ? 'bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20 scale-[1.02]'
+                        : 'bg-secondary/50 text-foreground border-border hover:bg-secondary hover:shadow-md'
+                    }`}
+                  >
+                    <div className="text-sm font-bold">{sub.subject_code}</div>
+                    <div className="text-xs opacity-80">{sub.subject_name}</div>
+                    {sub.semesters && <div className="text-[10px] opacity-60 mt-1">{sub.semesters.name}</div>}
                   </button>
                 ))}
               </div>
             )}
-            
-            {/* Table */}
-            {filtered.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">No students match your search in this section.</div>
-            ) : (
-                <div className="overflow-x-auto p-4">
-                  <div className="border border-border rounded-2xl overflow-hidden bg-card">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
-                          <th className="px-6 py-4 font-semibold">Student Name</th>
-                          <th className="px-6 py-4 font-semibold">Subject</th>
-                          <th className="px-6 py-4 font-semibold">Attendance %</th>
-                          <th className="px-6 py-4 font-semibold">Status</th>
-                          <th className="px-6 py-4 font-semibold text-right">Remarks</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {filtered.map(student => (
-                          <tr key={student.id} className="hover:bg-secondary/20 transition-colors">
-                            <td className="px-6 py-4 font-medium text-foreground">{student.profiles?.full_name || 'Unknown'}</td>
-                            <td className="px-6 py-4">
-                              <div className="text-sm font-medium">{student.subjects.subject_name}</div>
-                              <div className="text-xs text-muted-foreground">{student.subjects.subject_code}</div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <input 
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  className={`w-20 p-2 border rounded-xl text-sm bg-background transition-colors focus:ring-2 focus:ring-primary focus:outline-none ${
-                                    (student.attendance_pct || 0) < 85 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
-                                  }`}
-                                  value={student.attendance_pct === null ? '' : student.attendance_pct}
-                                  onChange={e => handleAttendanceChange(student.id, e.target.value)}
-                                  onBlur={() => updateAttendance(student.id)}
-                                />
-                                <span className="text-xs text-muted-foreground font-medium">Min 85%</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                student.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                                student.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
-                                'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                              }`}>
-                                {student.status.toUpperCase()}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-right text-sm text-muted-foreground font-medium">
-                              {student.remarks || '-'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-            )}
           </div>
-        )}
-      </div>
+
+          {/* IA Management Area */}
+          {selectedSubjectId && (
+            <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
+              {iaLoading ? (
+                <div className="p-8 text-center text-muted-foreground">Loading IA data...</div>
+              ) : (
+                <>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                        <ClipboardList className="w-5 h-5 text-primary" />
+                        Internal Assessments
+                      </h2>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {iaCount} IA{iaCount !== 1 ? 's' : ''} recorded • {enrolledStudents.length} students enrolled
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleAddIA}
+                      disabled={showNewIAForm}
+                      className="flex items-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add IA-{iaCount + 1}
+                    </button>
+                  </div>
+
+                  {/* Success/Error message */}
+                  {saveSuccess && (
+                    <div className={`mb-4 p-4 rounded-xl text-sm font-medium border ${
+                      saveSuccess.startsWith('Error')
+                        ? 'bg-destructive/10 text-destructive border-destructive/20'
+                        : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                    }`}>
+                      {saveSuccess}
+                    </div>
+                  )}
+
+                  {/* New IA Form */}
+                  {showNewIAForm && (
+                    <div className="mb-6 border-2 border-primary/30 rounded-2xl overflow-hidden bg-primary/5">
+                      <div className="bg-primary/10 px-6 py-4 border-b border-primary/20 flex justify-between items-center">
+                        <h3 className="font-bold text-foreground text-lg flex items-center gap-2">
+                          <Users className="w-5 h-5 text-primary" />
+                          IA-{iaCount + 1} — Mark Attendance
+                        </h3>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              const allPresent: AttendanceMap = {};
+                              enrolledStudents.forEach(s => { allPresent[s.student_id] = true; });
+                              setNewIAAttendance(allPresent);
+                            }}
+                            className="px-3 py-1.5 text-xs font-medium bg-emerald-500/20 text-emerald-600 rounded-lg hover:bg-emerald-500/30 transition-colors"
+                          >
+                            Mark All Present
+                          </button>
+                          <button
+                            onClick={() => {
+                              const allAbsent: AttendanceMap = {};
+                              enrolledStudents.forEach(s => { allAbsent[s.student_id] = false; });
+                              setNewIAAttendance(allAbsent);
+                            }}
+                            className="px-3 py-1.5 text-xs font-medium bg-destructive/20 text-destructive rounded-lg hover:bg-destructive/30 transition-colors"
+                          >
+                            Mark All Absent
+                          </button>
+                        </div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-secondary/30 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
+                              <th className="px-6 py-3 font-semibold">#</th>
+                              <th className="px-6 py-3 font-semibold">Student Name</th>
+                              <th className="px-6 py-3 font-semibold">Roll No</th>
+                              <th className="px-6 py-3 font-semibold">Section</th>
+                              <th className="px-6 py-3 font-semibold text-center">Attendance</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {enrolledStudents.map((student, idx) => (
+                              <tr key={student.student_id} className="hover:bg-secondary/10 transition-colors">
+                                <td className="px-6 py-3 text-sm text-muted-foreground">{idx + 1}</td>
+                                <td className="px-6 py-3 font-medium text-foreground">{student.profiles?.full_name || 'Unknown'}</td>
+                                <td className="px-6 py-3 text-sm text-muted-foreground">{student.profiles?.roll_number || 'N/A'}</td>
+                                <td className="px-6 py-3 text-sm text-muted-foreground">{student.profiles?.section || 'N/A'}</td>
+                                <td className="px-6 py-3">
+                                  <div className="flex items-center justify-center gap-4">
+                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer transition-all border-2 ${
+                                      newIAAttendance[student.student_id] === true
+                                        ? 'bg-emerald-500/15 border-emerald-500 text-emerald-600 shadow-md'
+                                        : 'border-transparent hover:bg-emerald-500/5 text-muted-foreground'
+                                    }`}>
+                                      <input
+                                        type="radio"
+                                        name={`ia-${student.student_id}`}
+                                        checked={newIAAttendance[student.student_id] === true}
+                                        onChange={() => setNewIAAttendance(prev => ({ ...prev, [student.student_id]: true }))}
+                                        className="accent-emerald-500"
+                                      />
+                                      <span className="text-sm font-semibold">Present</span>
+                                    </label>
+                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer transition-all border-2 ${
+                                      newIAAttendance[student.student_id] === false
+                                        ? 'bg-destructive/15 border-destructive text-destructive shadow-md'
+                                        : 'border-transparent hover:bg-destructive/5 text-muted-foreground'
+                                    }`}>
+                                      <input
+                                        type="radio"
+                                        name={`ia-${student.student_id}`}
+                                        checked={newIAAttendance[student.student_id] === false}
+                                        onChange={() => setNewIAAttendance(prev => ({ ...prev, [student.student_id]: false }))}
+                                        className="accent-destructive"
+                                      />
+                                      <span className="text-sm font-semibold">Absent</span>
+                                    </label>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="px-6 py-4 border-t border-primary/20 flex justify-end gap-3">
+                        <button
+                          onClick={() => setShowNewIAForm(false)}
+                          className="px-5 py-2.5 text-sm font-medium text-muted-foreground bg-secondary rounded-xl hover:bg-secondary/80 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveIA}
+                          disabled={savingIA}
+                          className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium transition-all shadow-md hover:shadow-lg hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          <Save className="w-4 h-4" />
+                          {savingIA ? 'Saving...' : `Save IA-${iaCount + 1}`}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Existing IAs List */}
+                  {iaNumbers.length === 0 && !showNewIAForm ? (
+                    <div className="p-10 text-center">
+                      <div className="w-16 h-16 bg-secondary rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <ClipboardList className="w-8 h-8 text-muted-foreground" />
+                      </div>
+                      <p className="text-muted-foreground font-medium">No Internal Assessments recorded yet.</p>
+                      <p className="text-muted-foreground text-sm mt-1">Click "Add IA-1" to get started.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {iaNumbers.map(iaNum => {
+                        const records = iasByNumber[iaNum];
+                        const presentCount = records.filter(r => r.is_present).length;
+                        const isExpanded = expandedIA === iaNum;
+                        
+                        return (
+                          <div key={iaNum} className="border border-border rounded-2xl overflow-hidden bg-secondary/20 hover:bg-secondary/30 transition-colors">
+                            <button
+                              onClick={() => setExpandedIA(isExpanded ? null : iaNum)}
+                              className="w-full flex items-center justify-between px-6 py-4 text-left"
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                                  <span className="text-primary font-bold text-sm">IA-{iaNum}</span>
+                                </div>
+                                <div>
+                                  <h4 className="font-semibold text-foreground">Internal Assessment {iaNum}</h4>
+                                  <div className="flex items-center gap-3 mt-1">
+                                    <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2.5 py-1 rounded-full">
+                                      {presentCount} Present
+                                    </span>
+                                    <span className="text-xs font-medium bg-destructive/10 text-destructive px-2.5 py-1 rounded-full">
+                                      {records.length - presentCount} Absent
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              {isExpanded ? <ChevronUp className="w-5 h-5 text-muted-foreground" /> : <ChevronDown className="w-5 h-5 text-muted-foreground" />}
+                            </button>
+                            
+                            {isExpanded && (
+                              <div className="border-t border-border">
+                                <table className="w-full text-left border-collapse">
+                                  <thead>
+                                    <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider">
+                                      <th className="px-6 py-3 font-semibold">#</th>
+                                      <th className="px-6 py-3 font-semibold">Student Name</th>
+                                      <th className="px-6 py-3 font-semibold">Roll No</th>
+                                      <th className="px-6 py-3 font-semibold">Section</th>
+                                      <th className="px-6 py-3 font-semibold text-center">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-border">
+                                    {records.map((record, idx) => (
+                                      <tr key={record.id} className="hover:bg-secondary/10 transition-colors">
+                                        <td className="px-6 py-3 text-sm text-muted-foreground">{idx + 1}</td>
+                                        <td className="px-6 py-3 font-medium text-foreground">{record.profiles?.full_name || 'Unknown'}</td>
+                                        <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.roll_number || 'N/A'}</td>
+                                        <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.section || 'N/A'}</td>
+                                        <td className="px-6 py-3 text-center">
+                                          {record.is_present ? (
+                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600">
+                                              <CheckCircle2 className="w-3.5 h-3.5" /> Present
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-destructive/15 text-destructive">
+                                              <XCircle className="w-3.5 h-3.5" /> Absent
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

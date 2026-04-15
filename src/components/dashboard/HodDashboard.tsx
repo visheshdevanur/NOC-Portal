@@ -823,7 +823,6 @@ export default function HodDashboard() {
             })()}
           </div>
         </div>
-        </div>
       )}
 
       {/* ========= TEACHER DETAILS TAB ========= */}

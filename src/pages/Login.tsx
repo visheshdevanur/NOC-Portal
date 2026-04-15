@@ -144,7 +144,7 @@ const Login = () => {
           </div>
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground tracking-tight">
-          NOC Portal
+          NO DUE PORTAL
         </h2>
         <p className="mt-2 text-center text-sm text-muted-foreground">
           {resetStep === 'login' && "Sign in to your clearance account"}

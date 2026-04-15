@@ -4,9 +4,10 @@ import {
   getStudentClearanceRequest, 
   getStudentSubjects, 
   getStudentDues, 
-  submitClearanceRequest 
+  submitClearanceRequest,
+  getStudentIAAttendance 
 } from '../../lib/api';
-import { CheckCircle2, Clock, XCircle, AlertCircle, FileDown, BookOpen, Building2, UserCog, RefreshCw, Hand } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, AlertCircle, FileDown, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { supabase } from '../../lib/supabase';
 
@@ -40,6 +41,15 @@ type StudentDues = {
   updated_at: string;
 };
 
+type IAAttendanceRecord = {
+  id: string;
+  student_id: string;
+  subject_id: string;
+  ia_number: number;
+  is_present: boolean;
+  subjects: { subject_name: string; subject_code: string } | null;
+};
+
 export default function StudentDashboard() {
   const { user, profile } = useAuth();
   const [request, setRequest] = useState<ClearanceRequest | null>(null);
@@ -51,6 +61,7 @@ export default function StudentDashboard() {
   const [applying, setApplying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [hallTemplate, setHallTemplate] = useState<any>(null);
+  const [iaRecords, setIaRecords] = useState<IAAttendanceRecord[]>([]);
   const [departmentName, setDepartmentName] = useState<string>('N/A');
 
   useEffect(() => {
@@ -77,13 +88,14 @@ export default function StudentDashboard() {
       if (!user) return;
 
       // Execute all independent database queries simultaneously in a single network round-trip.
-      const [req, deptRes, subsDataRes, subs, depts, templateRes] = await Promise.all([
+      const [req, deptRes, subsDataRes, subs, depts, templateRes, iaData] = await Promise.all([
         getStudentClearanceRequest(user.id),
         profile?.department_id ? supabase.from('departments').select('name').eq('id', profile.department_id).single() : Promise.resolve({ data: null }),
         profile?.semester_id ? supabase.from('subjects').select('*').eq('semester_id', profile.semester_id) : Promise.resolve({ data: null }),
         getStudentSubjects(user.id),
         getStudentDues(user.id),
-        supabase.from('hall_ticket_templates').select('*').limit(1).single()
+        supabase.from('hall_ticket_templates').select('*').limit(1).single(),
+        getStudentIAAttendance(user.id)
       ]);
 
       setRequest(req);
@@ -91,6 +103,7 @@ export default function StudentDashboard() {
       if (deptRes.data) setDepartmentName(deptRes.data.name);
       if (!req && subsDataRes.data) setAvailableSubjects(subsDataRes.data);
       if (templateRes.data) setHallTemplate(templateRes.data);
+      setIaRecords((iaData || []) as unknown as IAAttendanceRecord[]);
       
       if (req) {
         setEnrollments(subs as unknown as SubjectEnrollment[]);
@@ -458,6 +471,116 @@ export default function StudentDashboard() {
           <Step title="HOD Approval" description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && allDeptCleared && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
         </div>
       </div>
+
+      {/* Academic Eligibility Section */}
+      {iaRecords.length > 0 && (
+        <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-3">
+              <div className="w-10 h-10 bg-violet-500/10 rounded-xl flex items-center justify-center">
+                <GraduationCap className="w-5 h-5 text-violet-500" />
+              </div>
+              Academic Eligibility
+            </h2>
+            <span className="text-xs font-medium text-muted-foreground bg-secondary px-3 py-1.5 rounded-full">
+              Based on Internal Assessment Attendance
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground mb-6">
+            You must be marked <strong>Present</strong> in at least <strong>2 Internal Assessments</strong> per subject to be eligible for clearance.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {(() => {
+              // Group IA records by subject
+              const bySubject: Record<string, IAAttendanceRecord[]> = {};
+              iaRecords.forEach(r => {
+                const key = r.subject_id;
+                if (!bySubject[key]) bySubject[key] = [];
+                bySubject[key].push(r);
+              });
+
+              return Object.entries(bySubject).map(([subjectId, records]) => {
+                const sorted = [...records].sort((a, b) => a.ia_number - b.ia_number);
+                const subjectName = sorted[0]?.subjects?.subject_name || 'Unknown Subject';
+                const subjectCode = sorted[0]?.subjects?.subject_code || '';
+                const presentCount = sorted.filter(r => r.is_present).length;
+                const isEligible = presentCount >= 2;
+
+                return (
+                  <div
+                    key={subjectId}
+                    className={`p-5 rounded-2xl border-2 transition-all ${
+                      isEligible
+                        ? 'border-emerald-500/30 bg-emerald-500/5'
+                        : 'border-destructive/30 bg-destructive/5'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="font-bold text-foreground text-base">{subjectName}</h3>
+                        <p className="text-xs text-muted-foreground font-medium">{subjectCode}</p>
+                      </div>
+                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
+                        isEligible
+                          ? 'bg-emerald-500/15 text-emerald-600'
+                          : 'bg-destructive/15 text-destructive'
+                      }`}>
+                        {isEligible ? <ShieldCheck className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                        {isEligible ? 'Eligible' : 'Not Eligible'}
+                      </div>
+                    </div>
+
+                    {/* IA Grid */}
+                    <div className="space-y-2 mb-4">
+                      {sorted.map(record => (
+                        <div
+                          key={record.id}
+                          className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-background border border-border"
+                        >
+                          <span className="text-sm font-semibold text-foreground">IA-{record.ia_number}</span>
+                          {record.is_present ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Present
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-destructive/15 text-destructive">
+                              <XCircle className="w-3.5 h-3.5" /> Absent
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            isEligible ? 'bg-emerald-500' : 'bg-destructive'
+                          }`}
+                          style={{ width: `${Math.min((presentCount / 2) * 100, 100)}%` }}
+                        />
+                      </div>
+                      <span className={`text-xs font-bold ${
+                        isEligible ? 'text-emerald-600' : 'text-destructive'
+                      }`}>
+                        {presentCount}/2 IAs
+                      </span>
+                    </div>
+
+                    {!isEligible && (
+                      <p className="mt-3 text-xs text-destructive font-medium bg-destructive/10 px-3 py-2 rounded-lg border border-destructive/20">
+                        ⚠ Insufficient IA Attendance — Need {2 - presentCount} more IA{2 - presentCount > 1 ? 's' : ''}
+                      </p>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Faculty Clearances */}

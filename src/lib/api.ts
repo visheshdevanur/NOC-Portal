@@ -525,3 +525,86 @@ export const getSemestersByDepartment = async (departmentId: string) => {
   if (error) throw error;
   return data;
 };
+
+// =======================
+// IA ATTENDANCE
+// =======================
+
+/** Get distinct subjects a teacher is assigned to (from subject_enrollment) */
+export const getTeacherSubjectsList = async (teacherId: string) => {
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .select('subject_id, subjects!subject_enrollment_subject_id_fkey(id, subject_name, subject_code, semester_id, semesters(name))')
+    .eq('teacher_id', teacherId);
+  if (error) throw error;
+
+  // Deduplicate by subject_id
+  const subjectMap = new Map();
+  (data || []).forEach((row: any) => {
+    if (row.subjects && !subjectMap.has(row.subject_id)) {
+      subjectMap.set(row.subject_id, row.subjects);
+    }
+  });
+  return Array.from(subjectMap.values());
+};
+
+/** Get the current max IA number for a subject taught by a teacher */
+export const getIACountForSubject = async (subjectId: string, teacherId: string) => {
+  const { data, error } = await supabase
+    .from('ia_attendance')
+    .select('ia_number')
+    .eq('subject_id', subjectId)
+    .eq('teacher_id', teacherId)
+    .order('ia_number', { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data && data.length > 0 ? data[0].ia_number : 0;
+};
+
+/** Get all students enrolled in a subject under a specific teacher */
+export const getStudentsForSubject = async (subjectId: string, teacherId: string) => {
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .select('student_id, profiles!subject_enrollment_student_id_fkey(id, full_name, roll_number, section, semester_id)')
+    .eq('subject_id', subjectId)
+    .eq('teacher_id', teacherId);
+  if (error) throw error;
+  return data;
+};
+
+/** Bulk upsert IA attendance records for a specific IA */
+export const saveIAAttendance = async (
+  records: { student_id: string; subject_id: string; teacher_id: string; ia_number: number; is_present: boolean }[]
+) => {
+  const { data, error } = await supabase
+    .from('ia_attendance')
+    .upsert(records as any, { onConflict: 'student_id,subject_id,ia_number' })
+    .select();
+  if (error) throw error;
+  return data;
+};
+
+/** Get all IA attendance records for a subject+teacher */
+export const getIAAttendanceForSubject = async (subjectId: string, teacherId: string) => {
+  const { data, error } = await supabase
+    .from('ia_attendance')
+    .select('*, profiles!ia_attendance_student_id_fkey(full_name, roll_number, section)')
+    .eq('subject_id', subjectId)
+    .eq('teacher_id', teacherId)
+    .order('ia_number')
+    .order('created_at');
+  if (error) throw error;
+  return data;
+};
+
+/** Get all IA attendance records for a student (across all subjects) */
+export const getStudentIAAttendance = async (studentId: string) => {
+  const { data, error } = await supabase
+    .from('ia_attendance')
+    .select('*, subjects!ia_attendance_subject_id_fkey(subject_name, subject_code)')
+    .eq('student_id', studentId)
+    .order('subject_id')
+    .order('ia_number');
+  if (error) throw error;
+  return data;
+};

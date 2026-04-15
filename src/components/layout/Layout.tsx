@@ -86,7 +86,7 @@ const Layout = () => {
                 <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6 text-primary-foreground" />
               </div>
               <div className="min-w-0">
-                <span className="font-bold text-base sm:text-xl text-foreground tracking-tight block leading-tight truncate">NOC Portal</span>
+                <span className="font-bold text-base sm:text-xl text-foreground tracking-tight block leading-tight truncate">NO DUE PORTAL</span>
                 <span className="text-[9px] sm:text-[10px] text-muted-foreground font-medium uppercase tracking-wider block leading-tight border-t border-border pt-0.5 mt-0.5">
                   Clearance System
                 </span>
@@ -276,7 +276,7 @@ const Layout = () => {
       {/* Footer */}
       <footer className="mt-auto bg-card border-t border-border py-4 sm:py-6 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex justify-center items-center">
-           <p className="text-xs sm:text-sm text-foreground/50 text-center">© 2026 Institutional NOC Portal. All rights reserved.</p>
+           <p className="text-xs sm:text-sm text-foreground/50 text-center">© 2026 Institutional NO DUE PORTAL. All rights reserved.</p>
         </div>
       </footer>
     </div>
