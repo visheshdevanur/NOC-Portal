@@ -413,8 +413,6 @@ export default function StudentDashboard() {
   const allDeptCleared = deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed');
   
   // Check if accounts has verified all attendance fees
-  const enrollmentsWithFees = enrollments.filter((e: any) => (e.attendance_fee || 0) > 0);
-  const allFeesVerified = enrollmentsWithFees.length === 0 || enrollmentsWithFees.every((e: any) => e.attendance_fee_verified === true);
   const accountsReviewDone = request.current_stage !== 'faculty_review' && request.current_stage !== 'accounts_review';
 
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present

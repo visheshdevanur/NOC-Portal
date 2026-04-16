@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues, updateStudentDueFee, getAccountsPendingFeeVerifications, verifyAttendanceFee, getAccountsVerifiedFees } from '../../lib/api';
+import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues, updateStudentDueFee, getAccountsPendingFeeVerifications, verifyAttendanceFee } from '../../lib/api';
 import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft, FileCheck, Banknote, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
