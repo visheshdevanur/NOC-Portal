@@ -101,6 +101,7 @@ export default function StaffDashboard() {
   // Attendances State
   const [attendanceFines, setAttendanceFines] = useState<any[]>([]);
   const [loadingAttendances, setLoadingAttendances] = useState(false);
+  const [feeAmounts, setFeeAmounts] = useState<Record<string, number>>({});
 
   // Search states for tabs
   const [searchAttendances, setSearchAttendances] = useState('');
@@ -214,9 +215,14 @@ export default function StaffDashboard() {
   };
 
   const handleApproveFine = async (enrollmentId: string) => {
-    if (!confirm("Are you sure you want to approve this student (Override Faculty Rejection)?")) return;
+    const feeAmount = feeAmounts[enrollmentId] || 0;
+    if (feeAmount <= 0) {
+      alert("Please enter the attendance fee amount paid by the student before approving.");
+      return;
+    }
+    if (!confirm(`Approve this student with attendance fee of ₹${feeAmount}?`)) return;
     try {
-      await overrideAttendanceFine(enrollmentId);
+      await overrideAttendanceFine(enrollmentId, feeAmount);
       fetchAttendances();
     } catch (err: any) {
       alert("Failed to override: " + getFriendlyErrorMessage(err));
@@ -804,6 +810,7 @@ export default function StaffDashboard() {
                         <th className="p-4 font-semibold">Section</th>
                         <th className="p-4 font-semibold">Subject</th>
                         <th className="p-4 font-semibold text-center">Attendance %</th>
+                        <th className="p-4 font-semibold">Fee Amount (₹)</th>
                         <th className="p-4 font-semibold text-right">Actions</th>
                       </tr>
                     </thead>
@@ -818,6 +825,16 @@ export default function StaffDashboard() {
                           </td>
                           <td className="p-4 text-center">
                             <span className="text-destructive font-bold">{item.attendance_pct}%</span>
+                          </td>
+                          <td className="p-4">
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Enter fee"
+                              className="w-28 p-2 border border-border rounded-xl text-sm bg-background focus:ring-2 focus:ring-amber-500 focus:outline-none font-bold"
+                              value={feeAmounts[item.id] || ''}
+                              onChange={e => setFeeAmounts(prev => ({ ...prev, [item.id]: parseInt(e.target.value) || 0 }))}
+                            />
                           </td>
                           <td className="p-4 text-right">
                             <button

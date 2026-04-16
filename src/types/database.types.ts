@@ -1,7 +1,7 @@
 export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'hod' | 'admin' | 'accounts' | 'coe';
 export type DeptType = 'library' | 'hostel' | 'accounts';
 export type ClearanceStatus = 'pending' | 'rejected' | 'completed';
-export type ClearanceStage = 'student_application' | 'faculty_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
+export type ClearanceStage = 'student_application' | 'faculty_review' | 'accounts_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
 export type AuditAction = 'created' | 'updated' | 'approved' | 'rejected' | 'escalated';
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 
@@ -45,10 +45,12 @@ export interface Database {
           attendance_pct: number | null;
           status: ClearanceStatus;
           remarks: string | null;
+          attendance_fee: number;
+          attendance_fee_verified: boolean;
           updated_at: string;
         };
-        Insert: { id?: string; student_id: string; subject_id: string; teacher_id?: string | null; attendance_pct?: number | null; status?: ClearanceStatus; remarks?: string | null; updated_at?: string };
-        Update: { status?: ClearanceStatus; remarks?: string | null; id?: string; student_id?: string; subject_id?: string; teacher_id?: string | null; attendance_pct?: number | null; updated_at?: string };
+        Insert: { id?: string; student_id: string; subject_id: string; teacher_id?: string | null; attendance_pct?: number | null; status?: ClearanceStatus; remarks?: string | null; attendance_fee?: number; attendance_fee_verified?: boolean; updated_at?: string };
+        Update: { status?: ClearanceStatus; remarks?: string | null; id?: string; student_id?: string; subject_id?: string; teacher_id?: string | null; attendance_pct?: number | null; attendance_fee?: number; attendance_fee_verified?: boolean; updated_at?: string };
       };
       department_dues: {
         Row: { id: string; student_id: string; department_id: string; is_dept_cleared: boolean; fine_amount: number; created_at: string; updated_at: string; remarks: string | null };

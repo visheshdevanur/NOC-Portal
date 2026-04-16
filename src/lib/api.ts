@@ -492,10 +492,10 @@ export const getStaffAttendanceFines = async (departmentId: string) => {
   return data;
 };
 
-export const overrideAttendanceFine = async (enrollmentId: string) => {
+export const overrideAttendanceFine = async (enrollmentId: string, feeAmount: number = 0) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ status: 'completed', remarks: 'Approved by Staff after Fine' } as any)
+    .update({ status: 'completed', remarks: 'Approved by Staff after Fine', attendance_fee: feeAmount } as any)
     .eq('id', enrollmentId)
     .select()
     .single();
@@ -647,6 +647,44 @@ export const getStudentIAAttendance = async (studentId: string) => {
     .eq('student_id', studentId)
     .order('subject_id')
     .order('ia_number');
+  if (error) throw error;
+  return data;
+};
+
+// =======================
+// ACCOUNTS: ATTENDANCE FEE VERIFICATION
+// =======================
+
+/** Get all subject_enrollment records with attendance_fee > 0 that need verification */
+export const getAccountsPendingFeeVerifications = async () => {
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+    .gt('attendance_fee', 0)
+    .eq('attendance_fee_verified', false);
+  if (error) throw error;
+  return data;
+};
+
+/** Verify an attendance fee payment (accounts confirms) */
+export const verifyAttendanceFee = async (enrollmentId: string) => {
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .update({ attendance_fee_verified: true } as any)
+    .eq('id', enrollmentId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+/** Get all verified attendance fees (for accounts history) */
+export const getAccountsVerifiedFees = async () => {
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+    .gt('attendance_fee', 0)
+    .eq('attendance_fee_verified', true);
   if (error) throw error;
   return data;
 };
