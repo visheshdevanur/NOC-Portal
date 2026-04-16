@@ -28,7 +28,7 @@ A comprehensive, role-based **No-Due Clearance Portal** built for educational in
 
 ## Overview
 
-NOC Portal provides a **fully automated, multi-stage clearance system** for educational institutions. Students apply for clearance, and their request flows through a defined pipeline of approvals — faculty attendance review, accounts fee verification, college dues clearance, and HOD final approval — before they can download their examination hall ticket.
+NOC Portal provides a **fully automated, multi-stage clearance system** for educational institutions. Students apply for clearance, and their request flows through a defined pipeline of approvals — faculty attendance review, college dues clearance, and HOD final approval — before they can download their examination hall ticket.
 
 The system supports **7 distinct user roles**, each with a dedicated dashboard and specific permissions enforced via Supabase Row Level Security (RLS).
 
@@ -37,16 +37,16 @@ The system supports **7 distinct user roles**, each with a dedicated dashboard a
 ## Clearance Pipeline
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌──────────────┐     ┌──────────────┐     ┌────────────┐
-│   Student    │────▶│     Faculty      │────▶│   Accounts   │────▶│ College Dues │────▶│    HOD     │
-│   Applies    │     │ IA + Attendance  │     │Fee Verification│   │  Clearance   │     │  Approval  │
-└─────────────┘     └──────────────────┘     └──────────────────┘ └──────────────┘     └──────────────┘
-                                                                                              │
-                                                                                              ▼
-                                                                                     ┌────────────────┐
-                                                                                     │  🎫 Hall Ticket │
-                                                                                     │   Download     │
-                                                                                     └────────────────┘
+┌─────────────┐     ┌──────────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Student    │────▶│     Faculty      │────▶│   Accounts   │────▶│     HOD      │
+│   Applies    │     │ IA + Attendance  │     │ College Fees │     │   Approval   │
+└─────────────┘     └──────────────────┘     └──────────────┘     └──────────────┘
+                                                                         │
+                                                                         ▼
+                                                                ┌────────────────┐
+                                                                │  🎫 Hall Ticket │
+                                                                │   Download     │
+                                                                └────────────────┘
 ```
 
 ### Pipeline Stages
@@ -54,7 +54,6 @@ The system supports **7 distinct user roles**, each with a dedicated dashboard a
 | Stage | Role | Action |
 |-------|------|--------|
 | **Faculty Review** | Faculty/Teacher | Enter attendance %, mark IA attendance, approve/reject subjects |
-| **Accounts Review** | Accounts | Verify attendance fee payments (for students who paid fines) |
 | **Department Review** | Accounts | Clear college-level dues and fees |
 | **HOD Review** | HOD | Final sign-off on clearance |
 | **Cleared** | Student | Download hall ticket PDF |
@@ -64,7 +63,7 @@ The system supports **7 distinct user roles**, each with a dedicated dashboard a
 ## Role-Based Dashboards
 
 ### 👨‍🎓 Student Dashboard
-- View clearance pipeline progress (4-step stepper with real-time updates)
+- View clearance pipeline progress (3-step stepper with real-time updates)
 - Track faculty clearance status per subject
 - View IA attendance eligibility (minimum 2 IAs required)
 - Monitor accounts and college dues status
@@ -84,7 +83,6 @@ The system supports **7 distinct user roles**, each with a dedicated dashboard a
 - **Semester Promotion** — Bulk promote students to next semester
 
 ### 💰 Accounts Dashboard
-- **Fee Verification** — Verify attendance fee payments (with bulk verify)
 - **College Dues** — Manage and clear student financial dues
 - **Staff Approvals** — View staff-approved fee overrides
 - Department-based filtering and manual fee entry
@@ -149,7 +147,7 @@ NOC-Portal/
 │   │   │   ├── StudentDashboard.tsx     # Student clearance view
 │   │   │   ├── FacultyDashboard.tsx     # Attendance & IA management
 │   │   │   ├── StaffDashboard.tsx       # Staff operations & user mgmt
-│   │   │   ├── AccountsDashboard.tsx    # Fee verification & dues
+│   │   │   ├── AccountsDashboard.tsx    # Dues management & staff approvals
 │   │   │   ├── HodDashboard.tsx         # Final approvals & dept mgmt
 │   │   │   ├── AdminDashboard.tsx       # System administration
 │   │   │   └── CoeDashboard.tsx         # Hall ticket templates & exams

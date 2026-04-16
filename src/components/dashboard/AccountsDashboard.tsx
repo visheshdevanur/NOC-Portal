@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues, updateStudentDueFee, getAccountsPendingFeeVerifications, verifyAttendanceFee } from '../../lib/api';
-import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft, FileCheck, Banknote, CheckCircle2 } from 'lucide-react';
+import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues, updateStudentDueFee } from '../../lib/api';
+import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft, FileCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type StudentDues = {
@@ -40,8 +40,8 @@ export default function AccountsDashboard() {
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
 
   // Tab state
-  type AccountsTab = 'dues' | 'feeVerification' | 'staffApprovals';
-  const [activeTab, setActiveTab] = useState<AccountsTab>('feeVerification');
+  type AccountsTab = 'dues' | 'staffApprovals';
+  const [activeTab, setActiveTab] = useState<AccountsTab>('dues');
 
   // Staff Approvals state
   const [approvedDues, setApprovedDues] = useState<StudentDues[]>([]);
@@ -49,25 +49,17 @@ export default function AccountsDashboard() {
   const [searchApproved, setSearchApproved] = useState('');
   const [selectedApprovalDept, setSelectedApprovalDept] = useState<string | null>(null);
 
-  // Fee Verification state
-  const [pendingFees, setPendingFees] = useState<any[]>([]);
-  const [loadingFees, setLoadingFees] = useState(false);
-  const [searchFees, setSearchFees] = useState('');
-  const [selectedFeeDept, setSelectedFeeDept] = useState<string | null>(null);
+
 
   useEffect(() => {
     fetchDues();
     fetchDepartments();
     fetchApprovedDues();
-    fetchPendingFees();
 
     const channel = supabase.channel('accounts-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'student_dues' }, () => {
         fetchDues();
         fetchApprovedDues();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subject_enrollment' }, () => {
-        fetchPendingFees();
       })
       .subscribe();
 
@@ -126,49 +118,6 @@ export default function AccountsDashboard() {
     }
   };
 
-  const fetchPendingFees = async () => {
-    setLoadingFees(true);
-    try {
-      const data = await getAccountsPendingFeeVerifications();
-      setPendingFees(data || []);
-    } catch (err: any) {
-      // silently fail
-    } finally {
-      setLoadingFees(false);
-    }
-  };
-
-  const handleVerifyFee = async (enrollmentId: string) => {
-    if (!confirm('Confirm that the attendance fee has been received?')) return;
-    try {
-      await verifyAttendanceFee(enrollmentId);
-      setSuccess('Attendance fee verified successfully.');
-      fetchPendingFees();
-    } catch (err: any) {
-      setError('Failed to verify fee: ' + (err?.message || 'Unknown'));
-    }
-  };
-
-  const handleBulkVerifyFees = async () => {
-    const filtered = pendingFees.filter(d => {
-      const matchesSearch = !searchFees ||
-        d.profiles?.full_name?.toLowerCase().includes(searchFees.toLowerCase()) ||
-        d.profiles?.roll_number?.toLowerCase().includes(searchFees.toLowerCase());
-      const matchesDept = !selectedFeeDept || d.profiles?.department_id === selectedFeeDept;
-      return matchesSearch && matchesDept;
-    });
-    if (filtered.length === 0) return;
-    if (!confirm(`Verify all ${filtered.length} pending attendance fees?`)) return;
-    try {
-      for (const fee of filtered) {
-        await verifyAttendanceFee(fee.id);
-      }
-      setSuccess(`Verified ${filtered.length} attendance fee(s).`);
-      fetchPendingFees();
-    } catch (err: any) {
-      setError('Failed during bulk verify: ' + (err?.message || 'Unknown'));
-    }
-  };
 
   const handleManualFeeUpdate = async (dueId: string, fineAmount: number) => {
     try {
@@ -322,20 +271,6 @@ export default function AccountsDashboard() {
 
       {/* Tabs */}
       <div className="bg-card rounded-2xl p-1.5 shadow-sm border border-border flex gap-1 w-full md:w-max">
-        <button
-          onClick={() => setActiveTab('feeVerification')}
-          className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
-            activeTab === 'feeVerification'
-              ? 'bg-emerald-500 text-white shadow-md'
-              : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-          }`}
-        >
-          <Banknote className="w-4 h-4" />
-          Fee Verification
-          {pendingFees.length > 0 && (
-            <span className="ml-1 px-2 py-0.5 bg-white/20 rounded-full text-xs font-bold">{pendingFees.length}</span>
-          )}
-        </button>
         <button
           onClick={() => setActiveTab('dues')}
           className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${

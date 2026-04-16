@@ -7,7 +7,7 @@ import {
   submitClearanceRequest,
   getStudentIAAttendance 
 } from '../../lib/api';
-import { CheckCircle2, Clock, XCircle, AlertCircle, FileDown, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap, Banknote } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, AlertCircle, FileDown, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { supabase } from '../../lib/supabase';
 
@@ -412,8 +412,7 @@ export default function StudentDashboard() {
   const allFacultyCleared = enrollments.length > 0 && enrollments.every(e => e.status === 'completed');
   const allDeptCleared = deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed');
   
-  // Check if accounts has verified all attendance fees
-  const accountsReviewDone = request.current_stage !== 'faculty_review' && request.current_stage !== 'accounts_review';
+
 
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
   const iaBySubject: Record<string, { present: number; total: number }> = {};
@@ -488,18 +487,17 @@ export default function StudentDashboard() {
           Clearance Pipeline Match
         </h2>
         
-        <div className="relative flex flex-col md:flex-row justify-between w-full mx-auto max-w-5xl px-4 items-stretch md:items-center gap-8 md:gap-0">
-          <div className="hidden md:block absolute top-[28px] left-[8%] right-[8%] h-[3px] bg-secondary -z-10 rounded-full">
+        <div className="relative flex flex-col md:flex-row justify-between w-full mx-auto max-w-4xl px-4 items-stretch md:items-center gap-8 md:gap-0">
+          <div className="hidden md:block absolute top-[28px] left-[10%] right-[10%] h-[3px] bg-secondary -z-10 rounded-full">
             <div 
               className="h-full bg-primary rounded-full transition-all duration-1000 ease-in-out"
-              style={{ width: allFacultyCleared ? (accountsReviewDone ? (allDeptCleared ? (isHodApproved ? '100%' : '66%') : '33%') : '0%') : '0%' }}
+              style={{ width: allFacultyCleared ? (allDeptCleared ? (isHodApproved ? '100%' : '50%') : '0%') : '0%' }}
             ></div>
           </div>
 
           <Step title="Faculty" description="IA + Attendance" isComplete={allFacultyCleared} isActive={!allFacultyCleared} icon={<BookOpen className="w-6 h-6" />} />
-          <Step title="Accounts" description="Fee Verification" isComplete={accountsReviewDone} isActive={allFacultyCleared && !accountsReviewDone} icon={<Banknote className="w-6 h-6" />} />
-          <Step title="College Dues" description="Fees Clearance" isComplete={allDeptCleared} isActive={accountsReviewDone && !allDeptCleared} icon={<Building2 className="w-6 h-6" />} />
-          <Step title="HOD Approval" description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && accountsReviewDone && allDeptCleared && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
+          <Step title="Accounts" description="College Fees" isComplete={allDeptCleared} isActive={allFacultyCleared && !allDeptCleared} icon={<Building2 className="w-6 h-6" />} />
+          <Step title="HOD Approval" description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && allDeptCleared && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
         </div>
       </div>
 

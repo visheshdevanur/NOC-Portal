@@ -1,7 +1,7 @@
 export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'hod' | 'admin' | 'accounts' | 'coe';
 export type DeptType = 'library' | 'hostel' | 'accounts';
 export type ClearanceStatus = 'pending' | 'rejected' | 'completed';
-export type ClearanceStage = 'student_application' | 'faculty_review' | 'accounts_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
+export type ClearanceStage = 'student_application' | 'faculty_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
 export type AuditAction = 'created' | 'updated' | 'approved' | 'rejected' | 'escalated';
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 
