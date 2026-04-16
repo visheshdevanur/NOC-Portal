@@ -1,7 +1,7 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/useAuth';
 import { supabase } from '../../lib/supabase';
-import { LogOut, GraduationCap, UserCircle, KeyRound, X, Settings, Menu, Eye, EyeOff } from 'lucide-react';
+import { LogOut, GraduationCap, UserCircle, KeyRound, X, Settings, Menu, Eye, EyeOff, Activity } from 'lucide-react';
 import { ThemeToggle } from '../ThemeToggle';
 import { useState, useRef, useEffect } from 'react';
 
@@ -95,6 +95,15 @@ const Layout = () => {
 
             {/* Right Section: Desktop */}
             <div className="hidden sm:flex items-center space-x-3 lg:space-x-4">
+              {profile?.role && profile.role !== 'student' && (
+                <button
+                  onClick={() => navigate('/logs')}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-secondary hover:bg-secondary/80 text-foreground transition-all shadow-sm font-medium text-sm"
+                >
+                  <Activity className="w-4 h-4" />
+                  Logs
+                </button>
+              )}
               <ThemeToggle />
               
               <div className="flex items-center bg-secondary/50 px-3 lg:px-4 py-2 rounded-full border border-border shadow-sm">
@@ -169,6 +178,18 @@ const Layout = () => {
                     </div>
                   </div>
                   
+                  {profile?.role && profile.role !== 'student' && (
+                    <button
+                      onClick={() => {
+                        setShowMobileMenu(false);
+                        navigate('/logs');
+                      }}
+                      className="w-full text-left px-4 py-3 text-sm text-foreground hover:bg-secondary flex items-center gap-3 transition-colors"
+                    >
+                      <Activity className="w-4 h-4 text-primary" />
+                      Activity Logs
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setShowMobileMenu(false);

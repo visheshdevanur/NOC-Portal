@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import UpdatePassword from './pages/UpdatePassword';
 import DashboardRouter from './pages/DashboardRouter';
 import Layout from './components/layout/Layout';
+import Logs from './pages/Logs';
 import { ThemeProvider } from './components/ThemeProvider';
 
 function App() {
@@ -67,6 +68,14 @@ function App() {
                 user
                   ? (isPasswordResetPending ? <Navigate to="/update-password" /> : <DashboardRouter />)
                   : <Navigate to="/login" />
+              } 
+            />
+            <Route 
+              path="/logs" 
+              element={
+                user && user.user_metadata?.role !== 'student' 
+                  ? <Logs /> 
+                  : <Navigate to="/" />
               } 
             />
           </Route>

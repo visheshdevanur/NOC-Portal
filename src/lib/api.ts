@@ -1,6 +1,33 @@
 import { supabase } from './supabase';
 
 // =======================
+// SYSTEM LOGS
+// =======================
+export const logActivity = async (action: string, details?: string) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { data: profile } = await supabase.from('profiles').select('full_name, role, department_id').eq('id', user.id).single();
+
+  await supabase.from('activity_logs').insert([{
+    user_id: user.id,
+    user_role: profile?.role,
+    department_id: profile?.department_id,
+    user_name: profile?.full_name,
+    action,
+    details
+  } as any]);
+};
+
+export const getActivityLogs = async () => {
+  const { data, error } = await supabase
+    .from('activity_logs')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+};
+
+// =======================
 // STUDENT SPECIFIC
 // =======================
 export const getStudentClearanceRequest = async (studentId: string) => {
@@ -125,6 +152,9 @@ export const bulkProcessCollegeDues = async (pendingDues: { id: string, fine_amo
       .eq('id', due.id);
     if (error) throw error;
   }
+  
+  // Log the mass upload
+  await logActivity('Uploaded CSV for Dues', `Set ${pendingDues.length} students as pending, ${noDuesIds.length} marked completed.`);
   
   return true;
 };

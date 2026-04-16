@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues, updateStudentDueFee } from '../../lib/api';
+import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues, updateStudentDueFee, logActivity } from '../../lib/api';
 import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft, FileCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -119,19 +119,24 @@ export default function AccountsDashboard() {
   };
 
 
-  const handleManualFeeUpdate = async (dueId: string, fineAmount: number) => {
+  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, profileName: string = 'Student') => {
     try {
       await updateStudentDueFee(dueId, fineAmount);
+      if (fineAmount === 0) {
+        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName}`);
+      } else {
+        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} for ${profileName}`);
+      }
       // Update local state
       setDues(prev => prev.map(d => d.id === dueId ? { ...d, fine_amount: fineAmount, status: fineAmount > 0 ? 'pending' : 'completed' } : d));
-      setSuccess(`Fee updated to ₹${fineAmount}. Status: ${fineAmount > 0 ? 'Pending' : 'Cleared'}.`);
+      setSuccess(`Due amount updated to ₹${fineAmount}. Status: ${fineAmount > 0 ? 'Pending' : 'Cleared'}.`);
     } catch (err: any) {
-      setError('Failed to update fee: ' + (err?.message || 'Unknown'));
+      setError('Failed to update due amount: ' + (err?.message || 'Unknown'));
     }
   };
 
   const downloadTemplate = () => {
-    const csvContent = "data:text/csv;charset=utf-8,roll_number,fine_amount\n21CS001,1500\n21CS002,500";
+    const csvContent = "data:text/csv;charset=utf-8,roll_number,due_amount\n21CS001,1500\n21CS002,500";
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -156,8 +161,9 @@ export default function AccountsDashboard() {
       if (lines.length < 2) throw new Error("CSV file is empty or missing data rows.");
       
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      if (!headers.includes('roll_number') || !headers.includes('fine_amount')) {
-        throw new Error("Missing required CSV column: roll_number or fine_amount");
+      const hasAmountCol = headers.includes('fine_amount') || headers.includes('due_amount');
+      if (!headers.includes('roll_number') || !hasAmountCol) {
+        throw new Error("Missing required CSV column: roll_number or due_amount");
       }
 
       const pendingDuesToUpdate: { id: string, fine_amount: number }[] = [];
@@ -170,7 +176,7 @@ export default function AccountsDashboard() {
         const getVal = (colName: string) => columns[headers.indexOf(colName)] || '';
         
         const roll_number = getVal('roll_number');
-        const fine_str = getVal('fine_amount');
+        const fine_str = getVal('due_amount') || getVal('fine_amount');
         const fine_amount = parseInt(fine_str, 10);
         
         if (!roll_number || isNaN(fine_amount)) {
@@ -190,7 +196,7 @@ export default function AccountsDashboard() {
       const { bulkProcessCollegeDues } = await import('../../lib/api');
       await bulkProcessCollegeDues(pendingDuesToUpdate, allDuesIds);
 
-      setSuccess(`Upload processed! Set ${pendingDuesToUpdate.length} students as pending with fines. All other students marked as completed.`);
+      setSuccess(`Upload processed! Set ${pendingDuesToUpdate.length} students as pending with dues. All other students marked as completed.`);
       if (errorCount > 0) setError(`Skipped ${errorCount} invalid rows or unmatched roll numbers.`);
       
       fetchDues();
@@ -390,7 +396,7 @@ export default function AccountsDashboard() {
                       <th className="p-5 font-semibold">Student Name</th>
                       <th className="p-5 font-semibold">Roll Number</th>
                       <th className="p-5 font-semibold">Dept / Sem / Sec</th>
-                      <th className="p-5 font-semibold">Fine Amount (₹)</th>
+                      <th className="p-5 font-semibold">Due Amount (₹)</th>
                       <th className="p-5 font-semibold">Status</th>
                       <th className="p-5 font-semibold text-right">Actions</th>
                     </tr>
@@ -546,7 +552,7 @@ export default function AccountsDashboard() {
                         <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
                           <th className="p-5 font-semibold">Student Name</th>
                           <th className="p-5 font-semibold">Roll Number</th>
-                          <th className="p-5 font-semibold">Fine Amount (₹)</th>
+                          <th className="p-5 font-semibold">Due Amount (₹)</th>
                           <th className="p-5 font-semibold">Clearance Status</th>
                           <th className="p-5 font-semibold text-right">Actions</th>
                         </tr>
@@ -566,7 +572,7 @@ export default function AccountsDashboard() {
                                 defaultValue={d.fine_amount || 0}
                                 onBlur={e => {
                                   const val = parseInt(e.target.value) || 0;
-                                  if (val !== (d.fine_amount || 0)) handleManualFeeUpdate(d.id, val);
+                                  if (val !== (d.fine_amount || 0)) handleManualFeeUpdate(d.id, val, d.profiles?.full_name || 'Unknown');
                                 }}
                               />
                             </td>
@@ -582,7 +588,7 @@ export default function AccountsDashboard() {
                             <td className="p-5 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button
-                                  onClick={() => handleManualFeeUpdate(d.id, 0)}
+                                  onClick={() => handleManualFeeUpdate(d.id, 0, d.profiles?.full_name || 'Unknown')}
                                   className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
                                 >
                                   Clear

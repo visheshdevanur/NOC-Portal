@@ -1,4 +1,4 @@
-export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'hod' | 'admin' | 'accounts' | 'coe';
+export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'hod' | 'admin' | 'accounts' | 'coe' | 'principal';
 export type DeptType = 'library' | 'hostel' | 'accounts';
 export type ClearanceStatus = 'pending' | 'rejected' | 'completed';
 export type ClearanceStage = 'student_application' | 'faculty_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
@@ -92,6 +92,20 @@ export interface Database {
         };
         Insert: { id?: string; user_id?: string | null; student_id: string; action: AuditAction; stage: ClearanceStage; remarks?: string | null; created_at?: string };
         Update: { id?: string; user_id?: string | null; student_id?: string; action?: AuditAction; stage?: ClearanceStage; remarks?: string | null; created_at?: string };
+      };
+      activity_logs: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          user_role: string | null;
+          department_id: string | null;
+          user_name: string | null;
+          action: string;
+          details: string | null;
+          created_at: string;
+        };
+        Insert: { id?: string; user_id?: string | null; user_role?: string | null; department_id?: string | null; user_name?: string | null; action: string; details?: string | null; created_at?: string };
+        Update: { id?: string; user_id?: string | null; user_role?: string | null; department_id?: string | null; user_name?: string | null; action?: string; details?: string | null; created_at?: string };
       };
       notifications: {
         Row: {
