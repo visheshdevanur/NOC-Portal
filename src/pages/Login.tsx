@@ -253,22 +253,22 @@ const Login = () => {
                     onChange={(e) => setEmail(e.target.value)}
                     onFocus={() => setEmailFocused(true)}
                     onBlur={() => setEmailFocused(false)}
-                    className="block w-full px-0 py-3 bg-transparent border-0 border-b-2 border-border focus:border-primary focus:ring-0 text-foreground transition-all duration-300 outline-none peer text-base"
+                    className="block w-full px-0 pt-5 pb-2 bg-transparent border-0 border-b-2 border-border focus:border-primary focus:ring-0 text-foreground transition-all duration-300 outline-none peer text-base"
                     placeholder=" "
                   />
                   <label
                     htmlFor="login-email"
-                    className={`absolute left-0 pointer-events-none font-medium transition-all duration-300 origin-left ${
+                    className={`absolute left-0 pointer-events-none font-medium transition-all duration-300 origin-left z-10 ${
                       emailLabelActive
-                        ? 'text-primary text-xs -top-2 scale-90'
-                        : 'text-muted-foreground text-base top-3'
+                        ? 'text-primary text-xs top-0 scale-90'
+                        : 'text-muted-foreground text-base top-5'
                     }`}
                   >
                     Email Address
                   </label>
                   {/* Focus underline glow */}
                   <div className="absolute bottom-0 left-1/2 w-0 h-[2px] bg-primary transition-all duration-300 peer-focus:left-0 peer-focus:w-full rounded-full" />
-                  <Mail className={`absolute right-0 top-3.5 w-4 h-4 transition-colors duration-200 ${emailFocused ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <Mail className={`absolute right-0 top-5 w-4 h-4 transition-colors duration-200 ${emailFocused ? 'text-primary' : 'text-muted-foreground'}`} />
                 </div>
 
                 {/* Floating Password Input */}
@@ -281,15 +281,15 @@ const Login = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     onFocus={() => setPasswordFocused(true)}
                     onBlur={() => setPasswordFocused(false)}
-                    className="block w-full px-0 py-3 bg-transparent border-0 border-b-2 border-border focus:border-primary focus:ring-0 text-foreground transition-all duration-300 outline-none peer pr-10 text-base"
+                    className="block w-full px-0 pt-5 pb-2 bg-transparent border-0 border-b-2 border-border focus:border-primary focus:ring-0 text-foreground transition-all duration-300 outline-none peer pr-10 text-base"
                     placeholder=" "
                   />
                   <label
                     htmlFor="login-password"
-                    className={`absolute left-0 pointer-events-none font-medium transition-all duration-300 origin-left ${
+                    className={`absolute left-0 pointer-events-none font-medium transition-all duration-300 origin-left z-10 ${
                       passwordLabelActive
-                        ? 'text-primary text-xs -top-2 scale-90'
-                        : 'text-muted-foreground text-base top-3'
+                        ? 'text-primary text-xs top-0 scale-90'
+                        : 'text-muted-foreground text-base top-5'
                     }`}
                   >
                     Password
@@ -298,7 +298,7 @@ const Login = () => {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-0 top-3.5 text-muted-foreground hover:text-primary transition-colors"
+                    className="absolute right-0 top-5 text-muted-foreground hover:text-primary transition-colors"
                     tabIndex={-1}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
