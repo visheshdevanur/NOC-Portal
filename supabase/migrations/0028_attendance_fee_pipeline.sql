@@ -3,6 +3,11 @@
 -- New Pipeline: Faculty → accounts_review → department_review → hod_review → cleared
 
 -- ============================================================
+-- 0. ADD 'accounts_review' TO clearance_stage ENUM
+-- ============================================================
+ALTER TYPE clearance_stage ADD VALUE IF NOT EXISTS 'accounts_review' AFTER 'faculty_review';
+
+-- ============================================================
 -- 1. ADD ATTENDANCE FEE COLUMNS TO subject_enrollment
 -- ============================================================
 ALTER TABLE subject_enrollment ADD COLUMN IF NOT EXISTS attendance_fee NUMERIC DEFAULT 0;
