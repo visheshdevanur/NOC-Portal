@@ -738,7 +738,6 @@ export default function StaffDashboard() {
     { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
     { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'sections', label: 'Section Assign', icon: <Link2 className="w-4 h-4" /> },
-    { id: 'dues', label: 'College Dues', icon: <FileWarning className="w-4 h-4 text-amber-500" /> },
     { id: 'promote', label: 'Promote', icon: <ArrowUpRight className="w-4 h-4 text-blue-500" /> },
   ];
 

@@ -533,6 +533,7 @@ export const overrideAttendanceFine = async (enrollmentId: string, feeAmount: nu
     .select()
     .single();
   if (error) throw error;
+  logActivity('Staff Approved Fine', `Override and cleared attendance with fee: ₹${feeAmount}`);
   return data;
 };
 
