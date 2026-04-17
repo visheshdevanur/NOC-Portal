@@ -53,8 +53,17 @@ type Department = { id: string; name: string };
 type Semester = { id: string; name: string };
 
 export default function CoeDashboard() {
-  const [activeTab, setActiveTab] = useState<'template' | 'timetable' | 'builder'>('template');
+  const [activeTab, setActiveTab] = useState<'template' | 'timetable' | 'builder' | 'iaAttendance'>('template');
   
+  // IA States
+  const [iaDeptId, setIaDeptId] = useState<string>('');
+  const [iaSemId, setIaSemId] = useState<string>('');
+  const [iaStudents, setIaStudents] = useState<any[]>([]);
+  const [loadingIaStudents, setLoadingIaStudents] = useState(false);
+  const [selectedStudentForIa, setSelectedStudentForIa] = useState<any | null>(null);
+  const [studentIaRecords, setStudentIaRecords] = useState<any[]>([]);
+  const [loadingStudentIa, setLoadingStudentIa] = useState(false);
+
   // Template State
   const [template, setTemplate] = useState<HallTicketTemplate | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,10 +90,47 @@ export default function CoeDashboard() {
 
   useEffect(() => {
     fetchTemplate();
-    if (activeTab === 'timetable') {
+    if ((activeTab === 'timetable' || activeTab === 'iaAttendance') && departments.length === 0) {
       fetchTimetableData();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (iaDeptId && iaSemId) {
+      fetchIaStudents();
+    } else {
+      setIaStudents([]);
+      setSelectedStudentForIa(null);
+    }
+  }, [iaDeptId, iaSemId]);
+
+  const fetchIaStudents = async () => {
+    setLoadingIaStudents(true);
+    try {
+      const { getHodDepartmentStudents } = await import('../../lib/api');
+      const students = await getHodDepartmentStudents(iaDeptId);
+      setIaStudents((students || []).filter((s: any) => s.semester_id === iaSemId));
+      setSelectedStudentForIa(null);
+    } catch (err: any) {
+      setErrorMSG("Failed to fetch students: " + getFriendlyErrorMessage(err));
+    } finally {
+      setLoadingIaStudents(false);
+    }
+  };
+
+  const handleStudentClick = async (student: any) => {
+    setSelectedStudentForIa(student);
+    setLoadingStudentIa(true);
+    try {
+      const { getStudentIAAttendance } = await import('../../lib/api');
+      const records = await getStudentIAAttendance(student.id);
+      setStudentIaRecords(records || []);
+    } catch (err: any) {
+      setErrorMSG("Failed to fetch IA attendance: " + getFriendlyErrorMessage(err));
+    } finally {
+      setLoadingStudentIa(false);
+    }
+  };
 
   // Measure canvas container for responsive drag bounds
   useEffect(() => {
@@ -537,6 +583,15 @@ export default function CoeDashboard() {
         >
           <Calendar className="w-4 h-4" />
           Timetable Allotment
+        </button>
+        <button
+          onClick={() => setActiveTab('iaAttendance')}
+          className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all whitespace-nowrap ${
+            activeTab === 'iaAttendance' ? 'bg-indigo-500 text-white shadow-md' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          IA Attendance
         </button>
       </div>
 
@@ -1097,6 +1152,110 @@ export default function CoeDashboard() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* IA Attendance Tab */}
+      {activeTab === 'iaAttendance' && (
+        <div className="space-y-6 fade-in">
+          <div className="bg-card p-6 rounded-3xl shadow-sm border border-border">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-foreground">Hierarchical IA Attendance</h2>
+              <p className="text-sm text-muted-foreground mt-1">View IA Records organized by Department and Semester.</p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Select Department</label>
+                <select className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" value={iaDeptId} onChange={e => { setIaDeptId(e.target.value); setIaSemId(''); }}>
+                  <option value="">-- Choose Department --</option>
+                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Select Semester</label>
+                <select className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" value={iaSemId} onChange={e => setIaSemId(e.target.value)} disabled={!iaDeptId}>
+                  <option value="">-- Choose Semester --</option>
+                  {semesters.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {loadingIaStudents ? (
+              <div className="p-8 text-center animate-pulse text-muted-foreground">Loading Students...</div>
+            ) : iaStudents.length > 0 ? (
+               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                 {/* Student List Sidebar */}
+                 <div className="bg-secondary/20 rounded-2xl border border-border h-[600px] overflow-y-auto">
+                   <h3 className="p-4 font-bold border-b border-border text-foreground bg-secondary/50 sticky top-0">Students ({iaStudents.length})</h3>
+                   <div className="divide-y divide-border">
+                     {iaStudents.map(student => (
+                        <button key={student.id} onClick={() => handleStudentClick(student)} className={`w-full text-left p-4 hover:bg-secondary transition-colors ${selectedStudentForIa?.id === student.id ? 'bg-indigo-500/10 border-l-4 border-indigo-500' : 'border-l-4 border-transparent'}`}>
+                          <div className="font-medium text-foreground">{student.full_name}</div>
+                          <div className="text-xs text-muted-foreground font-mono mt-1">{student.roll_number || student.email}</div>
+                        </button>
+                     ))}
+                   </div>
+                 </div>
+
+                 {/* IA Details Panel */}
+                 <div className="lg:col-span-2">
+                    {selectedStudentForIa ? (
+                       <div className="bg-card rounded-2xl border border-border shadow-sm p-6">
+                         <div className="mb-6">
+                           <h3 className="text-2xl font-bold text-foreground">{selectedStudentForIa.full_name}</h3>
+                           <p className="text-sm text-muted-foreground tracking-wide font-mono mt-1">{selectedStudentForIa.roll_number || 'No Roll Number'}</p>
+                         </div>
+                         
+                         {loadingStudentIa ? (
+                           <div className="p-8 text-center animate-pulse text-muted-foreground">Loading IA Records...</div>
+                         ) : studentIaRecords.length === 0 ? (
+                           <div className="p-12 text-center text-muted-foreground border border-dashed border-border rounded-2xl">
+                             No IA Attendance records assigned for this student yet.
+                           </div>
+                         ) : (
+                           <div className="overflow-x-auto rounded-xl border border-border">
+                             <table className="w-full text-left border-collapse min-w-max">
+                               <thead>
+                                 <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
+                                   <th className="p-4 font-semibold">Subject</th>
+                                   <th className="p-4 font-semibold">IA Number</th>
+                                   <th className="p-4 font-semibold text-center">Status</th>
+                                 </tr>
+                               </thead>
+                               <tbody className="divide-y divide-border">
+                                 {studentIaRecords.map(record => (
+                                   <tr key={record.id} className="hover:bg-secondary/20 transition-colors">
+                                     <td className="p-4">
+                                       <div className="font-bold text-foreground">{record.subjects?.subject_name}</div>
+                                       <div className="text-xs text-muted-foreground">{record.subjects?.subject_code}</div>
+                                     </td>
+                                     <td className="p-4 font-medium">IA - {record.ia_number}</td>
+                                     <td className="p-4 text-center">
+                                       {record.is_present ? (
+                                         <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600">Present</span>
+                                       ) : (
+                                         <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-red-500/10 text-red-600">Absent</span>
+                                       )}
+                                     </td>
+                                   </tr>
+                                 ))}
+                               </tbody>
+                             </table>
+                           </div>
+                         )}
+                       </div>
+                    ) : (
+                       <div className="h-full min-h-[300px] flex items-center justify-center p-12 text-center text-muted-foreground border border-dashed border-border rounded-2xl">
+                         Select a student from the list to view their IA attendance records.
+                       </div>
+                    )}
+                 </div>
+               </div>
+            ) : iaDeptId && iaSemId ? (
+              <div className="p-8 text-center text-muted-foreground border border-dashed border-border rounded-2xl">No students found matching this criteria.</div>
+            ) : null}
           </div>
         </div>
       )}

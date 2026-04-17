@@ -1,5 +1,5 @@
--- Add principal to Role enum at database level so RLS policies compile
-ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'principal';
+-- System Activity Logs
+
 
 create table if not exists public.activity_logs (
     id uuid default gen_random_uuid() primary key,

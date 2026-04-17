@@ -791,6 +791,7 @@ export default function HodDashboard() {
                         <th className="p-4 font-semibold">Section</th>
                         <th className="p-4 font-semibold">Subject</th>
                         <th className="p-4 font-semibold text-center">Attendance %</th>
+                        <th className="p-4 font-semibold text-center">Paid Fine (₹)</th>
                         <th className="p-4 font-semibold">Status</th>
                       </tr>
                     </thead>
@@ -808,6 +809,9 @@ export default function HodDashboard() {
                           </td>
                           <td className="p-4 text-center">
                             <span className="text-amber-600 dark:text-amber-400 font-bold">{item.attendance_pct}%</span>
+                          </td>
+                          <td className="p-4 text-center font-bold text-foreground">
+                            {item.attendance_fee ? `₹${item.attendance_fee}` : '—'}
                           </td>
                           <td className="p-4">
                             <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">

@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { getActivityLogs } from '../lib/api';
-import { Activity, Search, ShieldCheck } from 'lucide-react';
+import { Activity, Search, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Logs() {
+  const navigate = useNavigate();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,6 +36,12 @@ export default function Logs() {
       <div className="bg-card rounded-3xl p-8 shadow-sm border border-border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
         <div>
+          <button 
+            onClick={() => navigate(-1)} 
+            className="mb-4 flex items-center gap-2 text-sm text-foreground/70 hover:text-foreground transition-colors font-medium bg-secondary/50 px-3 py-1.5 rounded-lg w-max"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </button>
           <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
             <ShieldCheck className="w-8 h-8 mr-3 text-primary" />
             System Activity Logs
