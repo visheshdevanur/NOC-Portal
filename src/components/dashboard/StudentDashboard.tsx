@@ -705,6 +705,65 @@ export default function StudentDashboard() {
             ))}
           </div>
         </div>
+        
+        {/* Library Clearances */}
+        <div className="bg-card rounded-3xl p-8 shadow-sm border border-border flex flex-col h-full lg:col-span-2">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-foreground flex items-center">
+               <BookOpen className="w-5 h-5 mr-3 text-primary" />
+               Library Clearance
+            </h2>
+             <span className="bg-primary/10 text-primary font-medium text-xs px-3 py-1 rounded-full uppercase tracking-wider">
+               {allLibraryCleared ? '1 / 1 Cleared' : '0 / 1 Cleared'}
+            </span>
+          </div>
+          
+          <div className="flex-1 space-y-4">
+            {!libraryDue && allLibraryCleared ? (
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border border-border bg-emerald-500/5 hover:shadow-md transition-shadow">
+                 <div className="mb-3 sm:mb-0">
+                   <h3 className="font-semibold text-foreground capitalize text-lg">Library Returns</h3>
+                   <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-1 font-medium">All books returned & dues cleared.</p>
+                 </div>
+                 <div className="flex items-center gap-3">
+                   <div className="bg-background p-2 rounded-xl shadow-sm border border-emerald-500/30">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                   </div>
+                   <span className="text-sm font-bold text-emerald-500">Cleared</span>
+                 </div>
+               </div>
+            ) : libraryDue && libraryDue.has_dues ? (
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-destructive/20 bg-destructive/5 hover:shadow-md transition-shadow">
+                 <div className="mb-3 sm:mb-0">
+                   <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
+                   <p className="text-sm text-destructive font-medium mt-1 inline-block">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
+                   {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
+                 </div>
+                 <div className="flex items-center gap-3">
+                   <div className="bg-background p-2 rounded-xl shadow-sm border border-destructive/20">
+                    <XCircle className="w-6 h-6 text-destructive" />
+                   </div>
+                   <span className="text-sm font-bold text-destructive">Blocked</span>
+                 </div>
+               </div>
+            ) : libraryDue && !libraryDue.has_dues ? (
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border border-border bg-emerald-500/5 hover:shadow-md transition-shadow">
+                 <div className="mb-3 sm:mb-0">
+                   <h3 className="font-semibold text-foreground capitalize text-lg">Library Returns</h3>
+                   <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-1 font-medium">Cleared manually by Librarian.</p>
+                   {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
+                 </div>
+                 <div className="flex items-center gap-3">
+                   <div className="bg-background p-2 rounded-xl shadow-sm border border-emerald-500/30">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                   </div>
+                   <span className="text-sm font-bold text-emerald-500">Cleared</span>
+                 </div>
+               </div>
+            ) : null}
+          </div>
+        </div>
+
       </div>
     </div>
   );
