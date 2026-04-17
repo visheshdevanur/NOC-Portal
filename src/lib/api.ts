@@ -95,6 +95,7 @@ export const markFacultySubjectStatus = async (
     .select()
     .single();
   if (error) throw error;
+  logActivity(status === 'completed' ? 'Cleared Subject' : 'Rejected Subject', `Marked attendance ${attendancePct}%`);
   return data;
 };
 
@@ -246,6 +247,7 @@ export const assignTeacherToSection = async (subjectId: string, section: string,
     .select();
     
   if (error) throw error;
+  logActivity('Assigned Teacher', `Assigned teacher ${teacherId} to section ${section} for subject ${subjectId}`);
   return data;
 };
 
@@ -335,6 +337,7 @@ export const approveHodRequest = async (requestId: string) => {
     .select()
     .single();
   if (error) throw error;
+  logActivity('Approved HOD Clearance', `Final clearance approved for request ID: ${requestId}`);
   return data;
 };
 
@@ -582,6 +585,7 @@ export const updateStudentDueFee = async (dueId: string, fineAmount: number) => 
     .select()
     .single();
   if (error) throw error;
+  logActivity('Updated IA Policy', `Set required IA count to ${minIaCount}`);
   return data;
 };
 
@@ -653,6 +657,7 @@ export const saveIAAttendance = async (
     .upsert(records as any, { onConflict: 'student_id,subject_id,ia_number' })
     .select();
   if (error) throw error;
+  logActivity('Saved IA Attendance', `Updated IA metrics for ${records.length} students`);
   return data;
 };
 
@@ -754,6 +759,7 @@ export const updateLibraryDue = async (studentId: string, hasDues: boolean, fine
     .select()
     .single();
   if (error) throw error;
+  logActivity(hasDues ? 'Assigned Library Fine' : 'Cleared Library Fine', `Amount: ₹${fineAmount} for ${studentId}`);
   return data;
 };
 
@@ -792,6 +798,8 @@ export const bulkProcessLibraryDues = async (rows: { roll_number: string; fine_a
     .upsert(upsertPayload, { onConflict: 'student_id' });
 
   if (upsertError) throw upsertError;
+
+  logActivity('Bulk Processed Library Dues', `Processed ${upsertPayload.length} valid CSV records`);
 
   return upsertPayload.length;
 };
