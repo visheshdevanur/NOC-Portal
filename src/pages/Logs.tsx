@@ -8,28 +8,6 @@ export default function Logs() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('all');
-  const [selectedUser, setSelectedUser] = useState('all');
-
-  const roleMap: Record<string, string[]> = {
-    'all': [],
-    'library': ['librarian'],
-    'coe': ['coe'],
-    'teachers': ['teacher', 'faculty'],
-    'accounts': ['accounts'],
-    'hod': ['hod'],
-    'staff': ['staff']
-  };
-
-  const tabs = [
-    { id: 'all', label: 'All Logs' },
-    { id: 'library', label: 'Library' },
-    { id: 'coe', label: 'COE' },
-    { id: 'teachers', label: 'Teachers' },
-    { id: 'accounts', label: 'Accounts' },
-    { id: 'hod', label: 'HOD' },
-    { id: 'staff', label: 'Staff' }
-  ];
 
   useEffect(() => {
     fetchLogs();
@@ -46,32 +24,11 @@ export default function Logs() {
     }
   };
 
-  // Filter by role tab
-  const roleFilteredLogs = logs.filter(l => {
-    if (activeTab === 'all') return true;
-    const mappedRoles = roleMap[activeTab] || [];
-    return mappedRoles.includes(l.user_role?.toLowerCase());
-  });
-
-  // Extract unique users for dropdown based on current role tab
-  const uniqueUsersInTab = Array.from(new Set(roleFilteredLogs.map(l => l.user_name))).filter(Boolean) as string[];
-
-  // Final filtering
-  const filteredLogs = roleFilteredLogs.filter(l => {
-    const matchesSearch = 
-      l.action?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      l.user_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.details?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesUser = selectedUser === 'all' || l.user_name === selectedUser;
-    
-    return matchesSearch && matchesUser;
-  });
-
-  // Reset user selection when tab changes
-  useEffect(() => {
-    setSelectedUser('all');
-  }, [activeTab]);
+  const filteredLogs = logs.filter(l => 
+    l.action?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    l.user_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    l.details?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="space-y-6 fade-in max-w-7xl mx-auto">
@@ -94,45 +51,15 @@ export default function Logs() {
       </div>
 
       <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
-        {/* Tabs */}
-        <div className="flex overflow-x-auto gap-2 border-b border-border pb-4 mb-6 scrollbar-hide">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="relative flex-1">
-            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search logs by action, user, or details..."
-              className="pl-10 pr-4 py-3 bg-secondary/50 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary w-full"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-          </div>
-          
-          <select
-            value={selectedUser}
-            onChange={e => setSelectedUser(e.target.value)}
-            className="px-4 py-3 bg-secondary/50 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary min-w-[200px] text-sm font-semibold"
-          >
-            <option value="all">All Users</option>
-            {uniqueUsersInTab.map(user => (
-              <option key={user} value={user}>{user}</option>
-            ))}
-          </select>
+        <div className="relative mb-6">
+          <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search logs by action, user, or details..."
+            className="pl-10 pr-4 py-3 bg-secondary/50 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary w-full max-w-md"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-border">

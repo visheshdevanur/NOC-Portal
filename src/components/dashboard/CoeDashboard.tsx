@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { GraduationCap, Save, FileText, CheckCircle2, Calendar, Upload, Plus, Trash2, X, Image as ImageIcon, Download, Palette, Move, RotateCcw, Layers, Search } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
+import { logActivity } from '../../lib/api';
 import Papa from 'papaparse';
 import { Rnd } from 'react-rnd';
 
@@ -235,9 +236,7 @@ export default function CoeDashboard() {
       
       if (resultError) throw resultError;
       
-      const { logActivity } = await import('../../lib/api');
-      await logActivity('Updated Hall Ticket', 'Modified hall ticket template attributes and instructions');
-      
+      await logActivity('Updated Hall Ticket', 'Modified hall ticket template configuration');
       setSuccessMSG('Hall Ticket Template saved successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {
@@ -332,9 +331,8 @@ export default function CoeDashboard() {
         }))
       );
       if (error) throw error;
-      const { logActivity } = await import('../../lib/api');
-      await logActivity('Updated Timetable', 'Modified execution dates and times in the examination timetable');
       
+      await logActivity('Updated Timetable', 'Saved examination timetable schedule manually');
       setSuccessMSG('Timetable updated successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {
@@ -403,6 +401,7 @@ export default function CoeDashboard() {
             const { error } = await supabase.from('subjects').upsert(toUpsert);
             if (error) throw error;
             
+            await logActivity('Uploaded Timetable CSV', `Bulk times/dates applied to ${updatedCount} subjects`);
             setSubjects(newSubjects);
             setSuccessMSG(`CSV Uploaded & Saved! Dates/times applied to ${updatedCount} subjects.`);
             setTimeout(() => setSuccessMSG(null), 4000);
@@ -512,12 +511,9 @@ export default function CoeDashboard() {
 
       if (resultError) throw resultError;
 
+      await logActivity('Updated Hall Ticket UI', 'Saved visual builder layout and background');
       // Update local template state
       setTemplate(prev => prev ? { ...prev, bg_image_url: bgImage, mapping_coordinates: { ...builderCoords, _mode: 'builder' } as any, template_mode: 'builder' } : null);
-      
-      const { logActivity } = await import('../../lib/api');
-      await logActivity('Updated Hall Ticket', 'Adjusted layout and coordinates of hall ticket generator');
-
       setSuccessMSG('Visual template mapping saved successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
-type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'hallticket';
+type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'hallticket' | 'logs';
 
 type Department = {
   id: string;
@@ -114,6 +114,14 @@ export default function AdminDashboard() {
   const [htError, setHtError] = useState<string | null>(null);
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
 
+  // System Logs State
+  const [adminLogs, setAdminLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsRoleFilter, setLogsRoleFilter] = useState('all');
+  const [logsUserFilter, setLogsUserFilter] = useState('all');
+  const [logsUsersList, setLogsUsersList] = useState<{id: string, name: string}[]>([]);
+
+
   useEffect(() => {
     fetchAnalytics();
   }, []);
@@ -124,7 +132,46 @@ export default function AdminDashboard() {
     if (activeTab === 'departments') { fetchDepartments(); fetchUsers(); }
     if (activeTab === 'allusers') fetchAllUsers();
     if (activeTab === 'hallticket') { fetchStudentStatuses(); fetchDepartments(); }
+    if (activeTab === 'logs') fetchAdminLogs();
   }, [activeTab]);
+
+  // ==================== SYSTEM LOGS ====================
+  const fetchAdminLogs = async () => {
+    setLogsLoading(true);
+    try {
+      const { data, error } = await supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(500);
+      if (error) throw error;
+      setAdminLogs(data || []);
+    } catch (err: any) { console.error('Failed to fetch logs:', err); }
+    finally { setLogsLoading(false); }
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'logs') return;
+    const usersMap = new Map<string, string>();
+    adminLogs.forEach(log => {
+      const role = log.user_role || 'unknown';
+      if (logsRoleFilter === 'all' || role === logsRoleFilter) {
+        if (log.user_id && log.user_name) {
+          usersMap.set(log.user_id, log.user_name);
+        }
+      }
+    });
+    setLogsUsersList(Array.from(usersMap.entries()).map(([id, name]) => ({ id, name })).sort((a,b) => a.name.localeCompare(b.name)));
+    // Auto-reset user filter if the previously selected user doesn't belong to the new role filter
+    if (logsRoleFilter !== 'all' && logsUserFilter !== 'all') {
+      if (!Array.from(usersMap.keys()).includes(logsUserFilter)) {
+        setLogsUserFilter('all');
+      }
+    }
+  }, [adminLogs, logsRoleFilter, activeTab]);
+
+  const filteredLogs = adminLogs.filter(log => {
+    if (log.user_role === 'student' || log.user_role === 'admin') return false; 
+    if (logsRoleFilter !== 'all' && log.user_role !== logsRoleFilter) return false;
+    if (logsUserFilter !== 'all' && log.user_id !== logsUserFilter) return false;
+    return true;
+  });
 
   // ==================== ANALYTICS ====================
   const fetchAnalytics = async () => {
@@ -575,6 +622,7 @@ export default function AdminDashboard() {
     { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'allusers', label: 'All Users', icon: <Eye className="w-4 h-4" /> },
     { id: 'hallticket', label: 'Hall Tickets', icon: <GraduationCap className="w-4 h-4" /> },
+    { id: 'logs', label: 'Activity Logs', icon: <Activity className="w-4 h-4" /> },
   ];
 
   return (
@@ -1201,6 +1249,93 @@ export default function AdminDashboard() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Logs Tab */}
+      {activeTab === 'logs' && (
+        <div className="bg-card rounded-3xl p-8 shadow-sm border border-border animate-fade-in space-y-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-foreground">System Activity Logs</h2>
+              <p className="text-muted-foreground mt-1">Monitor real-time staff operations and auditing.</p>
+            </div>
+          </div>
+          
+          <div className="flex flex-col md:flex-row gap-4 mb-6 relative z-10">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-foreground mb-1.5">Filter by Role</label>
+              <select 
+                value={logsRoleFilter} 
+                onChange={(e) => setLogsRoleFilter(e.target.value)}
+                className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none"
+              >
+                <option value="all">All Roles</option>
+                <option value="admin">Admins</option>
+                <option value="coe">COE</option>
+                <option value="hod">HODs</option>
+                <option value="faculty">Faculty</option>
+                <option value="accounts">Accounts</option>
+                <option value="librarian">Librarian</option>
+                <option value="staff">Staff</option>
+              </select>
+            </div>
+
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-foreground mb-1.5">Filter by User</label>
+              <select 
+                value={logsUserFilter} 
+                onChange={(e) => setLogsUserFilter(e.target.value)}
+                className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50"
+                disabled={logsRoleFilter === 'all'}
+              >
+                <option value="all">All Users</option>
+                {logsUsersList.map(u => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+              {logsRoleFilter === 'all' && (
+                <p className="text-xs text-muted-foreground mt-1">Select a specific role first to filter by user.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="border border-border rounded-2xl overflow-x-auto shadow-sm">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-secondary/40 text-foreground text-sm border-b border-border">
+                  <th className="p-5 font-semibold">Date & Time</th>
+                  <th className="p-5 font-semibold">User Role</th>
+                  <th className="p-5 font-semibold">User Name</th>
+                  <th className="p-5 font-semibold">Action Type</th>
+                  <th className="p-5 font-semibold w-1/2">Detailed Log</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border bg-card">
+                {logsLoading ? (
+                  <tr><td colSpan={5} className="p-8 text-center text-muted-foreground animate-pulse">Loading secure audit logs...</td></tr>
+                ) : filteredLogs.length === 0 ? (
+                  <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">No logs found matching your filters.</td></tr>
+                ) : (
+                  filteredLogs.map(log => (
+                    <tr key={log.id} className="hover:bg-secondary/20 transition-colors">
+                      <td className="p-5 text-sm whitespace-nowrap text-muted-foreground font-medium">
+                        {new Date(log.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                      </td>
+                      <td className="p-5">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${roleColors[log.user_role] || 'bg-secondary text-foreground'}`}>
+                          {log.user_role}
+                        </span>
+                      </td>
+                      <td className="p-5 font-bold text-foreground">{log.user_name}</td>
+                      <td className="p-5 text-sm font-medium text-primary">{log.action}</td>
+                      <td className="p-5 text-sm text-foreground">{log.details}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
