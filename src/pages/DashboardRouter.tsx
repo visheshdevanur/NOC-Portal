@@ -8,6 +8,7 @@ const StaffDashboard = lazy(() => import('../components/dashboard/StaffDashboard
 const AdminDashboard = lazy(() => import('../components/dashboard/AdminDashboard'));
 const AccountsDashboard = lazy(() => import('../components/dashboard/AccountsDashboard'));
 const CoeDashboard = lazy(() => import('../components/dashboard/CoeDashboard'));
+const LibraryDashboard = lazy(() => import('../pages/LibraryDashboard'));
 
 const DashboardFallback = () => (
   <div className="space-y-6 animate-pulse">
@@ -40,9 +41,11 @@ const DashboardRouter = () => {
       case 'faculty': return <FacultyDashboard />;
       case 'hod': return <HodDashboard />;
       case 'staff': return <StaffDashboard />;
+      case 'principal':
       case 'admin': return <AdminDashboard />;
       case 'accounts': return <AccountsDashboard />;
       case 'coe': return <CoeDashboard />;
+      case 'librarian': return <LibraryDashboard />;
       default: return <div>Access Denied. Unknown role: {profile.role}</div>;
     }
   };
