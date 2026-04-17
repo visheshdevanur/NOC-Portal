@@ -99,11 +99,15 @@ export default function AccountsDashboard() {
 
 
 
-  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, profileName: string = 'Student') => {
+  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, profileName: string = 'Student', previousAmount: number = 0) => {
     try {
       await updateStudentDueFee(dueId, fineAmount);
+      const diff = previousAmount - fineAmount;
+      
       if (fineAmount === 0) {
-        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName}`);
+        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName} (Paid: ₹${previousAmount})`);
+      } else if (diff > 0) {
+        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} for ${profileName} (Paid: ₹${diff})`);
       } else {
         await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} for ${profileName}`);
       }
@@ -526,7 +530,7 @@ export default function AccountsDashboard() {
                                 defaultValue={d.fine_amount || 0}
                                 onBlur={e => {
                                   const val = parseInt(e.target.value) || 0;
-                                  if (val !== (d.fine_amount || 0)) handleManualFeeUpdate(d.id, val, d.profiles?.full_name || 'Unknown');
+                                  if (val !== (d.fine_amount || 0)) handleManualFeeUpdate(d.id, val, d.profiles?.full_name || 'Unknown', d.fine_amount || 0);
                                 }}
                               />
                             </td>
@@ -542,7 +546,7 @@ export default function AccountsDashboard() {
                             <td className="p-5 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button
-                                  onClick={() => handleManualFeeUpdate(d.id, 0, d.profiles?.full_name || 'Unknown')}
+                                  onClick={() => handleManualFeeUpdate(d.id, 0, d.profiles?.full_name || 'Unknown', d.fine_amount || 0)}
                                   className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
                                 >
                                   Clear
