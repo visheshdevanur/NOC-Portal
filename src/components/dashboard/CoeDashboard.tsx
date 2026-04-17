@@ -50,7 +50,7 @@ type Subject = {
 };
 
 type Department = { id: string; name: string };
-type Semester = { id: string; name: string };
+type Semester = { id: string; name: string; department_id: string };
 
 export default function CoeDashboard() {
   const [activeTab, setActiveTab] = useState<'template' | 'timetable' | 'builder' | 'iaAttendance'>('template');
@@ -290,7 +290,7 @@ export default function CoeDashboard() {
     try {
       const [deptRes, semRes, subRes] = await Promise.all([
         supabase.from('departments').select('id, name').order('name'),
-        supabase.from('semesters').select('id, name').order('name'),
+        supabase.from('semesters').select('id, name, department_id').order('name'),
         supabase.from('subjects').select('*').order('subject_code')
       ]);
       if (deptRes.error) throw deptRes.error;
@@ -1177,7 +1177,7 @@ export default function CoeDashboard() {
                 <label className="block text-sm font-medium text-foreground mb-1.5">Select Semester</label>
                 <select className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" value={iaSemId} onChange={e => setIaSemId(e.target.value)} disabled={!iaDeptId}>
                   <option value="">-- Choose Semester --</option>
-                  {semesters.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {semesters.filter(s => s.department_id === iaDeptId).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
             </div>
