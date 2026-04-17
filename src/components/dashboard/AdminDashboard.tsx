@@ -117,6 +117,7 @@ export default function AdminDashboard() {
   // System Logs State
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [logsDeptFilter, setLogsDeptFilter] = useState('all');
   const [logsRoleFilter, setLogsRoleFilter] = useState('all');
   const [logsUserFilter, setLogsUserFilter] = useState('all');
   const [logsUsersList, setLogsUsersList] = useState<{id: string, name: string}[]>([]);
@@ -151,23 +152,43 @@ export default function AdminDashboard() {
     const usersMap = new Map<string, string>();
     adminLogs.forEach(log => {
       const role = log.user_role || 'unknown';
-      if (logsRoleFilter === 'all' || role === logsRoleFilter) {
-        if (log.user_id && log.user_name) {
-          usersMap.set(log.user_id, log.user_name);
-        }
+      const userDept = log.department_id || null;
+      
+      let deptMatch = false;
+      if (logsDeptFilter === 'all') deptMatch = true;
+      else if (logsDeptFilter === 'accounts' && role === 'accounts') deptMatch = true;
+      else if (logsDeptFilter === 'coe' && role === 'coe') deptMatch = true;
+      else if (logsDeptFilter === 'library' && role === 'librarian') deptMatch = true;
+      else if (logsDeptFilter === userDept) deptMatch = true;
+
+      if (deptMatch) {
+         if (logsRoleFilter === 'all' || role === logsRoleFilter) {
+           if (log.user_id && log.user_name) {
+             usersMap.set(log.user_id, log.user_name);
+           }
+         }
       }
     });
     setLogsUsersList(Array.from(usersMap.entries()).map(([id, name]) => ({ id, name })).sort((a,b) => a.name.localeCompare(b.name)));
     // Auto-reset user filter if the previously selected user doesn't belong to the new role filter
-    if (logsRoleFilter !== 'all' && logsUserFilter !== 'all') {
+    if (logsUserFilter !== 'all') {
       if (!Array.from(usersMap.keys()).includes(logsUserFilter)) {
         setLogsUserFilter('all');
       }
     }
-  }, [adminLogs, logsRoleFilter, activeTab]);
+  }, [adminLogs, logsDeptFilter, logsRoleFilter, activeTab]);
 
   const filteredLogs = adminLogs.filter(log => {
     if (log.user_role === 'student' || log.user_role === 'admin') return false; 
+    
+    let deptMatch = false;
+    if (logsDeptFilter === 'all') deptMatch = true;
+    else if (logsDeptFilter === 'accounts' && log.user_role === 'accounts') deptMatch = true;
+    else if (logsDeptFilter === 'coe' && log.user_role === 'coe') deptMatch = true;
+    else if (logsDeptFilter === 'library' && log.user_role === 'librarian') deptMatch = true;
+    else if (logsDeptFilter === log.department_id) deptMatch = true;
+
+    if (!deptMatch) return false;
     if (logsRoleFilter !== 'all' && log.user_role !== logsRoleFilter) return false;
     if (logsUserFilter !== 'all' && log.user_id !== logsUserFilter) return false;
     return true;
@@ -1264,39 +1285,59 @@ export default function AdminDashboard() {
           
           <div className="flex flex-col md:flex-row gap-4 mb-6 relative z-10">
             <div className="flex-1">
-              <label className="block text-sm font-medium text-foreground mb-1.5">Filter by Role</label>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Department Filter</label>
               <select 
-                value={logsRoleFilter} 
-                onChange={(e) => setLogsRoleFilter(e.target.value)}
+                value={logsDeptFilter} 
+                onChange={(e) => {
+                   setLogsDeptFilter(e.target.value);
+                   setLogsRoleFilter('all');
+                   setLogsUserFilter('all');
+                }}
                 className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none"
               >
-                <option value="all">All Roles</option>
-                <option value="admin">Admins</option>
-                <option value="coe">COE</option>
-                <option value="hod">HODs</option>
-                <option value="faculty">Faculty</option>
+                <option value="all">All Departments / Global</option>
                 <option value="accounts">Accounts</option>
-                <option value="librarian">Librarian</option>
-                <option value="staff">Staff</option>
+                <option value="coe">COE</option>
+                <option value="library">Library</option>
+                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </div>
 
             <div className="flex-1">
-              <label className="block text-sm font-medium text-foreground mb-1.5">Filter by User</label>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Role / Faculty Filter</label>
+              <select 
+                value={logsRoleFilter} 
+                onChange={(e) => {
+                  setLogsRoleFilter(e.target.value);
+                  setLogsUserFilter('all');
+                }}
+                className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50"
+                disabled={['accounts', 'coe', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all'}
+              >
+                <option value="all">All Roles</option>
+                <option value="admin">Admins</option>
+                <option value="hod">HODs</option>
+                <option value="faculty">Faculty / Teachers</option>
+                <option value="staff">Staff</option>
+              </select>
+              {['accounts', 'coe', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all' && (
+                <p className="text-xs text-muted-foreground mt-1">Role is implicitly set by department.</p>
+              )}
+            </div>
+
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-foreground mb-1.5">Search User</label>
               <select 
                 value={logsUserFilter} 
                 onChange={(e) => setLogsUserFilter(e.target.value)}
                 className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50"
-                disabled={logsRoleFilter === 'all'}
+                disabled={logsUsersList.length === 0}
               >
-                <option value="all">All Users</option>
+                <option value="all">All Users in Subset</option>
                 {logsUsersList.map(u => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
               </select>
-              {logsRoleFilter === 'all' && (
-                <p className="text-xs text-muted-foreground mt-1">Select a specific role first to filter by user.</p>
-              )}
             </div>
           </div>
 
