@@ -235,6 +235,9 @@ export default function CoeDashboard() {
       
       if (resultError) throw resultError;
       
+      const { logActivity } = await import('../../lib/api');
+      await logActivity('Updated Hall Ticket', 'Modified hall ticket template attributes and instructions');
+      
       setSuccessMSG('Hall Ticket Template saved successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {
@@ -329,6 +332,9 @@ export default function CoeDashboard() {
         }))
       );
       if (error) throw error;
+      const { logActivity } = await import('../../lib/api');
+      await logActivity('Updated Timetable', 'Modified execution dates and times in the examination timetable');
+      
       setSuccessMSG('Timetable updated successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {
@@ -508,6 +514,10 @@ export default function CoeDashboard() {
 
       // Update local template state
       setTemplate(prev => prev ? { ...prev, bg_image_url: bgImage, mapping_coordinates: { ...builderCoords, _mode: 'builder' } as any, template_mode: 'builder' } : null);
+      
+      const { logActivity } = await import('../../lib/api');
+      await logActivity('Updated Hall Ticket', 'Adjusted layout and coordinates of hall ticket generator');
+
       setSuccessMSG('Visual template mapping saved successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {
