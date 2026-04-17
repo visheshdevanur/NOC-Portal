@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject } from '../../lib/api';
+import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
-import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet } from 'lucide-react';
+import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Edit } from 'lucide-react';
 
 type SubjectEnrollment = {
   id: string;
@@ -71,9 +71,15 @@ export default function FacultyDashboard() {
   const [newIAAttendance, setNewIAAttendance] = useState<AttendanceMap>({});
   // For viewing existing IAs
   const [expandedIA, setExpandedIA] = useState<number | null>(null);
+  const [editingIA, setEditingIA] = useState<number | null>(null);
+  const [editAttendanceMap, setEditAttendanceMap] = useState<AttendanceMap>({});
+  
   // CSV for IA
   const iaCsvRef = useRef<HTMLInputElement>(null);
   const [iaCsvMsg, setIaCsvMsg] = useState<string | null>(null);
+
+  // IA limits validation for clearance
+  const [teacherIAs, setTeacherIAs] = useState<any[]>([]);
 
   useEffect(() => {
     if (user) {
@@ -96,9 +102,13 @@ export default function FacultyDashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const data = await getFacultyPendingStudents(user!.id);
+      const [data, ias] = await Promise.all([
+        getFacultyPendingStudents(user!.id),
+        getTeacherIAAttendance(user!.id)
+      ]);
       const typedData = data as unknown as SubjectEnrollment[];
       setStudents(typedData);
+      setTeacherIAs(ias || []);
       
       const semsMap = new Map();
       typedData.forEach(s => {
@@ -188,6 +198,33 @@ export default function FacultyDashboard() {
     } catch (err: any) {
       console.error('Error saving IA:', err);
       setSaveSuccess(`Error: ${err?.message || 'Failed to save'}`);
+    } finally {
+      setSavingIA(false);
+    }
+  };
+
+  const handleEditIASave = async (editIaNum: number) => {
+    if (!user || !selectedSubjectId) return;
+    setSavingIA(true);
+    setSaveSuccess(null);
+    try {
+      const records = Object.entries(editAttendanceMap).map(([studentId, isPresent]) => ({
+        student_id: studentId,
+        subject_id: selectedSubjectId,
+        teacher_id: user.id,
+        ia_number: editIaNum,
+        is_present: isPresent
+      }));
+      
+      await saveIAAttendance(records);
+      setSaveSuccess(`IA-${editIaNum} updated successfully!`);
+      setEditingIA(null);
+      
+      // Reload data
+      await loadIAData(selectedSubjectId);
+    } catch (err: any) {
+      console.error('Error saving IA edits:', err);
+      setSaveSuccess(`Error: ${err?.message || 'Failed to update IA'}`);
     } finally {
       setSavingIA(false);
     }
@@ -321,8 +358,16 @@ export default function FacultyDashboard() {
           }
 
           if (enrollment) {
-            const status = pct >= 85 ? 'completed' : 'rejected';
-            const remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
+            let status = pct >= 85 ? 'completed' : 'rejected';
+            let remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
+
+            // Override with IA rule
+            const iaPresentCount = teacherIAs.filter(ia => ia.student_id === enrollment?.student_id && ia.subject_id === enrollment?.subject_id && ia.is_present).length;
+            if (iaPresentCount < 2) {
+              status = 'rejected';
+              remarks = `Low IA Attendance (${iaPresentCount}/2 required)`;
+            }
+
             try {
               await markFacultySubjectStatus(enrollment.id, status, pct, remarks);
               updated++;
@@ -364,8 +409,14 @@ export default function FacultyDashboard() {
       if (!enrollment) return;
       
       const pct = enrollment.attendance_pct || 0;
-      const status = pct >= 85 ? 'completed' : 'rejected';
-      const remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
+      let status = pct >= 85 ? 'completed' : 'rejected';
+      let remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
+
+      const iaPresentCount = teacherIAs.filter(ia => ia.student_id === enrollment.student_id && ia.subject_id === enrollment.subject_id && ia.is_present).length;
+      if (iaPresentCount < 2) {
+        status = 'rejected';
+        remarks = `Low IA Attendance (${iaPresentCount}/2 required)`;
+      }
 
       await markFacultySubjectStatus(id, status, pct, remarks);
       setStudents(prev => prev.map(s => s.id === id ? { ...s, status, remarks } : s));
@@ -835,38 +886,124 @@ export default function FacultyDashboard() {
                             
                             {isExpanded && (
                               <div className="border-t border-border">
-                                <table className="w-full text-left border-collapse">
-                                  <thead>
-                                    <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider">
-                                      <th className="px-6 py-3 font-semibold">#</th>
-                                      <th className="px-6 py-3 font-semibold">Student Name</th>
-                                      <th className="px-6 py-3 font-semibold">Roll No</th>
-                                      <th className="px-6 py-3 font-semibold">Section</th>
-                                      <th className="px-6 py-3 font-semibold text-center">Status</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-border">
-                                    {records.map((record, idx) => (
-                                      <tr key={record.id} className="hover:bg-secondary/10 transition-colors">
-                                        <td className="px-6 py-3 text-sm text-muted-foreground">{idx + 1}</td>
-                                        <td className="px-6 py-3 font-medium text-foreground">{record.profiles?.full_name || 'Unknown'}</td>
-                                        <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.roll_number || 'N/A'}</td>
-                                        <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.section || 'N/A'}</td>
-                                        <td className="px-6 py-3 text-center">
-                                          {record.is_present ? (
-                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600">
-                                              <CheckCircle2 className="w-3.5 h-3.5" /> Present
-                                            </span>
-                                          ) : (
-                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-destructive/15 text-destructive">
-                                              <XCircle className="w-3.5 h-3.5" /> Absent
-                                            </span>
-                                          )}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                                {editingIA === iaNum ? (
+                                  <div className="p-4 bg-primary/5">
+                                    <div className="flex justify-between items-center mb-4">
+                                      <h5 className="font-semibold text-primary">Editing IA-{iaNum} Attendance</h5>
+                                      <div className="flex gap-2">
+                                        <button 
+                                          onClick={() => setEditingIA(null)}
+                                          className="px-3 py-1.5 text-xs font-medium bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button 
+                                          onClick={() => handleEditIASave(iaNum)}
+                                          disabled={savingIA}
+                                          className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                                        >
+                                          {savingIA ? 'Saving...' : 'Save Changes'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <table className="w-full text-left border-collapse bg-card rounded-xl overflow-hidden shadow-sm">
+                                      <thead>
+                                        <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider">
+                                          <th className="px-4 py-3 font-semibold">Student Name</th>
+                                          <th className="px-4 py-3 font-semibold text-center">Attendance</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-border">
+                                        {records.map((record) => (
+                                          <tr key={record.student_id} className="hover:bg-secondary/10 transition-colors">
+                                            <td className="px-4 py-3 font-medium text-sm text-foreground">{record.profiles?.full_name || 'Unknown'}</td>
+                                            <td className="px-4 py-3">
+                                              <div className="flex items-center justify-center gap-2">
+                                                <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer transition-all border ${
+                                                  editAttendanceMap[record.student_id] === true
+                                                    ? 'bg-emerald-500/15 border-emerald-500 text-emerald-600 shadow-sm'
+                                                    : 'border-transparent hover:bg-emerald-500/5 text-muted-foreground'
+                                                }`}>
+                                                  <input
+                                                    type="radio"
+                                                    name={`edit-ia-${iaNum}-${record.student_id}`}
+                                                    checked={editAttendanceMap[record.student_id] === true}
+                                                    onChange={() => setEditAttendanceMap(prev => ({ ...prev, [record.student_id]: true }))}
+                                                    className="hidden"
+                                                  />
+                                                  <span className="text-xs font-semibold">Present</span>
+                                                </label>
+                                                <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer transition-all border ${
+                                                  editAttendanceMap[record.student_id] === false
+                                                    ? 'bg-destructive/15 border-destructive text-destructive shadow-sm'
+                                                    : 'border-transparent hover:bg-destructive/5 text-muted-foreground'
+                                                }`}>
+                                                  <input
+                                                    type="radio"
+                                                    name={`edit-ia-${iaNum}-${record.student_id}`}
+                                                    checked={editAttendanceMap[record.student_id] === false}
+                                                    onChange={() => setEditAttendanceMap(prev => ({ ...prev, [record.student_id]: false }))}
+                                                    className="hidden"
+                                                  />
+                                                  <span className="text-xs font-semibold">Absent</span>
+                                                </label>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div className="flex justify-end p-2 bg-secondary/10 border-b border-border">
+                                      <button 
+                                        onClick={() => {
+                                          const map: AttendanceMap = {};
+                                          records.forEach(r => { map[r.student_id] = r.is_present; });
+                                          setEditAttendanceMap(map);
+                                          setEditingIA(iaNum);
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"
+                                      >
+                                        <Edit className="w-3.5 h-3.5" />
+                                        Edit Attendance Mode
+                                      </button>
+                                    </div>
+                                    <table className="w-full text-left border-collapse">
+                                      <thead>
+                                        <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider">
+                                          <th className="px-6 py-3 font-semibold">#</th>
+                                          <th className="px-6 py-3 font-semibold">Student Name</th>
+                                          <th className="px-6 py-3 font-semibold">Roll No</th>
+                                          <th className="px-6 py-3 font-semibold">Section</th>
+                                          <th className="px-6 py-3 font-semibold text-center">Status</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-border">
+                                        {records.map((record, idx) => (
+                                          <tr key={record.id} className="hover:bg-secondary/10 transition-colors">
+                                            <td className="px-6 py-3 text-sm text-muted-foreground">{idx + 1}</td>
+                                            <td className="px-6 py-3 font-medium text-foreground">{record.profiles?.full_name || 'Unknown'}</td>
+                                            <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.roll_number || 'N/A'}</td>
+                                            <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.section || 'N/A'}</td>
+                                            <td className="px-6 py-3 text-center">
+                                              {record.is_present ? (
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600">
+                                                  <CheckCircle2 className="w-3.5 h-3.5" /> Present
+                                                </span>
+                                              ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-destructive/15 text-destructive">
+                                                  <XCircle className="w-3.5 h-3.5" /> Absent
+                                                </span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>

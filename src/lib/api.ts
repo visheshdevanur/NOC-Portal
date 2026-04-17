@@ -679,6 +679,16 @@ export const getIAAttendanceForSubject = async (subjectId: string, teacherId: st
   return data;
 };
 
+/** Get all IA attendance records across all subjects for a specific teacher */
+export const getTeacherIAAttendance = async (teacherId: string) => {
+  const { data, error } = await supabase
+    .from('ia_attendance')
+    .select('student_id, subject_id, is_present')
+    .eq('teacher_id', teacherId);
+  if (error) throw error;
+  return data;
+};
+
 /** Get all IA attendance records for a student (across all subjects) */
 export const getStudentIAAttendance = async (studentId: string) => {
   const { data, error } = await supabase
