@@ -732,6 +732,17 @@ export const getLibraryDues = async () => {
   return data;
 };
 
+/** Get library dues for a specific student */
+export const getStudentLibraryDues = async (studentId: string) => {
+  const { data, error } = await supabase
+    .from('library_dues')
+    .select('*')
+    .eq('student_id', studentId)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error; // ignore no rows
+  return data;
+};
+
 /** Update a single student's library due status */
 export const updateLibraryDue = async (studentId: string, hasDues: boolean, fineAmount: number, remarks: string) => {
   const { data, error } = await supabase

@@ -5,7 +5,8 @@ import {
   getStudentSubjects, 
   getStudentDues, 
   submitClearanceRequest,
-  getStudentIAAttendance 
+  getStudentIAAttendance,
+  getStudentLibraryDues
 } from '../../lib/api';
 import { CheckCircle2, Clock, XCircle, AlertCircle, FileDown, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -62,6 +63,7 @@ export default function StudentDashboard() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [hallTemplate, setHallTemplate] = useState<any>(null);
   const [iaRecords, setIaRecords] = useState<IAAttendanceRecord[]>([]);
+  const [libraryDue, setLibraryDue] = useState<any>(null);
   const [departmentName, setDepartmentName] = useState<string>('N/A');
 
   useEffect(() => {
@@ -88,14 +90,15 @@ export default function StudentDashboard() {
       if (!user) return;
 
       // Execute all independent database queries simultaneously in a single network round-trip.
-      const [req, deptRes, subsDataRes, subs, depts, templateRes, iaData] = await Promise.all([
+      const [req, deptRes, subsDataRes, subs, depts, templateRes, iaData, libData] = await Promise.all([
         getStudentClearanceRequest(user.id),
         profile?.department_id ? supabase.from('departments').select('name').eq('id', profile.department_id).single() : Promise.resolve({ data: null }),
         profile?.semester_id ? supabase.from('subjects').select('*').eq('semester_id', profile.semester_id) : Promise.resolve({ data: null }),
         getStudentSubjects(user.id),
         getStudentDues(user.id),
         supabase.from('hall_ticket_templates').select('*').limit(1).single(),
-        getStudentIAAttendance(user.id)
+        getStudentIAAttendance(user.id),
+        getStudentLibraryDues(user.id)
       ]);
 
       setRequest(req);
@@ -104,6 +107,7 @@ export default function StudentDashboard() {
       if (!req && subsDataRes.data) setAvailableSubjects(subsDataRes.data);
       if (templateRes.data) setHallTemplate(templateRes.data);
       setIaRecords((iaData || []) as unknown as IAAttendanceRecord[]);
+      setLibraryDue(libData || null);
       
       if (req) {
         setEnrollments(subs as unknown as SubjectEnrollment[]);
@@ -410,6 +414,7 @@ export default function StudentDashboard() {
 
   const isHodApproved = request.current_stage === 'cleared';
   const allFacultyCleared = enrollments.length > 0 && enrollments.every(e => e.status === 'completed');
+  const allLibraryCleared = libraryDue ? !libraryDue.has_dues : true;
   const allDeptCleared = deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed');
   
 
@@ -487,17 +492,18 @@ export default function StudentDashboard() {
           Clearance Pipeline Match
         </h2>
         
-        <div className="relative flex flex-col md:flex-row justify-between w-full mx-auto max-w-4xl px-4 items-stretch md:items-center gap-8 md:gap-0">
+        <div className="relative flex flex-col md:flex-row justify-between w-full mx-auto max-w-5xl px-4 items-stretch md:items-center gap-8 md:gap-0">
           <div className="hidden md:block absolute top-[28px] left-[10%] right-[10%] h-[3px] bg-secondary -z-10 rounded-full">
             <div 
               className="h-full bg-primary rounded-full transition-all duration-1000 ease-in-out"
-              style={{ width: allFacultyCleared ? (allDeptCleared ? (isHodApproved ? '100%' : '50%') : '0%') : '0%' }}
+              style={{ width: allFacultyCleared ? (allLibraryCleared ? (allDeptCleared ? (isHodApproved ? '100%' : '66%') : '33%') : '0%') : '0%' }}
             ></div>
           </div>
 
           <Step title="Faculty" description="IA + Attendance" isComplete={allFacultyCleared} isActive={!allFacultyCleared} icon={<BookOpen className="w-6 h-6" />} />
-          <Step title="Accounts" description="College Fees" isComplete={allDeptCleared} isActive={allFacultyCleared && !allDeptCleared} icon={<Building2 className="w-6 h-6" />} />
-          <Step title="HOD Approval" description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && allDeptCleared && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
+          <Step title="Library" description="Books & Fines" isComplete={allFacultyCleared && allLibraryCleared} isActive={allFacultyCleared && !allLibraryCleared} icon={<BookOpen className="w-6 h-6" />} />
+          <Step title="Accounts" description="College Fees" isComplete={allFacultyCleared && allLibraryCleared && allDeptCleared} isActive={allFacultyCleared && allLibraryCleared && !allDeptCleared} icon={<Building2 className="w-6 h-6" />} />
+          <Step title="HOD Approval" description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && allLibraryCleared && allDeptCleared && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
         </div>
       </div>
 
