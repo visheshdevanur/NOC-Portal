@@ -275,9 +275,7 @@ export default function AccountsDashboard() {
         </div>
       </div>
 
-      {/* Tabs removed as only College Dues remains */}
-      {activeTab === 'dues' && (
-      <>
+      {/* Main Content Area */}
           {/* Global Search */}
           <div className="relative w-full">
             <input
@@ -580,8 +578,6 @@ export default function AccountsDashboard() {
               </div>
             </div>
           )}
-        </>
-      )}
     </div>
   );
 }
