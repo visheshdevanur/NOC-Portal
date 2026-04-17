@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import { getLibraryDues, updateLibraryDue, bulkProcessLibraryDues } from '../lib/api';
 import { BookOpen, UserCheck, AlertCircle, Search, Upload, Download, RefreshCw, Save, X } from 'lucide-react';
 import Papa from 'papaparse';
