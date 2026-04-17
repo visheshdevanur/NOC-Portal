@@ -1,7 +1,7 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/useAuth';
 import { supabase } from '../../lib/supabase';
-import { LogOut, GraduationCap, UserCircle, KeyRound, X, Settings, Menu, Eye, EyeOff, Activity, BookOpen } from 'lucide-react';
+import { LogOut, GraduationCap, UserCircle, KeyRound, X, Settings, Menu, Eye, EyeOff, Activity } from 'lucide-react';
 import { ThemeToggle } from '../ThemeToggle';
 import { useState, useRef, useEffect } from 'react';
 
