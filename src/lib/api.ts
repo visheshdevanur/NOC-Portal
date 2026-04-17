@@ -92,10 +92,11 @@ export const markFacultySubjectStatus = async (
     .from('subject_enrollment')
     .update({ status: status as any, attendance_pct: attendancePct, remarks } as any)
     .eq('id', enrollmentId)
-    .select()
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name)')
     .single();
   if (error) throw error;
-  logActivity(status === 'completed' ? 'Cleared Subject' : 'Rejected Subject', `Marked attendance ${attendancePct}%`);
+  const studentName = data?.profiles?.full_name || 'student';
+  logActivity(status === 'completed' ? 'Cleared Subject' : 'Rejected Subject', `Marked attendance ${attendancePct}% for ${studentName}`);
   return data;
 };
 
@@ -247,7 +248,9 @@ export const assignTeacherToSection = async (subjectId: string, section: string,
     .select();
     
   if (error) throw error;
-  logActivity('Assigned Teacher', `Assigned teacher ${teacherId} to section ${section} for subject ${subjectId}`);
+  const { data: tProfile } = await supabase.from('profiles').select('full_name').eq('id', teacherId).single();
+  const { data: sInfo } = await supabase.from('subjects').select('subject_name').eq('id', subjectId).single();
+  logActivity('Assigned Teacher', `Assigned ${tProfile?.full_name || 'teacher'} to section ${section} for ${sInfo?.subject_name || 'subject'}`);
   return data;
 };
 
@@ -334,10 +337,11 @@ export const approveHodRequest = async (requestId: string) => {
     .from('clearance_requests')
     .update({ current_stage: 'cleared', status: 'completed' } as any)
     .eq('id', requestId)
-    .select()
+    .select('*, profiles!clearance_requests_student_id_fkey(full_name)')
     .single();
   if (error) throw error;
-  logActivity('Approved HOD Clearance', `Final clearance approved for request ID: ${requestId}`);
+  const studentName = data?.profiles?.full_name || 'student';
+  logActivity('Approved HOD Clearance', `Final clearance approved for: ${studentName}`);
   return data;
 };
 
@@ -530,10 +534,11 @@ export const overrideAttendanceFine = async (enrollmentId: string, feeAmount: nu
     .from('subject_enrollment')
     .update({ status: 'completed', remarks: 'Approved by Staff after Fine', attendance_fee: feeAmount } as any)
     .eq('id', enrollmentId)
-    .select()
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name)')
     .single();
   if (error) throw error;
-  logActivity('Staff Approved Fine', `Override and cleared attendance with fee: ₹${feeAmount}`);
+  const studentName = data?.profiles?.full_name || 'student';
+  logActivity('Staff Approved Fine', `Override and cleared attendance for ${studentName} with fee: ₹${feeAmount}`);
   return data;
 };
 
@@ -756,10 +761,11 @@ export const updateLibraryDue = async (studentId: string, hasDues: boolean, fine
       { student_id: studentId, has_dues: hasDues, fine_amount: fineAmount, remarks },
       { onConflict: 'student_id' }
     )
-    .select()
+    .select('*, profiles!library_dues_student_id_fkey(full_name)')
     .single();
   if (error) throw error;
-  logActivity(hasDues ? 'Assigned Library Fine' : 'Cleared Library Fine', `Amount: ₹${fineAmount} for ${studentId}`);
+  const studentName = data?.profiles?.full_name || 'student';
+  logActivity(hasDues ? 'Assigned Library Fine' : 'Cleared Library Fine', `Amount: ₹${fineAmount} for ${studentName}`);
   return data;
 };
 
