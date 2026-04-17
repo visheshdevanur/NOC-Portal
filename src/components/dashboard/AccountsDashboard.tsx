@@ -99,13 +99,19 @@ export default function AccountsDashboard() {
 
 
 
-  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, profileName: string = 'Student', previousAmount: number = 0) => {
+  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, profileName: string = 'Student') => {
     try {
-      await updateStudentDueFee(dueId, fineAmount);
+      // First, strictly fetch the existing due amount from the database
+      const { data: currentDue } = await supabase.from('student_dues').select('fine_amount').eq('id', dueId).single();
+      const previousAmount = currentDue?.fine_amount || 0;
       const diff = previousAmount - fineAmount;
       
-      if (fineAmount === 0) {
+      await updateStudentDueFee(dueId, fineAmount);
+      
+      if (fineAmount === 0 && previousAmount > 0) {
         await logActivity('Cleared Due Amount', `Cleared dues for ${profileName} (Paid: ₹${previousAmount})`);
+      } else if (fineAmount === 0 && previousAmount === 0) {
+        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName}`);
       } else if (diff > 0) {
         await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} for ${profileName} (Paid: ₹${diff})`);
       } else {
@@ -530,7 +536,7 @@ export default function AccountsDashboard() {
                                 defaultValue={d.fine_amount || 0}
                                 onBlur={e => {
                                   const val = parseInt(e.target.value) || 0;
-                                  if (val !== (d.fine_amount || 0)) handleManualFeeUpdate(d.id, val, d.profiles?.full_name || 'Unknown', d.fine_amount || 0);
+                                  if (val !== (d.fine_amount || 0)) handleManualFeeUpdate(d.id, val, d.profiles?.full_name || 'Unknown');
                                 }}
                               />
                             </td>
@@ -546,7 +552,7 @@ export default function AccountsDashboard() {
                             <td className="p-5 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button
-                                  onClick={() => handleManualFeeUpdate(d.id, 0, d.profiles?.full_name || 'Unknown', d.fine_amount || 0)}
+                                  onClick={() => handleManualFeeUpdate(d.id, 0, d.profiles?.full_name || 'Unknown')}
                                   className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
                                 >
                                   Clear
