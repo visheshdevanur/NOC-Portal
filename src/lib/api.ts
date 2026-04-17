@@ -585,7 +585,6 @@ export const updateStudentDueFee = async (dueId: string, fineAmount: number) => 
     .select()
     .single();
   if (error) throw error;
-  logActivity('Updated IA Policy', `Set required IA count to ${minIaCount}`);
   return data;
 };
 
