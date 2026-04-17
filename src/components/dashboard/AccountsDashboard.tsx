@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, getAccountsApprovedDues, updateStudentDueFee, logActivity } from '../../lib/api';
-import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft, FileCheck } from 'lucide-react';
+import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, updateStudentDueFee, logActivity } from '../../lib/api';
+import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type StudentDues = {
@@ -39,27 +39,17 @@ export default function AccountsDashboard() {
   const [selectedSemesterName, setSelectedSemesterName] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
 
-  // Tab state
-  type AccountsTab = 'dues' | 'staffApprovals';
-  const [activeTab, setActiveTab] = useState<AccountsTab>('dues');
 
-  // Staff Approvals state
-  const [approvedDues, setApprovedDues] = useState<StudentDues[]>([]);
-  const [loadingApproved, setLoadingApproved] = useState(false);
-  const [searchApproved, setSearchApproved] = useState('');
-  const [selectedApprovalDept, setSelectedApprovalDept] = useState<string | null>(null);
 
 
 
   useEffect(() => {
     fetchDues();
     fetchDepartments();
-    fetchApprovedDues();
 
     const channel = supabase.channel('accounts-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'student_dues' }, () => {
         fetchDues();
-        fetchApprovedDues();
       })
       .subscribe();
 
@@ -106,17 +96,7 @@ export default function AccountsDashboard() {
     }
   };
 
-  const fetchApprovedDues = async () => {
-    setLoadingApproved(true);
-    try {
-      const data = await getAccountsApprovedDues();
-      setApprovedDues(data as unknown as StudentDues[]);
-    } catch (err: any) {
-      // silently fail
-    } finally {
-      setLoadingApproved(false);
-    }
-  };
+
 
 
   const handleManualFeeUpdate = async (dueId: string, fineAmount: number, profileName: string = 'Student') => {
@@ -578,6 +558,8 @@ export default function AccountsDashboard() {
               </div>
             </div>
           )}
+        </>
+      )}
     </div>
   );
 }
