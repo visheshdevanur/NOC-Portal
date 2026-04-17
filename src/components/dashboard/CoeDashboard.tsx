@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { GraduationCap, Save, FileText, CheckCircle2, Calendar, Upload, Plus, Trash2, X, Image as ImageIcon, Download, Palette, Move, RotateCcw, Layers } from 'lucide-react';
+import { GraduationCap, Save, FileText, CheckCircle2, Calendar, Upload, Plus, Trash2, X, Image as ImageIcon, Download, Palette, Move, RotateCcw, Layers, Search } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 import Papa from 'papaparse';
 import { Rnd } from 'react-rnd';
@@ -56,6 +56,7 @@ export default function CoeDashboard() {
   const [activeTab, setActiveTab] = useState<'template' | 'timetable' | 'builder' | 'iaAttendance'>('template');
   
   // IA States
+  const [iaSearchTerm, setIaSearchTerm] = useState('');
   const [iaDeptId, setIaDeptId] = useState<string>('');
   const [iaSemId, setIaSemId] = useState<string>('');
   const [iaStudents, setIaStudents] = useState<any[]>([]);
@@ -1187,10 +1188,27 @@ export default function CoeDashboard() {
             ) : iaStudents.length > 0 ? (
                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                  {/* Student List Sidebar */}
-                 <div className="bg-secondary/20 rounded-2xl border border-border h-[600px] overflow-y-auto">
-                   <h3 className="p-4 font-bold border-b border-border text-foreground bg-secondary/50 sticky top-0">Students ({iaStudents.length})</h3>
-                   <div className="divide-y divide-border">
-                     {iaStudents.map(student => (
+                 <div className="bg-secondary/20 rounded-2xl border border-border h-[600px] flex flex-col overflow-hidden">
+                   <div className="p-4 font-bold border-b border-border text-foreground bg-secondary/50 sticky top-0 z-10 flex flex-col gap-3">
+                     <h3>Students ({iaStudents.length})</h3>
+                     <div className="relative">
+                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                       <input 
+                         type="text"
+                         placeholder="Search name or roll no..."
+                         value={iaSearchTerm}
+                         onChange={(e) => setIaSearchTerm(e.target.value)}
+                         className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       />
+                     </div>
+                   </div>
+                   <div className="divide-y divide-border overflow-y-auto flex-1">
+                     {iaStudents
+                       .filter(s => 
+                         (s.full_name?.toLowerCase().includes(iaSearchTerm.toLowerCase())) || 
+                         (s.roll_number?.toLowerCase().includes(iaSearchTerm.toLowerCase()))
+                       )
+                       .map(student => (
                         <button key={student.id} onClick={() => handleStudentClick(student)} className={`w-full text-left p-4 hover:bg-secondary transition-colors ${selectedStudentForIa?.id === student.id ? 'bg-indigo-500/10 border-l-4 border-indigo-500' : 'border-l-4 border-transparent'}`}>
                           <div className="font-medium text-foreground">{student.full_name}</div>
                           <div className="text-xs text-muted-foreground font-mono mt-1">{student.roll_number || student.email}</div>
