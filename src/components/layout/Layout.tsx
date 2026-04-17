@@ -104,15 +104,7 @@ const Layout = () => {
                   Logs
                 </button>
               )}
-              {profile?.role && ['librarian', 'admin', 'principal'].includes(profile.role) && (
-                <button
-                  onClick={() => navigate('/library')}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary transition-all shadow-sm font-medium text-sm"
-                >
-                  <BookOpen className="w-4 h-4" />
-                  Library
-                </button>
-              )}
+
               <ThemeToggle />
               
               <div className="flex items-center bg-secondary/50 px-3 lg:px-4 py-2 rounded-full border border-border shadow-sm">
@@ -199,18 +191,7 @@ const Layout = () => {
                       Activity Logs
                     </button>
                   )}
-                  {profile?.role && ['librarian', 'admin', 'principal'].includes(profile.role) && (
-                    <button
-                      onClick={() => {
-                        setShowMobileMenu(false);
-                        navigate('/library');
-                      }}
-                      className="w-full text-left px-4 py-3 text-sm text-foreground hover:bg-secondary flex items-center gap-3 transition-colors"
-                    >
-                      <BookOpen className="w-4 h-4 text-primary" />
-                      Library
-                    </button>
-                  )}
+
                   <button
                     onClick={() => {
                       setShowMobileMenu(false);
