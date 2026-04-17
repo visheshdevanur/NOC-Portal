@@ -162,7 +162,12 @@ export default function AdminDashboard() {
       else if (logsDeptFilter === userDept) deptMatch = true;
 
       if (deptMatch) {
-         if (logsRoleFilter === 'all' || role === logsRoleFilter) {
+         let roleMatch = false;
+         if (logsRoleFilter === 'all') roleMatch = true;
+         else if (logsRoleFilter === 'faculty' && (role === 'faculty' || role === 'teacher')) roleMatch = true;
+         else if (role === logsRoleFilter) roleMatch = true;
+
+         if (roleMatch) {
            if (log.user_id && log.user_name) {
              usersMap.set(log.user_id, log.user_name);
            }
@@ -179,7 +184,7 @@ export default function AdminDashboard() {
   }, [adminLogs, logsDeptFilter, logsRoleFilter, activeTab]);
 
   const filteredLogs = adminLogs.filter(log => {
-    if (log.user_role === 'student' || log.user_role === 'admin') return false; 
+    if (log.user_role === 'student') return false; 
     
     let deptMatch = false;
     if (logsDeptFilter === 'all') deptMatch = true;
@@ -189,7 +194,13 @@ export default function AdminDashboard() {
     else if (logsDeptFilter === log.department_id) deptMatch = true;
 
     if (!deptMatch) return false;
-    if (logsRoleFilter !== 'all' && log.user_role !== logsRoleFilter) return false;
+
+    let roleMatch = false;
+    if (logsRoleFilter === 'all') roleMatch = true;
+    else if (logsRoleFilter === 'faculty' && (log.user_role === 'faculty' || log.user_role === 'teacher')) roleMatch = true;
+    else if (log.user_role === logsRoleFilter) roleMatch = true;
+
+    if (!roleMatch) return false;
     if (logsUserFilter !== 'all' && log.user_id !== logsUserFilter) return false;
     return true;
   });
@@ -1315,7 +1326,7 @@ export default function AdminDashboard() {
                 disabled={['accounts', 'coe', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all'}
               >
                 <option value="all">All Roles</option>
-                <option value="admin">Admins</option>
+                {logsDeptFilter !== 'all' && <option value="admin">Admins</option>}
                 <option value="hod">HODs</option>
                 <option value="faculty">Faculty / Teachers</option>
                 <option value="staff">Staff</option>
