@@ -5,6 +5,7 @@ import UpdatePassword from './pages/UpdatePassword';
 import DashboardRouter from './pages/DashboardRouter';
 import Layout from './components/layout/Layout';
 import Logs from './pages/Logs';
+import LibraryDashboard from './pages/LibraryDashboard';
 import { ThemeProvider } from './components/ThemeProvider';
 
 function App() {
@@ -75,6 +76,14 @@ function App() {
               element={
                 user && user.user_metadata?.role !== 'student' 
                   ? <Logs /> 
+                  : <Navigate to="/" />
+              } 
+            />
+            <Route 
+              path="/library" 
+              element={
+                user && (user.user_metadata?.role === 'librarian' || user.user_metadata?.role === 'admin' || user.user_metadata?.role === 'principal') 
+                  ? <LibraryDashboard /> 
                   : <Navigate to="/" />
               } 
             />

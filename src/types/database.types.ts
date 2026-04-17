@@ -1,7 +1,7 @@
-export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'hod' | 'admin' | 'accounts' | 'coe' | 'principal';
+export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'hod' | 'admin' | 'accounts' | 'coe' | 'principal' | 'librarian';
 export type DeptType = 'library' | 'hostel' | 'accounts';
 export type ClearanceStatus = 'pending' | 'rejected' | 'completed';
-export type ClearanceStage = 'student_application' | 'faculty_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
+export type ClearanceStage = 'student_application' | 'faculty_review' | 'library_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
 export type AuditAction = 'created' | 'updated' | 'approved' | 'rejected' | 'escalated';
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 
@@ -61,6 +61,11 @@ export interface Database {
         Row: { id: string; student_id: string; has_dues: boolean; due_amount: number; remarks: string | null; last_updated_by: string | null; updated_at: string; created_at: string };
         Insert: { id?: string; student_id: string; has_dues?: boolean; due_amount?: number; remarks?: string | null; last_updated_by?: string | null; updated_at?: string; created_at?: string };
         Update: { id?: string; student_id?: string; has_dues?: boolean; due_amount?: number; remarks?: string | null; last_updated_by?: string | null; updated_at?: string; created_at?: string };
+      };
+      library_dues: {
+        Row: { id: string; student_id: string; has_dues: boolean; fine_amount: number; remarks: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; student_id: string; has_dues?: boolean; fine_amount?: number; remarks?: string | null; created_at?: string; updated_at?: string };
+        Update: { id?: string; student_id?: string; has_dues?: boolean; fine_amount?: number; remarks?: string | null; created_at?: string; updated_at?: string };
       };
       hall_ticket_templates: {
         Row: { id: string; institution_name: string; title: string; instructions: string; signature_text: string; logo_url: string | null; signatures: string[] | null; bg_image_url: string | null; mapping_coordinates: any | null; created_at: string; updated_at: string };

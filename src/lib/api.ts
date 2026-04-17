@@ -718,3 +718,69 @@ export const getAccountsVerifiedFees = async () => {
   if (error) throw error;
   return data;
 };
+
+// =======================
+// LIBRARY DUES MANAGEMENT
+// =======================
+
+/** Get all library dues */
+export const getLibraryDues = async () => {
+  const { data, error } = await supabase
+    .from('library_dues')
+    .select('*, profiles!library_dues_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name))');
+  if (error) throw error;
+  return data;
+};
+
+/** Update a single student's library due status */
+export const updateLibraryDue = async (studentId: string, hasDues: boolean, fineAmount: number, remarks: string) => {
+  const { data, error } = await supabase
+    .from('library_dues')
+    .upsert(
+      { student_id: studentId, has_dues: hasDues, fine_amount: fineAmount, remarks },
+      { onConflict: 'student_id' }
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+/** Bulk process library dues from CSV (associating by roll_number) */
+export const bulkProcessLibraryDues = async (rows: { roll_number: string; fine_amount: number; remarks: string }[]) => {
+  const rollNumbers = rows.map(r => r.roll_number.trim().toUpperCase());
+  const { data: students, error: studentError } = await supabase
+    .from('profiles')
+    .select('id, roll_number')
+    .eq('role', 'student')
+    .in('roll_number', rollNumbers);
+    
+  if (studentError) throw studentError;
+  
+  if (!students || students.length === 0) {
+    throw new Error('No mapping found for provided roll numbers in the database.');
+  }
+
+  const studentMap = new Map(students.map(s => [s.roll_number?.toUpperCase(), s.id]));
+
+  const upsertPayload = rows
+    .filter(row => studentMap.has(row.roll_number.trim().toUpperCase()))
+    .map(row => ({
+      student_id: studentMap.get(row.roll_number.trim().toUpperCase())!,
+      has_dues: row.fine_amount > 0,
+      fine_amount: row.fine_amount,
+      remarks: row.remarks || (row.fine_amount > 0 ? 'Bulk uploaded fine' : 'Cleared via bulk upload')
+    }));
+
+  if (upsertPayload.length === 0) {
+    throw new Error('Could not map any rows to existing students.');
+  }
+
+  const { error: upsertError } = await supabase
+    .from('library_dues')
+    .upsert(upsertPayload, { onConflict: 'student_id' });
+
+  if (upsertError) throw upsertError;
+
+  return upsertPayload.length;
+};

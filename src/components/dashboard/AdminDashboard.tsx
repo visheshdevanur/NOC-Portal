@@ -160,7 +160,7 @@ export default function AdminDashboard() {
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'coe']).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'coe', 'principal', 'librarian']).order('created_at', { ascending: false });
       if (error) throw error;
       setUsers(data || []);
     } catch (err: any) { console.error('Failed to fetch users:', err); }
@@ -752,6 +752,7 @@ export default function AdminDashboard() {
                     <option value="hod">HOD (Head of Department)</option>
                     <option value="accounts">Accounts Staff</option>
                     <option value="coe">Controller of Examination (COE)</option>
+                    <option value="librarian">Librarian</option>
                   </select>
                 </FormField>
                 <FormField label="Full Name">
@@ -1029,7 +1030,11 @@ export default function AdminDashboard() {
                 >
                   <option value="all">All Roles</option>
                   <option value="admin">Admin</option>
+                  <option value="principal">Principal</option>
                   <option value="hod">HOD</option>
+                  <option value="coe">COE</option>
+                  <option value="accounts">Accounts</option>
+                  <option value="librarian">Librarian</option>
                   <option value="staff">Staff</option>
                   <option value="teacher">Teacher</option>
                   <option value="faculty">Faculty</option>
