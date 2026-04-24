@@ -414,6 +414,21 @@ export const getHodTeacherAssignments = async (departmentId: string) => {
   }));
 };
 
+// =======================
+// HOD SPECIFIC
+// =======================
+export const getHodStaffActivityLogs = async (departmentId: string) => {
+  const { data, error } = await supabase
+    .from('activity_logs')
+    .select('*')
+    .eq('department_id', departmentId)
+    .neq('user_role', 'student')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return data;
+};
+
 export const getAccountsApprovedDues = async () => {
   const { data, error } = await supabase
     .from('student_dues')

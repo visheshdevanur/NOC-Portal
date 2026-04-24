@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
-  GraduationCap, BookOpen, Eye
+  GraduationCap, BookOpen, Eye, Clock
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -61,7 +61,7 @@ type TeacherWithAssignments = {
   }[];
 };
 
-type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'teacherDetails';
+type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'teacherDetails' | 'activityLogs';
 
 export default function HodDashboard() {
   const { user, profile } = useAuth();
@@ -100,6 +100,11 @@ export default function HodDashboard() {
   const [searchTeachers, setSearchTeachers] = useState('');
   const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set());
 
+  // Activity Logs state
+  const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [searchLogs, setSearchLogs] = useState('');
+
   useEffect(() => {
     if (user && profile?.department_id) {
       fetchDeptName();
@@ -108,6 +113,7 @@ export default function HodDashboard() {
       if (activeTab === 'students') fetchStudents();
       if (activeTab === 'fineApprovals') fetchApprovedFines();
       if (activeTab === 'teacherDetails') fetchTeacherDetails();
+      if (activeTab === 'activityLogs') fetchActivityLogs();
     }
   }, [user, activeTab, profile?.department_id]);
 
@@ -174,10 +180,20 @@ export default function HodDashboard() {
     if (!profile?.department_id) return;
     setLoadingTeacherDetails(true);
     try {
-      const data = await getHodTeacherAssignments(profile.department_id);
+      const data = await import('../../lib/api').then(m => m.getHodTeacherAssignments(profile.department_id));
       setTeacherAssignments(data as TeacherWithAssignments[]);
     } catch (err) { console.error(err); }
     finally { setLoadingTeacherDetails(false); }
+  };
+
+  const fetchActivityLogs = async () => {
+    if (!profile?.department_id) return;
+    setLoadingLogs(true);
+    try {
+      const data = await import('../../lib/api').then(m => m.getHodStaffActivityLogs(profile.department_id));
+      setActivityLogs(data || []);
+    } catch (err) { console.error(err); }
+    finally { setLoadingLogs(false); }
   };
 
   const handleApprove = async (id: string) => {
@@ -324,7 +340,8 @@ export default function HodDashboard() {
     { id: 'fineApprovals', label: 'Fine Approvals', icon: <FileCheck className="w-4 h-4" /> },
     { id: 'users', label: 'Staff & Teachers', icon: <Users className="w-4 h-4" /> },
     { id: 'teacherDetails', label: 'Teacher Details', icon: <GraduationCap className="w-4 h-4" /> },
-    { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> }
+    { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> },
+    { id: 'activityLogs', label: 'Activity Logs', icon: <Clock className="w-4 h-4" /> }
   ];
 
   const toggleSem = (semName: string) => {
@@ -1005,6 +1022,89 @@ export default function HodDashboard() {
                 );
               })
             )}
+          </div>
+        </div>
+        </div>
+      )}
+
+      {/* ========= ACTIVITY LOGS TAB ========= */}
+      {activeTab === 'activityLogs' && (
+        <div className="space-y-4">
+          <div className="bg-card rounded-2xl p-5 shadow-sm border border-border">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2 mb-1">
+              <Clock className="w-5 h-5 text-emerald-500" />
+              Staff Activity Logs
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              View recent activities performed by staff and teachers in your department.
+            </p>
+          </div>
+
+          <div className="relative w-full md:max-w-xs">
+            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search logs..."
+              className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
+              value={searchLogs}
+              onChange={e => setSearchLogs(e.target.value)}
+            />
+          </div>
+
+          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+            {loadingLogs ? (
+              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading activity logs...</div>
+            ) : (() => {
+              const filteredLogs = activityLogs.filter(log =>
+                log.user_name?.toLowerCase().includes(searchLogs.toLowerCase()) ||
+                log.action?.toLowerCase().includes(searchLogs.toLowerCase()) ||
+                log.details?.toLowerCase().includes(searchLogs.toLowerCase())
+              );
+              return filteredLogs.length === 0 ? (
+                <div className="p-12 text-center flex flex-col items-center">
+                  <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-4">
+                    <Clock className="w-10 h-10 text-emerald-500/50" />
+                  </div>
+                  <h3 className="text-xl font-bold text-foreground">No Logs Found</h3>
+                  <p className="text-muted-foreground mt-2">No recent activity from staff/teachers matches your search.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
+                        <th className="p-4 font-semibold">Time</th>
+                        <th className="p-4 font-semibold">User</th>
+                        <th className="p-4 font-semibold">Role</th>
+                        <th className="p-4 font-semibold">Action</th>
+                        <th className="p-4 font-semibold">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filteredLogs.map(log => (
+                        <tr key={log.id} className="hover:bg-secondary/20 transition-colors">
+                          <td className="p-4 text-sm text-muted-foreground whitespace-nowrap">
+                            {new Date(log.created_at).toLocaleString()}
+                          </td>
+                          <td className="p-4 font-medium text-foreground">{log.user_name || 'Unknown'}</td>
+                          <td className="p-4">
+                            <span className="px-2 py-1 text-xs rounded-md bg-secondary text-foreground uppercase font-bold">
+                              {log.user_role || 'staff'}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">
+                              {log.action}
+                            </span>
+                          </td>
+                          <td className="p-4 text-sm text-muted-foreground">{log.details || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
