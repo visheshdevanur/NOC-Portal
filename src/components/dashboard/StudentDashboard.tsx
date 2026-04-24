@@ -369,6 +369,25 @@ export default function StudentDashboard() {
     doc.save(`HallTicket_${profile?.full_name?.replace(/\s+/g, '_')}.pdf`);
   };
 
+  const isHodApproved = request?.current_stage === 'cleared';
+  const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(e => e.status === 'completed'), [enrollments]);
+  const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
+  const allDeptCleared = useMemo(() => deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed'), [deptClearances]);
+
+  // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
+  const { allIAEligible } = useMemo(() => {
+    const bySubject: Record<string, { present: number; total: number }> = {};
+    iaRecords.forEach(r => {
+      if (!bySubject[r.subject_id]) bySubject[r.subject_id] = { present: 0, total: 0 };
+      bySubject[r.subject_id].total++;
+      if (r.is_present) bySubject[r.subject_id].present++;
+    });
+    const ids = Object.keys(bySubject);
+    const eligible = ids.length === 0 || ids.every(sid => bySubject[sid].present >= 2);
+    return { allIAEligible: eligible };
+  }, [iaRecords]);
+  const canDownloadHallTicket = isHodApproved && allIAEligible;
+
   if (loading) return <div className="animate-pulse flex flex-col gap-6">
     <div className="h-48 bg-card rounded-2xl w-full"></div>
     <div className="h-64 bg-card rounded-2xl w-full"></div>
@@ -420,25 +439,6 @@ export default function StudentDashboard() {
       </div>
     );
   }
-
-  const isHodApproved = request.current_stage === 'cleared';
-  const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(e => e.status === 'completed'), [enrollments]);
-  const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
-  const allDeptCleared = useMemo(() => deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed'), [deptClearances]);
-
-  // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
-  const { allIAEligible } = useMemo(() => {
-    const bySubject: Record<string, { present: number; total: number }> = {};
-    iaRecords.forEach(r => {
-      if (!bySubject[r.subject_id]) bySubject[r.subject_id] = { present: 0, total: 0 };
-      bySubject[r.subject_id].total++;
-      if (r.is_present) bySubject[r.subject_id].present++;
-    });
-    const ids = Object.keys(bySubject);
-    const eligible = ids.length === 0 || ids.every(sid => bySubject[sid].present >= 2);
-    return { allIAEligible: eligible };
-  }, [iaRecords]);
-  const canDownloadHallTicket = isHodApproved && allIAEligible;
 
   return (
     <div className="space-y-8 fade-in">
