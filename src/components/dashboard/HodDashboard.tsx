@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
 import {
   getHodPendingRequests, approveHodRequest, getUsersByDeptAndRoles,
-  getDepartmentById, getHodDepartmentStudents, getHodStaffApprovedFines,
-  getHodTeacherAssignments
+  getDepartmentById, getHodDepartmentStudents, getHodStaffApprovedFines
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
@@ -180,7 +179,7 @@ export default function HodDashboard() {
     if (!profile?.department_id) return;
     setLoadingTeacherDetails(true);
     try {
-      const data = await import('../../lib/api').then(m => m.getHodTeacherAssignments(profile.department_id));
+      const data = await import('../../lib/api').then(m => m.getHodTeacherAssignments(profile.department_id!));
       setTeacherAssignments(data as TeacherWithAssignments[]);
     } catch (err) { console.error(err); }
     finally { setLoadingTeacherDetails(false); }
@@ -190,7 +189,7 @@ export default function HodDashboard() {
     if (!profile?.department_id) return;
     setLoadingLogs(true);
     try {
-      const data = await import('../../lib/api').then(m => m.getHodStaffActivityLogs(profile.department_id));
+      const data = await import('../../lib/api').then(m => m.getHodStaffActivityLogs(profile.department_id!));
       setActivityLogs(data || []);
     } catch (err) { console.error(err); }
     finally { setLoadingLogs(false); }

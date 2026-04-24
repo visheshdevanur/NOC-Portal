@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Lock, Mail, KeyRound, Eye, EyeOff, ArrowRight, Building2, Shield, Clock } from 'lucide-react';
+import { Lock, Mail, KeyRound, Eye, EyeOff, ArrowRight, Building2 } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
 
 type ResetStep = 'login' | 'request-otp' | 'verify-otp' | 'update-password';
