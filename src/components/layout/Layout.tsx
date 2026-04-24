@@ -1,7 +1,7 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/useAuth';
 import { supabase } from '../../lib/supabase';
-import { LogOut, GraduationCap, UserCircle, KeyRound, X, Settings, Menu, Eye, EyeOff, Activity } from 'lucide-react';
+import { LogOut, GraduationCap, UserCircle, KeyRound, X, Settings, Menu, Eye, EyeOff, Activity, IdCard, Building2, BookOpen, Hash, Calendar, Shield, Mail, Fingerprint, Clock } from 'lucide-react';
 import { ThemeToggle } from '../ThemeToggle';
 import { useState, useRef, useEffect } from 'react';
 
@@ -10,6 +10,7 @@ const Layout = () => {
   const navigate = useNavigate();
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
@@ -21,6 +22,34 @@ const Layout = () => {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [detailsData, setDetailsData] = useState<{ departmentName: string; semesterName: string; email: string; lastSignIn: string | null } | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  const openDetailsModal = async () => {
+    setShowDetailsModal(true);
+    setLoadingDetails(true);
+    try {
+      const [deptRes, semRes, authRes] = await Promise.all([
+        profile?.department_id
+          ? supabase.from('departments').select('name').eq('id', profile.department_id).single()
+          : Promise.resolve({ data: null }),
+        profile?.semester_id
+          ? supabase.from('semesters').select('name').eq('id', profile.semester_id).single()
+          : Promise.resolve({ data: null }),
+        supabase.auth.getUser(),
+      ]);
+      setDetailsData({
+        departmentName: deptRes.data?.name || 'N/A',
+        semesterName: semRes.data?.name || 'N/A',
+        email: authRes.data?.user?.email || 'N/A',
+        lastSignIn: authRes.data?.user?.last_sign_in_at || null,
+      });
+    } catch {
+      setDetailsData({ departmentName: 'N/A', semesterName: 'N/A', email: 'N/A', lastSignIn: null });
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -133,6 +162,16 @@ const Layout = () => {
                     <button
                       onClick={() => {
                         setShowSettingsMenu(false);
+                        openDetailsModal();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary flex items-center gap-2"
+                    >
+                      <IdCard className="w-4 h-4 text-primary" />
+                      Account Info
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSettingsMenu(false);
                         setShowPasswordModal(true);
                       }}
                       className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary flex items-center gap-2"
@@ -192,6 +231,16 @@ const Layout = () => {
                     </button>
                   )}
 
+                  <button
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      openDetailsModal();
+                    }}
+                    className="w-full text-left px-4 py-3 text-sm text-foreground hover:bg-secondary flex items-center gap-3 transition-colors"
+                  >
+                    <IdCard className="w-4 h-4 text-primary" />
+                    Account Info
+                  </button>
                   <button
                     onClick={() => {
                       setShowMobileMenu(false);
@@ -291,6 +340,53 @@ const Layout = () => {
         </div>
       )}
 
+      {/* Details Modal */}
+      {showDetailsModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4 animate-fade-in">
+          <div className="bg-card rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl border border-border w-full max-w-md relative">
+            <button 
+              onClick={() => setShowDetailsModal(false)}
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 p-2 rounded-full hover:bg-secondary transition-colors"
+            >
+              <X className="w-4 h-4 text-muted-foreground" />
+            </button>
+            
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-blue-500 flex items-center justify-center shadow-lg">
+                <IdCard className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg sm:text-xl font-bold text-foreground">Account Info</h3>
+                <p className="text-xs text-muted-foreground">Your complete account information</p>
+              </div>
+            </div>
+
+            {loadingDetails ? (
+              <div className="space-y-4 animate-pulse">
+                {[1,2,3,4,5,6].map(i => <div key={i} className="h-14 bg-secondary rounded-xl" />)}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <DetailRow icon={<UserCircle className="w-4 h-4 text-primary" />} label="Full Name" value={profile?.full_name || 'N/A'} />
+                <DetailRow icon={<Shield className="w-4 h-4 text-amber-500" />} label="Role" value={profile?.role || 'N/A'} capitalize />
+                <DetailRow icon={<Mail className="w-4 h-4 text-violet-500" />} label="Email" value={detailsData?.email || 'N/A'} />
+                {profile?.roll_number && (
+                  <DetailRow icon={<Hash className="w-4 h-4 text-emerald-500" />} label="Roll Number" value={profile.roll_number} />
+                )}
+                <DetailRow icon={<Building2 className="w-4 h-4 text-blue-500" />} label="Department" value={detailsData?.departmentName || 'N/A'} />
+                <DetailRow icon={<BookOpen className="w-4 h-4 text-teal-500" />} label="Semester" value={detailsData?.semesterName || 'N/A'} />
+                {profile?.section && (
+                  <DetailRow icon={<GraduationCap className="w-4 h-4 text-pink-500" />} label="Section" value={profile.section} />
+                )}
+                <DetailRow icon={<Fingerprint className="w-4 h-4 text-cyan-500" />} label="Account ID" value={profile?.id ? profile.id.substring(0, 8) + '...' : 'N/A'} />
+                <DetailRow icon={<Calendar className="w-4 h-4 text-orange-500" />} label="Account Created" value={profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'} />
+                <DetailRow icon={<Clock className="w-4 h-4 text-rose-500" />} label="Last Sign In" value={detailsData?.lastSignIn ? new Date(detailsData.lastSignIn).toLocaleString('en-IN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-7xl mx-auto py-4 sm:py-8 px-3 sm:px-6 lg:px-8 mt-1 sm:mt-2 animate-fade-in relative z-10">
         <Outlet />
@@ -305,5 +401,20 @@ const Layout = () => {
     </div>
   );
 };
+
+// Detail row component for the My Details modal
+function DetailRow({ icon, label, value, capitalize }: { icon: React.ReactNode; label: string; value: string; capitalize?: boolean }) {
+  return (
+    <div className="flex items-center gap-3 p-3.5 rounded-xl bg-secondary/50 border border-border hover:bg-secondary/80 transition-colors">
+      <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-background flex items-center justify-center border border-border shadow-sm">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold leading-tight">{label}</p>
+        <p className={`text-sm font-bold text-foreground truncate leading-snug mt-0.5 ${capitalize ? 'capitalize' : ''}`}>{value}</p>
+      </div>
+    </div>
+  );
+}
 
 export default Layout;

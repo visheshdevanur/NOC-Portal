@@ -22,7 +22,17 @@ export function useAuth() {
 
     // Listen for changes on auth state (logged in, signed out, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
+        // Handle expired/invalid refresh tokens gracefully
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          // Token refresh failed — clear stale state
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+          supabase.auth.signOut();
+          return;
+        }
+
         setUser(session?.user ?? null);
          if (session?.user) {
           fetchProfile(session.user.id);

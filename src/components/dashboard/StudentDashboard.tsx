@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { useAuth } from '../../lib/useAuth';
 import { 
   getStudentClearanceRequest, 
@@ -9,7 +9,6 @@ import {
   getStudentLibraryDues
 } from '../../lib/api';
 import { CheckCircle2, Clock, XCircle, AlertCircle, FileDown, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap } from 'lucide-react';
-import jsPDF from 'jspdf';
 import { supabase } from '../../lib/supabase';
 
 type ClearanceRequest = {
@@ -66,18 +65,26 @@ export default function StudentDashboard() {
   const [libraryDue, setLibraryDue] = useState<any>(null);
   const [departmentName, setDepartmentName] = useState<string>('N/A');
 
+  // Debounce realtime refetches to avoid cascading re-renders
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedFetch = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchStudentData(), 300);
+  }, []);
+
   useEffect(() => {
     if (user) {
       fetchStudentData();
       
-      // Setup Realtime Subscription
+      // Setup Realtime Subscription with debounced handler
       const channel = supabase.channel('student-dashboard')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'clearance_requests', filter: `student_id=eq.${user.id}` }, () => fetchStudentData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'subject_enrollment', filter: `student_id=eq.${user.id}` }, () => fetchStudentData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'student_dues', filter: `student_id=eq.${user.id}` }, () => fetchStudentData())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'clearance_requests', filter: `student_id=eq.${user.id}` }, debouncedFetch)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'subject_enrollment', filter: `student_id=eq.${user.id}` }, debouncedFetch)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'student_dues', filter: `student_id=eq.${user.id}` }, debouncedFetch)
         .subscribe();
 
       return () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
         supabase.removeChannel(channel);
       }
     }
@@ -158,7 +165,7 @@ export default function StudentDashboard() {
     }
   };
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     if (request?.current_stage !== 'cleared') return;
     // Block if IA attendance insufficient
     const iaCheck: Record<string, number> = {};
@@ -168,6 +175,8 @@ export default function StudentDashboard() {
     const iaSubjects = Object.keys(iaCheck);
     if (iaRecords.length > 0 && iaSubjects.some(sid => (iaCheck[sid] || 0) < 2)) return;
 
+    // Lazy-load jsPDF only when needed (~500KB saved from initial bundle)
+    const { default: jsPDF } = await import('jspdf');
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
     const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
@@ -413,21 +422,22 @@ export default function StudentDashboard() {
   }
 
   const isHodApproved = request.current_stage === 'cleared';
-  const allFacultyCleared = enrollments.length > 0 && enrollments.every(e => e.status === 'completed');
-  const allLibraryCleared = libraryDue ? !libraryDue.has_dues : true;
-  const allDeptCleared = deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed');
-  
-
+  const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(e => e.status === 'completed'), [enrollments]);
+  const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
+  const allDeptCleared = useMemo(() => deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed'), [deptClearances]);
 
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
-  const iaBySubject: Record<string, { present: number; total: number }> = {};
-  iaRecords.forEach(r => {
-    if (!iaBySubject[r.subject_id]) iaBySubject[r.subject_id] = { present: 0, total: 0 };
-    iaBySubject[r.subject_id].total++;
-    if (r.is_present) iaBySubject[r.subject_id].present++;
-  });
-  const iaSubjectIds = Object.keys(iaBySubject);
-  const allIAEligible = iaSubjectIds.length === 0 || iaSubjectIds.every(sid => iaBySubject[sid].present >= 2);
+  const { allIAEligible } = useMemo(() => {
+    const bySubject: Record<string, { present: number; total: number }> = {};
+    iaRecords.forEach(r => {
+      if (!bySubject[r.subject_id]) bySubject[r.subject_id] = { present: 0, total: 0 };
+      bySubject[r.subject_id].total++;
+      if (r.is_present) bySubject[r.subject_id].present++;
+    });
+    const ids = Object.keys(bySubject);
+    const eligible = ids.length === 0 || ids.every(sid => bySubject[sid].present >= 2);
+    return { allIAEligible: eligible };
+  }, [iaRecords]);
   const canDownloadHallTicket = isHodApproved && allIAEligible;
 
   return (
@@ -769,8 +779,8 @@ export default function StudentDashboard() {
   );
 }
 
-// Stepper Component
-function Step({ title, description, isComplete, isActive, icon }: any) {
+// Stepper Component — memoized to prevent unnecessary re-renders
+const Step = memo(function Step({ title, description, isComplete, isActive, icon }: any) {
   return (
     <div className="relative flex flex-col items-center">
       <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 relative z-10 ${
@@ -793,4 +803,4 @@ function Step({ title, description, isComplete, isActive, icon }: any) {
       </div>
     </div>
   );
-}
+});
