@@ -1024,7 +1024,6 @@ export default function HodDashboard() {
             )}
           </div>
         </div>
-        </div>
       )}
 
       {/* ========= ACTIVITY LOGS TAB ========= */}
