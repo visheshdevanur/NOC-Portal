@@ -378,8 +378,6 @@ const Layout = () => {
                 {profile?.section && (
                   <DetailRow icon={<GraduationCap className="w-4 h-4 text-pink-500" />} label="Section" value={profile.section} />
                 )}
-                <DetailRow icon={<Fingerprint className="w-4 h-4 text-cyan-500" />} label="Account ID" value={profile?.id ? profile.id.substring(0, 8) + '...' : 'N/A'} />
-                <DetailRow icon={<Calendar className="w-4 h-4 text-orange-500" />} label="Account Created" value={profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'} />
                 <DetailRow icon={<Clock className="w-4 h-4 text-rose-500" />} label="Last Sign In" value={detailsData?.lastSignIn ? new Date(detailsData.lastSignIn).toLocaleString('en-IN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'} />
               </div>
             )}
