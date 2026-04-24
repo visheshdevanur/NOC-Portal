@@ -166,27 +166,7 @@ const Login = () => {
             Experience a frictionless transition into your next academic chapter. Our editorial-grade interface streamlines departmental sign-offs, fee verifications, and document submissions with precision and security.
           </p>
 
-          {/* Status Bento Cards */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-6 rounded-3xl border border-white/15 bg-white/10 dark:bg-white/[0.08] backdrop-blur-xl">
-              <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-4 h-4 text-white/50" />
-                <p className="text-white/60 text-xs font-medium uppercase tracking-[0.15em]" style={{ fontFamily: 'Inter, sans-serif' }}>
-                  Clearance Rate
-                </p>
-              </div>
-              <p className="text-white text-3xl font-bold" style={{ fontFamily: 'Manrope, sans-serif' }}>98.4%</p>
-            </div>
-            <div className="p-6 rounded-3xl border border-white/15 bg-white/10 dark:bg-white/[0.08] backdrop-blur-xl">
-              <div className="flex items-center gap-2 mb-2">
-                <Clock className="w-4 h-4 text-white/50" />
-                <p className="text-white/60 text-xs font-medium uppercase tracking-[0.15em]" style={{ fontFamily: 'Inter, sans-serif' }}>
-                  Avg. Processing
-                </p>
-              </div>
-              <p className="text-white text-3xl font-bold" style={{ fontFamily: 'Manrope, sans-serif' }}>2.4h</p>
-            </div>
-          </div>
+
         </div>
       </section>
 
