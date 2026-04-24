@@ -25,21 +25,23 @@
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
+    --background: 224 30% 7%;
+    --foreground: 210 40% 96%;
+    --card: 224 28% 12%;
+    --card-foreground: 210 40% 96%;
+    --border: 220 20% 20%;
+    --input: 220 20% 20%;
     --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 25% 16%;
+    --secondary-foreground: 210 40% 96%;
+    --accent: 220 25% 16%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
-    --ring: 224.3 76.3% 48%;
+    --ring: 217.2 91.2% 59.8%;
+    --muted: 220 20% 14%;
+    --muted-foreground: 215 20% 55%;
   }
 }
 
@@ -72,6 +74,17 @@
 @layer utilities {
   .glass {
     @apply bg-white/70 dark:bg-black/40 backdrop-blur-md border border-white/20 dark:border-white/10;
+  }
+
+  /* Fix browser autofill styling in dark mode */
+  .dark input:-webkit-autofill,
+  .dark input:-webkit-autofill:hover,
+  .dark input:-webkit-autofill:focus,
+  .dark input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px hsl(224, 28%, 13%) inset !important;
+    -webkit-text-fill-color: hsl(210, 40%, 96%) !important;
+    caret-color: hsl(210, 40%, 96%) !important;
+    transition: background-color 5000s ease-in-out 0s;
   }
   .card-hover {
     @apply hover:shadow-lg hover:-translate-y-1 transition-all duration-300;

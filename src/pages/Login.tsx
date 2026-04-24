@@ -140,10 +140,11 @@ const Login = () => {
     <div className="min-h-screen flex flex-col md:flex-row transition-colors duration-300">
 
       {/* ==================== LEFT PANEL: BRAND ==================== */}
-      <section className="hidden md:flex md:w-[58%] relative overflow-hidden bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(220,90%,35%)] dark:from-[hsl(220,60%,15%)] dark:to-[hsl(220,80%,8%)] items-center justify-center p-12 lg:p-24">
+      <section className="hidden md:flex md:w-[58%] relative overflow-hidden bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(220,90%,35%)] dark:from-[hsl(220,70%,20%)] dark:to-[hsl(230,50%,10%)] items-center justify-center p-12 lg:p-24">
         {/* Decorative gradient glows */}
-        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-blue-400/30 dark:bg-blue-500/15 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '6s' }} />
-        <div className="absolute bottom-[-5%] right-[-5%] w-[40%] h-[40%] bg-indigo-500/25 dark:bg-indigo-400/10 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '8s' }} />
+        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-blue-400/30 dark:bg-blue-400/20 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '6s' }} />
+        <div className="absolute bottom-[-5%] right-[-5%] w-[40%] h-[40%] bg-indigo-500/25 dark:bg-indigo-400/15 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '8s' }} />
+        <div className="absolute top-[30%] right-[10%] w-[25%] h-[25%] bg-cyan-400/10 dark:bg-cyan-400/10 rounded-full blur-[80px] animate-pulse" style={{ animationDuration: '10s' }} />
 
         <div className="relative z-10 max-w-2xl">
           {/* Logo */}
@@ -161,13 +162,13 @@ const Login = () => {
             College<br />Clearance<br />Portal
           </h2>
 
-          <p className="text-blue-100/90 dark:text-blue-200/70 text-xl font-medium leading-relaxed mb-12">
+          <p className="text-blue-100/90 dark:text-blue-200/80 text-xl font-medium leading-relaxed mb-12">
             Experience a frictionless transition into your next academic chapter. Our editorial-grade interface streamlines departmental sign-offs, fee verifications, and document submissions with precision and security.
           </p>
 
           {/* Status Bento Cards */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="p-6 rounded-3xl border border-white/10 bg-white/10 dark:bg-white/5 backdrop-blur-xl">
+            <div className="p-6 rounded-3xl border border-white/15 bg-white/10 dark:bg-white/[0.08] backdrop-blur-xl">
               <div className="flex items-center gap-2 mb-2">
                 <Shield className="w-4 h-4 text-white/50" />
                 <p className="text-white/60 text-xs font-medium uppercase tracking-[0.15em]" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -176,7 +177,7 @@ const Login = () => {
               </div>
               <p className="text-white text-3xl font-bold" style={{ fontFamily: 'Manrope, sans-serif' }}>98.4%</p>
             </div>
-            <div className="p-6 rounded-3xl border border-white/10 bg-white/10 dark:bg-white/5 backdrop-blur-xl">
+            <div className="p-6 rounded-3xl border border-white/15 bg-white/10 dark:bg-white/[0.08] backdrop-blur-xl">
               <div className="flex items-center gap-2 mb-2">
                 <Clock className="w-4 h-4 text-white/50" />
                 <p className="text-white/60 text-xs font-medium uppercase tracking-[0.15em]" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -190,7 +191,7 @@ const Login = () => {
       </section>
 
       {/* ==================== RIGHT PANEL: LOGIN FORM ==================== */}
-      <section className="w-full md:w-[42%] bg-background flex flex-col items-center justify-center p-8 lg:p-16 relative min-h-screen">
+      <section className="w-full md:w-[42%] bg-background dark:bg-gradient-to-b dark:from-[hsl(224,30%,9%)] dark:to-[hsl(224,30%,6%)] flex flex-col items-center justify-center p-8 lg:p-16 relative min-h-screen">
         {/* Theme Toggle */}
         <div className="absolute top-6 right-6 z-20">
           <ThemeToggle />
@@ -238,7 +239,7 @@ const Login = () => {
           )}
 
           {/* ============ LOGIN CARD (Glass) ============ */}
-          <div className="bg-card/80 dark:bg-card/60 backdrop-blur-xl p-8 rounded-[2rem] shadow-[0px_32px_64px_-12px_rgba(0,75,202,0.08)] dark:shadow-[0px_32px_64px_-12px_rgba(0,0,0,0.3)] border border-border/40 dark:border-border/60">
+          <div className="bg-card/80 dark:bg-[hsl(224,28%,13%)] backdrop-blur-xl p-8 rounded-[2rem] shadow-[0px_32px_64px_-12px_rgba(0,75,202,0.08)] dark:shadow-[0px_8px_32px_-4px_rgba(0,0,0,0.5),0px_0px_0px_1px_rgba(56,120,255,0.06)] border border-border/40 dark:border-[hsl(220,20%,22%)]">
             
             {/* ---------------- LOGIN VIEW ---------------- */}
             {resetStep === 'login' && (
@@ -253,7 +254,8 @@ const Login = () => {
                     onChange={(e) => setEmail(e.target.value)}
                     onFocus={() => setEmailFocused(true)}
                     onBlur={() => setEmailFocused(false)}
-                    className="block w-full px-0 pt-5 pb-2 bg-transparent border-0 border-b-2 border-border focus:border-primary focus:ring-0 text-foreground transition-all duration-300 outline-none peer text-base"
+                    className="block w-full px-0 pt-5 pb-2 bg-transparent border-0 border-b-2 border-border dark:border-[hsl(220,20%,25%)] focus:border-primary focus:ring-0 text-foreground transition-all duration-300 outline-none peer text-base"
+                    style={{ WebkitTextFillColor: 'inherit' }}
                     placeholder=" "
                   />
                   <label
@@ -281,7 +283,8 @@ const Login = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     onFocus={() => setPasswordFocused(true)}
                     onBlur={() => setPasswordFocused(false)}
-                    className="block w-full px-0 pt-5 pb-2 bg-transparent border-0 border-b-2 border-border focus:border-primary focus:ring-0 text-foreground transition-all duration-300 outline-none peer pr-10 text-base"
+                    className="block w-full px-0 pt-5 pb-2 bg-transparent border-0 border-b-2 border-border dark:border-[hsl(220,20%,25%)] focus:border-primary focus:ring-0 text-foreground transition-all duration-300 outline-none peer pr-10 text-base"
+                    style={{ WebkitTextFillColor: 'inherit' }}
                     placeholder=" "
                   />
                   <label
@@ -311,7 +314,7 @@ const Login = () => {
                     <input
                       type="checkbox"
                       id="remember-me"
-                      className="w-4 h-4 border-2 border-border rounded accent-primary cursor-pointer"
+                      className="w-4 h-4 border-2 border-border dark:border-[hsl(220,20%,30%)] rounded accent-primary cursor-pointer dark:bg-transparent"
                     />
                     <label htmlFor="remember-me" className="text-sm text-muted-foreground font-medium cursor-pointer">
                       Keep me active
@@ -330,7 +333,7 @@ const Login = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-4 px-6 bg-gradient-to-r from-primary to-[hsl(220,100%,50%)] dark:from-primary dark:to-[hsl(220,80%,55%)] text-white font-bold rounded-2xl shadow-[0_8px_20px_-6px_rgba(0,75,202,0.4)] hover:shadow-[0_12px_28px_-6px_rgba(0,75,202,0.6)] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-3 relative overflow-hidden group disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100"
+                  className="w-full py-4 px-6 bg-gradient-to-r from-primary to-[hsl(220,100%,50%)] dark:from-[hsl(217,91%,55%)] dark:to-[hsl(230,80%,60%)] text-white font-bold rounded-2xl shadow-[0_8px_20px_-6px_rgba(0,75,202,0.4)] dark:shadow-[0_8px_24px_-4px_rgba(59,130,246,0.35),0_0px_12px_-2px_rgba(59,130,246,0.2)] hover:shadow-[0_12px_28px_-6px_rgba(0,75,202,0.6)] dark:hover:shadow-[0_12px_32px_-4px_rgba(59,130,246,0.45),0_0px_16px_-2px_rgba(59,130,246,0.3)] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-3 relative overflow-hidden group disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100"
                   style={{ fontFamily: 'Manrope, sans-serif' }}
                 >
                   {/* Inner glow border */}
