@@ -147,7 +147,7 @@ export default function FycDashboard() {
     try {
       const { data, error } = await supabase
         .from('clearance_requests')
-        .select('*, profiles!inner(full_name, department_id, semesters(name), departments(name))')
+        .select('*, profiles!inner(full_name, department_id, semesters(name), departments!profiles_department_id_fkey(name))')
         .eq('current_stage', 'hod_review');
       if (error) throw error;
       const filtered = (data || []).filter((r: any) => isFirstYearSem(r.profiles?.semesters?.name || ''));
@@ -161,7 +161,7 @@ export default function FycDashboard() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*, semesters(name), clearance_requests(status, current_stage, created_at, updated_at), departments(name)')
+        .select('*, semesters(name), clearance_requests(status, current_stage, created_at, updated_at), departments!profiles_department_id_fkey(name)')
         .eq('role', 'student')
         .order('full_name');
       if (error) throw error;
@@ -177,7 +177,7 @@ export default function FycDashboard() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*, departments(name)')
+        .select('*, departments!profiles_department_id_fkey(name)')
         .in('role', ['clerk', 'teacher', 'faculty'])
         .eq('created_by', user.id)
         .order('created_at', { ascending: false });
@@ -192,7 +192,7 @@ export default function FycDashboard() {
     try {
       const { data, error } = await supabase
         .from('subject_enrollment')
-        .select('*, profiles!inner(full_name, section, department_id, roll_number, semesters(name), departments(name)), subjects(subject_name, subject_code)')
+        .select('*, profiles!inner(full_name, section, department_id, roll_number, semesters(name), departments!profiles_department_id_fkey(name)), subjects(subject_name, subject_code)')
         .eq('remarks', 'Approved by Staff after Fine');
       if (error) throw error;
       const filtered = (data || []).filter((s: any) => isFirstYearSem(s.profiles?.semesters?.name || ''));
@@ -273,6 +273,7 @@ export default function FycDashboard() {
       const { data, error } = await supabase
         .from('activity_logs')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(200);
       if (error) throw error;
@@ -292,6 +293,13 @@ export default function FycDashboard() {
           message: 'FYC has approved your final clearance. You can now download your hall ticket.',
           type: 'success'
         }]);
+        await supabase.from('activity_logs').insert([{
+          user_id: user?.id,
+          user_role: 'fyc',
+          user_name: user?.email,
+          action: 'Clearance Approved',
+          details: `Approved clearance for student ${req.profiles?.full_name}`
+        }]);
       }
       fetchRequests();
     } catch (err: any) {
@@ -310,6 +318,13 @@ export default function FycDashboard() {
           title: 'Final Clearance Approved!',
           message: 'FYC has approved your final clearance. You can now download your hall ticket.',
           type: 'success'
+        }]);
+        await supabase.from('activity_logs').insert([{
+          user_id: user?.id,
+          user_role: 'fyc',
+          user_name: user?.email,
+          action: 'Clearance Approved',
+          details: `Approved clearance for student ${req.profiles?.full_name} (Bulk)`
         }]);
       }
       fetchRequests();
@@ -352,6 +367,15 @@ export default function FycDashboard() {
       });
       if (profileError) throw profileError;
 
+      await supabase.from('activity_logs').insert([{
+        user_id: user?.id,
+        user_role: 'fyc',
+        user_name: user?.email,
+        department_id: newUser.department_id,
+        action: 'User Created',
+        details: `Created ${newUser.role} profile for ${newUser.full_name}`
+      }]);
+
       setUserSuccess(`${newUser.role === 'clerk' ? 'Clerk' : 'Teacher'} "${newUser.full_name}" created!`);
       setNewUser({ email: '', password: '', full_name: '', role: 'clerk', department_id: '' });
       setShowCreateUser(false);
@@ -368,6 +392,15 @@ export default function FycDashboard() {
     try {
       const { error } = await supabase.from('profiles').delete().eq('id', userId).eq('created_by', user.id);
       if (error) throw error;
+      
+      await supabase.from('activity_logs').insert([{
+        user_id: user?.id,
+        user_role: 'fyc',
+        user_name: user?.email,
+        action: 'User Deleted',
+        details: `Deleted user ${userName}`
+      }]);
+
       setUserSuccess(`"${userName}" deleted.`);
       fetchUsers();
     } catch (err: any) {
