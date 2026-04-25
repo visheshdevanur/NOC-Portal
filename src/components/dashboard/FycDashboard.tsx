@@ -82,7 +82,7 @@ export default function FycDashboard() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [searchUsers, setSearchUsers] = useState('');
   const [showCreateUser, setShowCreateUser] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'staff', department_id: '' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'clerk', department_id: '' });
   const [userCreating, setUserCreating] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
@@ -178,7 +178,7 @@ export default function FycDashboard() {
       const { data, error } = await supabase
         .from('profiles')
         .select('*, departments(name)')
-        .in('role', ['staff', 'teacher', 'faculty'])
+        .in('role', ['clerk', 'teacher', 'faculty'])
         .eq('created_by', user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -352,8 +352,8 @@ export default function FycDashboard() {
       });
       if (profileError) throw profileError;
 
-      setUserSuccess(`${newUser.role === 'staff' ? 'Staff' : 'Teacher'} "${newUser.full_name}" created!`);
-      setNewUser({ email: '', password: '', full_name: '', role: 'staff', department_id: '' });
+      setUserSuccess(`${newUser.role === 'clerk' ? 'Clerk' : 'Teacher'} "${newUser.full_name}" created!`);
+      setNewUser({ email: '', password: '', full_name: '', role: 'clerk', department_id: '' });
       setShowCreateUser(false);
       fetchUsers();
     } catch (err: any) {
@@ -425,7 +425,7 @@ export default function FycDashboard() {
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'approvals', label: 'Clearances', icon: <Activity className="w-4 h-4" /> },
     { id: 'fineApprovals', label: 'Fine Approvals', icon: <FileCheck className="w-4 h-4" /> },
-    { id: 'users', label: 'Staff & Teachers', icon: <Users className="w-4 h-4" /> },
+    { id: 'users', label: 'Clerks & Teachers', icon: <Users className="w-4 h-4" /> },
     { id: 'teacherDetails', label: 'Teacher Details', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> },
     { id: 'activityLogs', label: 'Activity Logs', icon: <Clock className="w-4 h-4" /> }
@@ -495,7 +495,7 @@ export default function FycDashboard() {
   const filteredUsers = departmentUsers.filter(u => u.full_name?.toLowerCase().includes(searchUsers.toLowerCase()) || u.role?.toLowerCase().includes(searchUsers.toLowerCase()));
 
   const roleColors: Record<string, string> = {
-    staff: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    clerk: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
     teacher: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
     faculty: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
   };
@@ -510,7 +510,7 @@ export default function FycDashboard() {
             <UserCog className="w-8 h-8 mr-3 text-violet-500" />
             First Year Coordinator (FYC)
           </h1>
-          <p className="text-muted-foreground">Manage clearances, staff, and students across all departments (1st Year Only).</p>
+          <p className="text-muted-foreground">Manage clearances, clerks, teachers, and students across all departments (1st Year Only).</p>
         </div>
       </div>
 
@@ -619,7 +619,7 @@ export default function FycDashboard() {
               <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search staff/teachers..."
+                placeholder="Search clerks/teachers..."
                 className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 w-full"
                 value={searchUsers}
                 onChange={e => setSearchUsers(e.target.value)}
@@ -630,35 +630,35 @@ export default function FycDashboard() {
               className="flex items-center gap-2 bg-violet-500 text-white hover:bg-violet-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm"
             >
               <UserPlus className="w-5 h-5" />
-              Add Staff / Teacher
+              Add Clerk / Teacher
             </button>
           </div>
 
           {/* Create User Modal */}
           {showCreateUser && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-              <div className="bg-card rounded-3xl p-8 shadow-2xl border border-border w-full max-w-lg">
-                <div className="flex justify-between items-center mb-6">
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto p-4 flex items-start justify-center">
+              <div className="bg-card rounded-3xl p-6 shadow-2xl border border-border w-full max-w-lg mt-10 mb-10 relative">
+                <div className="flex justify-between items-center mb-4">
                   <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
                     <UserPlus className="w-5 h-5 text-violet-500" />
-                    Add Staff / Teacher
+                    Add Clerk / Teacher
                   </h3>
                   <button onClick={() => setShowCreateUser(false)} className="p-2 rounded-xl hover:bg-secondary transition-colors">
                     <X className="w-5 h-5 text-muted-foreground" />
                   </button>
                 </div>
                 {userError && (
-                  <div className="p-4 mb-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
+                  <div className="p-3 mb-3 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
                     <span><strong>Error:</strong> {userError}</span>
                     <button onClick={() => setUserError(null)}><X className="w-4 h-4" /></button>
                   </div>
                 )}
 
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Department</label>
+                    <label className="block text-sm font-medium text-foreground mb-1">Department</label>
                     <select
-                      className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+                      className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
                       value={newUser.department_id}
                       onChange={e => setNewUser({ ...newUser, department_id: e.target.value })}
                     >
@@ -669,33 +669,33 @@ export default function FycDashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Full Name</label>
-                    <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.full_name} onChange={e => setNewUser({ ...newUser, full_name: e.target.value })} />
+                    <label className="block text-sm font-medium text-foreground mb-1">Full Name</label>
+                    <input type="text" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.full_name} onChange={e => setNewUser({ ...newUser, full_name: e.target.value })} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
-                    <input type="email" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value.trim() })} />
+                    <label className="block text-sm font-medium text-foreground mb-1">Email</label>
+                    <input type="email" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value.trim() })} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Role</label>
+                    <label className="block text-sm font-medium text-foreground mb-1">Role</label>
                     <select
-                      className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+                      className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
                       value={newUser.role}
                       onChange={e => setNewUser({ ...newUser, role: e.target.value })}
                     >
-                      <option value="staff">Staff</option>
+                      <option value="clerk">Clerk</option>
                       <option value="teacher">Teacher</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Password</label>
-                    <input type="password" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
+                    <label className="block text-sm font-medium text-foreground mb-1">Password</label>
+                    <input type="password" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
                   </div>
                 </div>
 
-                <div className="flex gap-3 mt-8">
-                  <button onClick={() => setShowCreateUser(false)} className="flex-1 py-3 px-4 rounded-xl border border-border font-medium hover:bg-secondary">Cancel</button>
-                  <button onClick={handleCreateUser} disabled={userCreating} className="flex-1 py-3 px-4 rounded-xl bg-violet-500 text-white font-bold hover:bg-violet-600 disabled:opacity-50">
+                <div className="flex gap-3 mt-6">
+                  <button onClick={() => setShowCreateUser(false)} className="flex-1 py-2 px-4 rounded-xl border border-border font-medium hover:bg-secondary">Cancel</button>
+                  <button onClick={handleCreateUser} disabled={userCreating} className="flex-1 py-2 px-4 rounded-xl bg-violet-500 text-white font-bold hover:bg-violet-600 disabled:opacity-50">
                     {userCreating ? 'Creating...' : 'Create'}
                   </button>
                 </div>
@@ -706,9 +706,9 @@ export default function FycDashboard() {
           {/* Users Table */}
           <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
             {loadingUsers ? (
-              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading your staff & teachers...</div>
+              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading your clerks & teachers...</div>
             ) : filteredUsers.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">No staff or teachers created by you found.</div>
+              <div className="p-8 text-center text-muted-foreground">No clerks or teachers created by you found.</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">

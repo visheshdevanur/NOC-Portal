@@ -5,6 +5,7 @@ const StudentDashboard = lazy(() => import('../components/dashboard/StudentDashb
 const FacultyDashboard = lazy(() => import('../components/dashboard/FacultyDashboard'));
 const HodDashboard = lazy(() => import('../components/dashboard/HodDashboard'));
 const StaffDashboard = lazy(() => import('../components/dashboard/StaffDashboard'));
+const ClerkDashboard = lazy(() => import('../components/dashboard/ClerkDashboard'));
 const AdminDashboard = lazy(() => import('../components/dashboard/AdminDashboard'));
 const AccountsDashboard = lazy(() => import('../components/dashboard/AccountsDashboard'));
 const CoeDashboard = lazy(() => import('../components/dashboard/CoeDashboard'));
@@ -42,6 +43,7 @@ const DashboardRouter = () => {
       case 'faculty': return <FacultyDashboard />;
       case 'hod': return <HodDashboard />;
       case 'staff': return <StaffDashboard />;
+      case 'clerk': return <ClerkDashboard />;
       case 'principal':
       case 'admin': return <AdminDashboard />;
       case 'accounts': return <AccountsDashboard />;

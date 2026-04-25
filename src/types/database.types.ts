@@ -1,4 +1,4 @@
-export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'hod' | 'admin' | 'accounts' | 'coe' | 'principal' | 'librarian' | 'fyc';
+export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'clerk' | 'hod' | 'admin' | 'accounts' | 'coe' | 'principal' | 'librarian' | 'fyc';
 export type DeptType = 'library' | 'hostel' | 'accounts';
 export type ClearanceStatus = 'pending' | 'rejected' | 'completed';
 export type ClearanceStage = 'student_application' | 'faculty_review' | 'library_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
