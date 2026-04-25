@@ -1,11 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from "react"
 
+import { supabase } from "../lib/supabase"
+
 type Theme = "dark" | "light"
 
 type ThemeProviderProps = {
   children: React.ReactNode
   defaultTheme?: Theme
   storageKey?: string
+  userId?: string
+  remoteTheme?: string | null
 }
 
 type ThemeProviderState = {
@@ -24,12 +28,15 @@ export function ThemeProvider({
   children,
   defaultTheme = "light",
   storageKey = "vite-ui-theme",
+  userId,
+  remoteTheme,
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
   )
 
+  // Initial load from local storage
   useEffect(() => {
     const savedTheme = localStorage.getItem(storageKey) as Theme;
     if (savedTheme && (savedTheme === 'light' || savedTheme === 'dark')) {
@@ -38,6 +45,17 @@ export function ThemeProvider({
       setTheme(defaultTheme);
     }
   }, [storageKey, defaultTheme]);
+
+  // Sync from DB remote theme when it loads
+  useEffect(() => {
+    if (remoteTheme && (remoteTheme === 'light' || remoteTheme === 'dark')) {
+      const savedTheme = localStorage.getItem(storageKey);
+      if (savedTheme !== remoteTheme) {
+        localStorage.setItem(storageKey, remoteTheme);
+        setTheme(remoteTheme as Theme);
+      }
+    }
+  }, [remoteTheme, storageKey]);
 
   useEffect(() => {
     const root = window.document.documentElement
@@ -48,9 +66,16 @@ export function ThemeProvider({
 
   const value = {
     theme,
-    setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme)
-      setTheme(theme)
+    setTheme: async (newTheme: Theme) => {
+      localStorage.setItem(storageKey, newTheme)
+      setTheme(newTheme)
+      if (userId) {
+        try {
+          await supabase.from('profiles').update({ theme: newTheme }).eq('id', userId);
+        } catch (error) {
+          console.error("Error updating theme in database:", error);
+        }
+      }
     },
   }
 

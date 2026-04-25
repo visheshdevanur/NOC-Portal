@@ -8,6 +8,7 @@ type StudentDues = {
   id: string;
   student_id: string;
   fine_amount: number | null;
+  paid_amount: number | null;
   status: string;
   profiles: { 
     full_name: string; 
@@ -99,14 +100,14 @@ export default function AccountsDashboard() {
 
 
 
-  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, profileName: string = 'Student') => {
+  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, paidAmount: number = 0, profileName: string = 'Student') => {
     try {
       // First, strictly fetch the existing due amount from the database
-      const { data: currentDue } = await supabase.from('student_dues').select('fine_amount').eq('id', dueId).single();
+      const { data: currentDue } = await supabase.from('student_dues').select('fine_amount, paid_amount').eq('id', dueId).single();
       const previousAmount = currentDue?.fine_amount || 0;
       const diff = previousAmount - fineAmount;
       
-      await updateStudentDueFee(dueId, fineAmount);
+      await updateStudentDueFee(dueId, fineAmount, paidAmount);
       
       if (fineAmount === 0 && previousAmount > 0) {
         await logActivity('Cleared Due Amount', `Cleared dues for ${profileName} (Paid: ₹${previousAmount})`);
@@ -115,11 +116,17 @@ export default function AccountsDashboard() {
       } else if (diff > 0) {
         await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} for ${profileName} (Paid: ₹${diff})`);
       } else {
-        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} for ${profileName}`);
+        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} (Paid: ₹${paidAmount}) for ${profileName}`);
       }
       // Update local state
-      setDues(prev => prev.map(d => d.id === dueId ? { ...d, fine_amount: fineAmount, status: fineAmount > 0 ? 'pending' : 'completed' } : d));
-      setSuccess(`Due amount updated to ₹${fineAmount}. Status: ${fineAmount > 0 ? 'Pending' : 'Cleared'}.`);
+      setDues(prev => prev.map(d => {
+        if (d.id === dueId) {
+          const remaining = fineAmount - paidAmount;
+          return { ...d, fine_amount: fineAmount, paid_amount: paidAmount, status: remaining > 0 ? 'pending' : 'completed' };
+        }
+        return d;
+      }));
+      setSuccess(`Due amount updated. Fine: ₹${fineAmount}, Paid: ₹${paidAmount}.`);
     } catch (err: any) {
       setError('Failed to update due amount: ' + (err?.message || 'Unknown'));
     }
@@ -360,7 +367,7 @@ export default function AccountsDashboard() {
                       <th className="p-5 font-semibold">Student Name</th>
                       <th className="p-5 font-semibold">Roll Number</th>
                       <th className="p-5 font-semibold">Dept / Sem / Sec</th>
-                      <th className="p-5 font-semibold">Due Amount (₹)</th>
+                      <th className="p-5 font-semibold">Financials (₹)</th>
                       <th className="p-5 font-semibold">Status</th>
                       <th className="p-5 font-semibold text-right">Actions</th>
                     </tr>
@@ -378,7 +385,20 @@ export default function AccountsDashboard() {
                           <span>Sec {d.profiles?.section || '—'}</span>
                         </td>
                         <td className="p-5 font-bold text-foreground">
-                          {(d.fine_amount || 0) > 0 ? `₹${d.fine_amount}` : '₹0'}     
+                          {(() => {
+                            const fine = d.fine_amount || 0;
+                            const paid = d.paid_amount || 0;
+                            const rem = Math.max(0, fine - paid);
+                            return (
+                              <div className="flex flex-col gap-1">
+                                <span className="text-sm">Total Fine: ₹{fine}</span>
+                                <span className="text-sm text-emerald-600 dark:text-emerald-400">Total Paid: ₹{paid}</span>
+                                <span className={`text-sm ${rem > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                  Remaining: ₹{rem}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="p-5">
                           <span className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
@@ -516,7 +536,7 @@ export default function AccountsDashboard() {
                         <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
                           <th className="p-5 font-semibold">Student Name</th>
                           <th className="p-5 font-semibold">Roll Number</th>
-                          <th className="p-5 font-semibold">Due Amount (₹)</th>
+                          <th className="p-5 font-semibold min-w-[200px]">Financials (₹)</th>
                           <th className="p-5 font-semibold">Clearance Status</th>
                           <th className="p-5 font-semibold text-right">Actions</th>
                         </tr>
@@ -526,19 +546,69 @@ export default function AccountsDashboard() {
                           <tr key={d.id} className="hover:bg-secondary/40 transition-colors">
                             <td className="p-5 font-medium text-foreground text-sm sm:text-base">{d.profiles?.full_name || 'Unknown'}</td>
                             <td className="p-5 text-sm text-muted-foreground font-bold tracking-widest">{d.profiles?.roll_number || 'N/A'}</td>
-                         <td className="p-5 font-bold text-foreground">
-                              <input
-                                type="number"
-                                min="0"
-                                className={`w-28 p-2 border rounded-xl text-sm bg-background focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold ${
-                                  (d.fine_amount || 0) > 0 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
-                                }`}
-                                defaultValue={d.fine_amount || 0}
-                                onBlur={e => {
-                                  const val = parseInt(e.target.value) || 0;
-                                  if (val !== (d.fine_amount || 0)) handleManualFeeUpdate(d.id, val, d.profiles?.full_name || 'Unknown');
-                                }}
-                              />
+                            <td className="p-5 font-bold text-foreground">
+                              {(() => {
+                                const fine = d.fine_amount || 0;
+                                const paid = d.paid_amount || 0;
+                                const rem = Math.max(0, fine - paid);
+                                return (
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-muted-foreground w-12">Fine:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        className={`w-24 p-1.5 border rounded-lg text-sm bg-background focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold ${
+                                          rem > 0 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
+                                        }`}
+                                        defaultValue={fine}
+                                        onBlur={e => {
+                                          const val = parseInt(e.target.value) || 0;
+                                          if (val !== fine) handleManualFeeUpdate(d.id, val, paid, d.profiles?.full_name || 'Unknown');
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                                      <span className="text-xs text-muted-foreground w-12">Paid:</span>
+                                      ₹{paid}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-sm">
+                                      <span className="text-xs text-muted-foreground w-12">Rem:</span>
+                                      <span className={rem > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}>
+                                        ₹{rem}
+                                      </span>
+                                    </div>
+                                    {rem > 0 && (
+                                      <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                                        <span className="text-xs text-muted-foreground w-12">Pay:</span>
+                                        <div className="flex bg-background border border-emerald-500/50 rounded-lg overflow-hidden w-32">
+                                          <input 
+                                            type="number" 
+                                            id={`pay-${d.id}`} 
+                                            className="w-full p-1.5 text-xs outline-none" 
+                                            placeholder={`Max ₹${rem}`} 
+                                            max={rem}
+                                          />
+                                          <button 
+                                            onClick={() => {
+                                              const el = document.getElementById(`pay-${d.id}`) as HTMLInputElement;
+                                              let payment = parseInt(el?.value) || 0;
+                                              if (payment > 0) {
+                                                 payment = Math.min(payment, rem); // Prevent overpayment
+                                                 handleManualFeeUpdate(d.id, fine, paid + payment, d.profiles?.full_name || 'Unknown');
+                                                 el.value = '';
+                                              }
+                                            }}
+                                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-2 font-bold text-xs transition-colors"
+                                          >
+                                            Add
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="p-5">
                               <span className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
@@ -551,12 +621,14 @@ export default function AccountsDashboard() {
                             </td>
                             <td className="p-5 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                <button
-                                  onClick={() => handleManualFeeUpdate(d.id, 0, d.profiles?.full_name || 'Unknown')}
-                                  className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
-                                >
-                                  Clear
-                                </button>
+                                {Math.max(0, (d.fine_amount || 0) - (d.paid_amount || 0)) > 0 && (
+                                  <button
+                                    onClick={() => handleManualFeeUpdate(d.id, d.fine_amount || 0, d.fine_amount || 0, d.profiles?.full_name || 'Unknown')}
+                                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                  >
+                                    Clear Full Fine
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

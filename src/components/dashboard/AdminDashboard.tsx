@@ -137,10 +137,12 @@ export default function AdminDashboard() {
   }, [activeTab]);
 
   // ==================== SYSTEM LOGS ====================
+  // Admin should only see logs from COE, Librarian, HOD, and Accounts
+  const ADMIN_VISIBLE_ROLES = ['coe', 'librarian', 'hod', 'accounts'];
   const fetchAdminLogs = async () => {
     setLogsLoading(true);
     try {
-      const { data, error } = await supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(500);
+      const { data, error } = await supabase.from('activity_logs').select('*').in('user_role', ADMIN_VISIBLE_ROLES).order('created_at', { ascending: false }).limit(500);
       if (error) throw error;
       setAdminLogs(data || []);
     } catch (err: any) { console.error('Failed to fetch logs:', err); }
@@ -184,7 +186,8 @@ export default function AdminDashboard() {
   }, [adminLogs, logsDeptFilter, logsRoleFilter, activeTab]);
 
   const filteredLogs = adminLogs.filter(log => {
-    if (log.user_role === 'student') return false; 
+    // Only show COE, librarian, HOD, and accounts logs (already filtered at fetch level, but double-check)
+    if (!ADMIN_VISIBLE_ROLES.includes(log.user_role)) return false;
     
     let deptMatch = false;
     if (logsDeptFilter === 'all') deptMatch = true;
@@ -197,7 +200,6 @@ export default function AdminDashboard() {
 
     let roleMatch = false;
     if (logsRoleFilter === 'all') roleMatch = true;
-    else if (logsRoleFilter === 'faculty' && (log.user_role === 'faculty' || log.user_role === 'teacher')) roleMatch = true;
     else if (log.user_role === logsRoleFilter) roleMatch = true;
 
     if (!roleMatch) return false;
@@ -830,6 +832,7 @@ export default function AdminDashboard() {
                 <FormField label="Role">
                   <select className="modal-input" value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
                     <option value="hod">HOD (Head of Department)</option>
+                    <option value="fyc">First Year Coordinator (FYC)</option>
                     <option value="accounts">Accounts Staff</option>
                     <option value="coe">Controller of Examination (COE)</option>
                     <option value="librarian">Librarian</option>
@@ -1115,6 +1118,7 @@ export default function AdminDashboard() {
                   <option value="coe">COE</option>
                   <option value="accounts">Accounts</option>
                   <option value="librarian">Librarian</option>
+                  <option value="fyc">FYC</option>
                   <option value="staff">Staff</option>
                   <option value="teacher">Teacher</option>
                   <option value="faculty">Faculty</option>
@@ -1290,7 +1294,7 @@ export default function AdminDashboard() {
           <div className="flex justify-between items-center mb-6">
             <div>
               <h2 className="text-2xl font-bold text-foreground">System Activity Logs</h2>
-              <p className="text-muted-foreground mt-1">Monitor real-time staff operations and auditing.</p>
+              <p className="text-muted-foreground mt-1">Monitoring COE, Librarian, HOD and Accounts activity.</p>
             </div>
           </div>
           
@@ -1315,7 +1319,7 @@ export default function AdminDashboard() {
             </div>
 
             <div className="flex-1">
-              <label className="block text-sm font-medium text-foreground mb-1.5">Role / Faculty Filter</label>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Role Filter</label>
               <select 
                 value={logsRoleFilter} 
                 onChange={(e) => {
@@ -1326,10 +1330,10 @@ export default function AdminDashboard() {
                 disabled={['accounts', 'coe', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all'}
               >
                 <option value="all">All Roles</option>
-                {logsDeptFilter !== 'all' && <option value="admin">Admins</option>}
+                <option value="coe">COE</option>
+                <option value="librarian">Librarian</option>
                 <option value="hod">HODs</option>
-                <option value="faculty">Faculty / Teachers</option>
-                <option value="staff">Staff</option>
+                <option value="accounts">Accounts</option>
               </select>
               {['accounts', 'coe', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all' && (
                 <p className="text-xs text-muted-foreground mt-1">Role is implicitly set by department.</p>

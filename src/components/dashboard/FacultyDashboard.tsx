@@ -163,7 +163,11 @@ export default function FacultyDashboard() {
     }
   };
 
+  const MAX_IAS_PER_SUBJECT = 3;
+  const isIALimitReached = iaCount >= MAX_IAS_PER_SUBJECT;
+
   const handleAddIA = () => {
+    if (isIALimitReached) return; // Guard against creating more than max IAs
     // Initialize all students as PRESENT by default
     const initialMap: AttendanceMap = {};
     enrolledStudents.forEach(s => {
@@ -691,17 +695,22 @@ export default function FacultyDashboard() {
                         Internal Assessments
                       </h2>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {iaCount} IA{iaCount !== 1 ? 's' : ''} recorded • {enrolledStudents.length} students enrolled
+                        {iaCount} / {MAX_IAS_PER_SUBJECT} IA{iaCount !== 1 ? 's' : ''} recorded • {enrolledStudents.length} students enrolled
                       </p>
                     </div>
-                    <button
-                      onClick={handleAddIA}
-                      disabled={showNewIAForm}
-                      className="flex items-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add IA-{iaCount + 1}
-                    </button>
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        onClick={handleAddIA}
+                        disabled={showNewIAForm || isIALimitReached}
+                        className="flex items-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                      >
+                        <Plus className="w-4 h-4" />
+                        {isIALimitReached ? `Max ${MAX_IAS_PER_SUBJECT} IAs Reached` : `Add IA-${iaCount + 1}`}
+                      </button>
+                      {isIALimitReached && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Maximum of {MAX_IAS_PER_SUBJECT} IAs allowed per subject</p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Success/Error message */}

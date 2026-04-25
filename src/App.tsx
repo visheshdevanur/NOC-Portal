@@ -9,7 +9,7 @@ import LibraryDashboard from './pages/LibraryDashboard';
 import { ThemeProvider } from './components/ThemeProvider';
 
 function App() {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
 
   if (loading) {
     return (
@@ -50,7 +50,7 @@ function App() {
   const isPasswordResetPending = sessionStorage.getItem('password_reset_pending') === 'true';
 
   return (
-    <ThemeProvider defaultTheme="light" storageKey={`noc-theme-${user ? user.id : 'guest'}`}>
+    <ThemeProvider remoteTheme={profile?.theme} userId={user?.id} storageKey={`noc-theme-${user ? user.id : 'guest'}`}>
       <BrowserRouter>
         <Routes>
           <Route 

@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import {
   X, Search, BookOpen, Users, UserPlus,
-  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, ArrowUpRight
+  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, ArrowUpRight, Activity, Eye, Download
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -36,7 +36,7 @@ type Subject = {
   semesters?: { name: string } | null;
 };
 
-type TabType = 'users' | 'subjects' | 'sections' | 'attendances' | 'semesters' | 'dues' | 'promote';
+type TabType = 'users' | 'subjects' | 'sections' | 'attendances' | 'semesters' | 'dues' | 'promote' | 'logs' | 'studentdues';
 
 type Semester = {
   id: string;
@@ -116,6 +116,17 @@ export default function StaffDashboard() {
   const [promoteMsg, setPromoteMsg] = useState<string | null>(null);
   const [promoteErr, setPromoteErr] = useState<string | null>(null);
 
+  // Activity Logs State
+  const [staffLogs, setStaffLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsSearch, setLogsSearch] = useState('');
+
+  // Student Dues Overview State (read-only combined view)
+  const [studentDuesOverview, setStudentDuesOverview] = useState<any[]>([]);
+  const [studentDuesLoading, setStudentDuesLoading] = useState(false);
+  const [studentDuesSearch, setStudentDuesSearch] = useState('');
+  const [csvSemFilter, setCsvSemFilter] = useState<string>('all');
+
   useEffect(() => {
     if (profile?.department_id) {
       fetchDeptName();
@@ -137,6 +148,8 @@ export default function StaffDashboard() {
     if (activeTab === 'attendances') fetchAttendances();
     if (activeTab === 'semesters' || activeTab === 'promote') fetchSemesters();
     if (activeTab === 'dues') fetchDues();
+    if (activeTab === 'logs') fetchStaffLogs();
+    if (activeTab === 'studentdues') { fetchStudentDuesOverview(); fetchSemesters(); }
   }, [activeTab, profile?.department_id]);
 
   const fetchDues = async () => {
@@ -150,9 +163,10 @@ export default function StaffDashboard() {
   };
 
   const handleApproveDue = async (dueId: string) => {
+    const due = departmentDues.find(d => d.id === dueId);
     if (!confirm("Approve this student's college fee due?")) return;
     try {
-      await import('../../lib/api').then(m => m.markStudentDues(dueId, 'completed', 0));
+      await import('../../lib/api').then(m => m.markStudentDues(dueId, 'completed', due?.fine_amount || 0));
       fetchDues();
     } catch (err: any) {
       alert("Failed to approve due: " + getFriendlyErrorMessage(err));
@@ -198,6 +212,100 @@ export default function StaffDashboard() {
       setDeptName(dept?.name || profile.department_id);
     } catch { setDeptName(profile.department_id); }
   };
+
+  // ==================== ACTIVITY LOGS ======================
+  const fetchStaffLogs = async () => {
+    if (!profile?.department_id) return;
+    setLogsLoading(true);
+    try {
+      // Fetch logs for faculty/teacher roles in this department
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .eq('department_id', profile.department_id)
+        .in('user_role', ['faculty', 'teacher'])
+        .order('created_at', { ascending: false })
+        .limit(300);
+      if (error) throw error;
+      setStaffLogs(data || []);
+    } catch (err: any) { console.error('Failed to fetch faculty logs:', err); }
+    finally { setLogsLoading(false); }
+  };
+
+  const filteredStaffLogs = staffLogs.filter(log =>
+    log.user_name?.toLowerCase().includes(logsSearch.toLowerCase()) ||
+    log.action?.toLowerCase().includes(logsSearch.toLowerCase()) ||
+    log.details?.toLowerCase().includes(logsSearch.toLowerCase())
+  );
+
+  // ==================== STUDENT DUES OVERVIEW (READ-ONLY) ======================
+  const fetchStudentDuesOverview = async () => {
+    if (!profile?.department_id) return;
+    setStudentDuesLoading(true);
+    try {
+      // Fetch students in department
+      const { data: students, error: studErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, roll_number, section, semester_id, semesters(name)')
+        .eq('department_id', profile.department_id)
+        .eq('role', 'student')
+        .order('full_name');
+      if (studErr) throw studErr;
+
+      const studentIds = (students || []).map((s: any) => s.id);
+      if (studentIds.length === 0) { setStudentDuesOverview([]); setStudentDuesLoading(false); return; }
+
+      // Fetch library dues for these students
+      const { data: libDues, error: libErr } = await supabase
+        .from('library_dues')
+        .select('student_id, has_dues, fine_amount, paid_amount, remarks')
+        .in('student_id', studentIds);
+      if (libErr) throw libErr;
+
+      // Fetch college fee dues for these students
+      const { data: collegeDues, error: colErr } = await supabase
+        .from('student_dues')
+        .select('student_id, fine_amount, status, paid_amount')
+        .in('student_id', studentIds);
+      if (colErr) throw colErr;
+
+      // Fetch attendance fines for these students
+      const { data: attendanceData, error: attErr } = await supabase
+        .from('subject_enrollment')
+        .select('student_id, attendance_fee')
+        .in('student_id', studentIds);
+      if (attErr) throw attErr;
+
+      // Build maps
+      const libMap = new Map((libDues || []).map((d: any) => [d.student_id, d]));
+      const colMap = new Map((collegeDues || []).map((d: any) => [d.student_id, d]));
+      const attMap = new Map();
+      (attendanceData || []).forEach((d: any) => {
+        const current = attMap.get(d.student_id) || 0;
+        attMap.set(d.student_id, current + (Number(d.attendance_fee) || 0));
+      });
+
+      // Merge into combined records
+      const combined = (students || []).map((s: any) => ({
+        ...s,
+        library: libMap.get(s.id) || null,
+        college: colMap.get(s.id) || null,
+        attendance_fine: attMap.get(s.id) || 0,
+      }));
+
+      setStudentDuesOverview(combined);
+    } catch (err: any) {
+      console.error('Failed to fetch student dues overview:', err);
+    } finally {
+      setStudentDuesLoading(false);
+    }
+  };
+
+  const filteredStudentDuesOverview = studentDuesOverview.filter(s =>
+    s.full_name?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
+    s.roll_number?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
+    s.section?.toLowerCase().includes(studentDuesSearch.toLowerCase())
+  );
 
   const fetchData = async () => {
     // Legacy Dues fetch disabled
@@ -738,7 +846,9 @@ export default function StaffDashboard() {
     { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
     { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'sections', label: 'Section Assign', icon: <Link2 className="w-4 h-4" /> },
+    { id: 'studentdues', label: 'Student Dues', icon: <Eye className="w-4 h-4 text-indigo-500" /> },
     { id: 'promote', label: 'Promote', icon: <ArrowUpRight className="w-4 h-4 text-blue-500" /> },
+    { id: 'logs', label: 'Activity Logs', icon: <Activity className="w-4 h-4" /> },
   ];
 
   return (
@@ -1591,6 +1701,246 @@ export default function StaffDashboard() {
         </div>
       )}
 
+      {/* ========= STUDENT DUES OVERVIEW TAB (READ-ONLY) ========= */}
+      {activeTab === 'studentdues' && (
+        <div className="space-y-4">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <Eye className="w-6 h-6 text-indigo-500" />
+                Student Dues Overview
+              </h2>
+              <p className="text-muted-foreground text-sm mt-1">
+                View library dues, college fee remarks, and payment status for all department students (read-only).
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 w-full md:max-w-lg">
+              <div className="relative w-full sm:w-48">
+                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  className="pl-10 pr-4 py-2.5 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full text-sm"
+                  value={studentDuesSearch}
+                  onChange={e => setStudentDuesSearch(e.target.value)}
+                />
+              </div>
+              <select
+                value={csvSemFilter}
+                onChange={e => setCsvSemFilter(e.target.value)}
+                className="px-3 py-2.5 bg-card border border-border rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[140px]"
+              >
+                <option value="all">All Semesters</option>
+                {semestersList.map(sem => (
+                  <option key={sem.id} value={sem.id}>{sem.name}</option>
+                ))}
+              </select>
+              <button 
+                onClick={() => {
+                  const dataToExport = csvSemFilter === 'all'
+                    ? filteredStudentDuesOverview
+                    : filteredStudentDuesOverview.filter(s => s.semester_id === csvSemFilter);
+                  if (!dataToExport || dataToExport.length === 0) return;
+                  const semName = csvSemFilter === 'all' ? 'all_semesters' : (semestersList.find(s => s.id === csvSemFilter)?.name || 'semester').replace(/\s+/g, '_');
+                  const headers = ['Student Name', 'Roll No', 'Section', 'Semester', 'Library Dues', 'Library Fine', 'Library Paid', 'Library Remaining', 'Library Remarks', 'College Status', 'College Fine', 'College Paid', 'College Remaining', 'Attendance Fine', 'Total Paid/Fines'];
+                  const csvContent = [
+                    headers.join(','),
+                    ...dataToExport.map(s => {
+                      const libFine = Number(s.library?.fine_amount) || 0;
+                      const libPaid = Number(s.library?.paid_amount) || 0;
+                      const colFine = Number(s.college?.fine_amount) || 0;
+                      const colPaid = Number(s.college?.paid_amount) || 0;
+                      const attFine = Number(s.attendance_fine) || 0;
+                      const total = libPaid + colPaid + attFine;
+                      return [
+                        `"${s.full_name || ''}"`,
+                        `"${s.roll_number || ''}"`,
+                        `"${s.section || ''}"`,
+                        `"${s.semesters?.name || ''}"`,
+                        s.library?.has_dues ? 'Pending' : 'Clear',
+                        libFine,
+                        libPaid,
+                        Math.max(0, libFine - libPaid),
+                        `"${s.library?.remarks || ''}"`,
+                        s.college?.status || 'N/A',
+                        colFine,
+                        colPaid,
+                        Math.max(0, colFine - colPaid),
+                        attFine,
+                        total
+                      ].join(',');
+                    })
+                  ].join('\n');
+                  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.setAttribute('download', `student_dues_${semName}_${new Date().toISOString().split('T')[0]}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="whitespace-nowrap px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2"
+              >
+                <Download className="w-4 h-4" /> Export CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Summary cards */}
+          {!studentDuesLoading && studentDuesOverview.length > 0 && (() => {
+            const libPending = studentDuesOverview.filter(s => s.library?.has_dues).length;
+            const colPending = studentDuesOverview.filter(s => s.college?.status === 'pending').length;
+            const totalStudents = studentDuesOverview.length;
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
+                  <p className="text-sm text-muted-foreground font-medium">Total Students</p>
+                  <p className="text-2xl font-bold text-foreground mt-1">{totalStudents}</p>
+                </div>
+                <div className="bg-card rounded-2xl p-5 border border-orange-500/20 shadow-sm">
+                  <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">Library Dues Pending</p>
+                  <p className="text-2xl font-bold text-orange-600 dark:text-orange-400 mt-1">{libPending}</p>
+                </div>
+                <div className="bg-card rounded-2xl p-5 border border-red-500/20 shadow-sm">
+                  <p className="text-sm text-red-600 dark:text-red-400 font-medium">College Fee Pending</p>
+                  <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{colPending}</p>
+                </div>
+              </div>
+            );
+          })()}
+
+          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-secondary/40 text-foreground text-sm border-b border-border">
+                    <th className="p-4 font-semibold">#</th>
+                    <th className="p-4 font-semibold">Student Name</th>
+                    <th className="p-4 font-semibold">Roll No</th>
+                    <th className="p-4 font-semibold">Section</th>
+                    <th className="p-4 font-semibold">Semester</th>
+                    <th className="p-4 font-semibold text-center">Library Dues</th>
+                    <th className="p-4 font-semibold">Library Financials (₹)</th>
+                    <th className="p-4 font-semibold">Library Remarks</th>
+                    <th className="p-4 font-semibold text-center">College Fee Status</th>
+                    <th className="p-4 font-semibold">College Financials (₹)</th>
+                    <th className="p-4 font-semibold">Attendance Fine (₹)</th>
+                    <th className="p-4 font-semibold">Total Fine (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {studentDuesLoading ? (
+                    <tr><td colSpan={11} className="p-8 text-center text-muted-foreground animate-pulse">Loading student dues overview...</td></tr>
+                  ) : filteredStudentDuesOverview.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="p-12 text-center">
+                        <div className="flex flex-col items-center">
+                          <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
+                            <Eye className="w-8 h-8 text-muted-foreground/50" />
+                          </div>
+                          <h3 className="text-lg font-bold text-foreground">No Students Found</h3>
+                          <p className="text-muted-foreground mt-2 text-sm">No students match your search criteria.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredStudentDuesOverview.map((s, idx) => {
+                      const hasLibDues = s.library?.has_dues;
+                      const libFine = Number(s.library?.fine_amount) || 0;
+                      const libRemarks = s.library?.remarks || '—';
+                      const colStatus = s.college?.status || 'N/A';
+                      const colFine = Number(s.college?.fine_amount) || 0;
+                      const attFine = Number(s.attendance_fine) || 0;
+                      
+                      const totalFine = (Number(s.library?.paid_amount) || 0) + (Number(s.college?.paid_amount) || 0) + attFine;
+
+                      return (
+                        <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
+                          <td className="p-4 text-sm text-muted-foreground">{idx + 1}</td>
+                          <td className="p-4 font-medium text-foreground">{s.full_name}</td>
+                          <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
+                          <td className="p-4 text-muted-foreground">{s.section || '—'}</td>
+                          <td className="p-4 text-muted-foreground text-sm">{s.semesters?.name || '—'}</td>
+                          <td className="p-4 text-center">
+                            {hasLibDues ? (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">
+                                Pending
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                                Clear
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4 text-sm">
+                            {libFine > 0 ? (
+                              <div className="flex flex-col gap-1">
+                                <span className="font-bold text-muted-foreground text-xs">Total Fine: ₹{libFine}</span>
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs">
+                                  Paid: ₹{Number(s.library?.paid_amount) || 0}
+                                </span>
+                                <span className={`font-bold ${Math.max(0, libFine - (Number(s.library?.paid_amount) || 0)) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                  Rem: ₹{Math.max(0, libFine - (Number(s.library?.paid_amount) || 0))}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-bold text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="p-4 text-sm text-muted-foreground max-w-[200px] truncate" title={libRemarks}>
+                            {libRemarks}
+                          </td>
+                          <td className="p-4 text-center">
+                            {colStatus === 'pending' ? (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-red-500/15 text-red-600 dark:text-red-400">
+                                Pending
+                              </span>
+                            ) : colStatus === 'completed' ? (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                                Completed
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">N/A</span>
+                            )}
+                          </td>
+                          <td className="p-4 text-sm">
+                            {colFine > 0 ? (
+                              <div className="flex flex-col gap-1">
+                                <span className="font-bold text-muted-foreground text-xs">Total Fine: ₹{colFine}</span>
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs">
+                                  Paid: ₹{Number(s.college?.paid_amount) || 0}
+                                </span>
+                                <span className={`font-bold ${Math.max(0, colFine - (Number(s.college?.paid_amount) || 0)) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                  Rem: ₹{Math.max(0, colFine - (Number(s.college?.paid_amount) || 0))}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-bold text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className={`p-4 font-bold text-sm ${attFine > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                            {attFine > 0 ? `₹${attFine}` : '—'}
+                          </td>
+                          <td className={`p-4 font-bold text-sm ${totalFine > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-muted-foreground'}`}>
+                            {totalFine > 0 ? `₹${totalFine}` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {!studentDuesLoading && filteredStudentDuesOverview.length > 0 && (
+              <div className="px-4 py-3 bg-secondary/30 border-t border-border text-sm text-muted-foreground">
+                Showing {filteredStudentDuesOverview.length} of {studentDuesOverview.length} student{studentDuesOverview.length !== 1 ? 's' : ''}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ========= PROMOTE TAB ========= */}
       {activeTab === 'promote' && (
         <div className="space-y-6">
@@ -1661,6 +2011,85 @@ export default function StaffDashboard() {
               <ArrowUpRight className="w-5 h-5" />
               {promoting ? 'Promoting...' : 'Promote All Students'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========= ACTIVITY LOGS TAB ========= */}
+      {activeTab === 'logs' && (
+        <div className="space-y-4">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <Activity className="w-6 h-6 text-amber-500" />
+                Faculty / Teacher Activity Logs
+              </h2>
+              <p className="text-muted-foreground text-sm mt-1">Monitor faculty and teacher actions within your department.</p>
+            </div>
+            <div className="relative w-full md:max-w-xs">
+              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search by user, action, or details..."
+                className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 w-full"
+                value={logsSearch}
+                onChange={e => setLogsSearch(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+            <div className="border border-border rounded-2xl overflow-x-auto shadow-sm">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-secondary/40 text-foreground text-sm border-b border-border">
+                    <th className="p-5 font-semibold">Date & Time</th>
+                    <th className="p-5 font-semibold">Role</th>
+                    <th className="p-5 font-semibold">User Name</th>
+                    <th className="p-5 font-semibold">Action</th>
+                    <th className="p-5 font-semibold w-1/3">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border bg-card">
+                  {logsLoading ? (
+                    <tr><td colSpan={5} className="p-8 text-center text-muted-foreground animate-pulse">Loading faculty activity logs...</td></tr>
+                  ) : filteredStaffLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-12 text-center">
+                        <div className="flex flex-col items-center">
+                          <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
+                            <Activity className="w-8 h-8 text-muted-foreground/50" />
+                          </div>
+                          <h3 className="text-lg font-bold text-foreground">No Faculty Logs Found</h3>
+                          <p className="text-muted-foreground mt-2 text-sm">No recorded faculty/teacher activity matching your criteria.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredStaffLogs.map(log => (
+                      <tr key={log.id} className="hover:bg-secondary/20 transition-colors">
+                        <td className="p-5 text-sm whitespace-nowrap text-muted-foreground font-medium">
+                          {new Date(log.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                        </td>
+                        <td className="p-5">
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${roleColors[log.user_role] || 'bg-secondary text-foreground'}`}>
+                            {log.user_role}
+                          </span>
+                        </td>
+                        <td className="p-5 font-bold text-foreground">{log.user_name || 'System User'}</td>
+                        <td className="p-5 text-sm font-medium text-primary">{log.action}</td>
+                        <td className="p-5 text-sm text-foreground max-w-sm truncate" title={log.details || ''}>{log.details || '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {!logsLoading && filteredStaffLogs.length > 0 && (
+              <div className="px-4 py-3 bg-secondary/30 border-t border-border text-sm text-muted-foreground">
+                Showing {filteredStaffLogs.length} log{filteredStaffLogs.length !== 1 ? 's' : ''}
+              </div>
+            )}
           </div>
         </div>
       )}

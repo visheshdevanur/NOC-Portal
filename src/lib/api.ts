@@ -140,7 +140,7 @@ export const bulkProcessCollegeDues = async (pendingDues: { id: string, fine_amo
     for (const chunk of chunks) {
       const { error } = await supabase
         .from('student_dues')
-        .update({ status: 'completed', fine_amount: 0 } as any)
+        .update({ status: 'completed' } as any)
         .in('id', chunk);
       if (error) throw error;
     }
@@ -597,11 +597,11 @@ export const updateStudentPaidAmount = async (dueId: string, paidAmount: number)
 // =======================
 // ACCOUNTS: MANUAL FEE ENTRY
 // =======================
-export const updateStudentDueFee = async (dueId: string, fineAmount: number) => {
-  const status = fineAmount > 0 ? 'pending' : 'completed';
+export const updateStudentDueFee = async (dueId: string, fineAmount: number, paidAmount: number = 0) => {
+  const status = fineAmount > 0 && fineAmount > paidAmount ? 'pending' : 'completed';
   const { data, error } = await supabase
     .from('student_dues')
-    .update({ fine_amount: fineAmount, status, updated_at: new Date().toISOString() } as any)
+    .update({ fine_amount: fineAmount, paid_amount: paidAmount, status, updated_at: new Date().toISOString() } as any)
     .eq('id', dueId)
     .select()
     .single();
@@ -779,11 +779,11 @@ export const getStudentLibraryDues = async (studentId: string) => {
 };
 
 /** Update a single student's library due status */
-export const updateLibraryDue = async (studentId: string, hasDues: boolean, fineAmount: number, remarks: string) => {
+export const updateLibraryDue = async (studentId: string, hasDues: boolean, fineAmount: number, paidAmount: number = 0, remarks: string) => {
   const { data, error } = await supabase
     .from('library_dues')
     .upsert(
-      { student_id: studentId, has_dues: hasDues, fine_amount: fineAmount, remarks },
+      { student_id: studentId, has_dues: hasDues, fine_amount: fineAmount, paid_amount: paidAmount, remarks },
       { onConflict: 'student_id' }
     )
     .select('*, profiles!library_dues_student_id_fkey(full_name)')

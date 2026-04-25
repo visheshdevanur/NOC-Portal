@@ -1,4 +1,4 @@
-export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'hod' | 'admin' | 'accounts' | 'coe' | 'principal' | 'librarian';
+export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'hod' | 'admin' | 'accounts' | 'coe' | 'principal' | 'librarian' | 'fyc';
 export type DeptType = 'library' | 'hostel' | 'accounts';
 export type ClearanceStatus = 'pending' | 'rejected' | 'completed';
 export type ClearanceStage = 'student_application' | 'faculty_review' | 'library_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
@@ -18,10 +18,11 @@ export interface Database {
           semester_id: string | null;
           section: string | null;
           avatar_url: string | null;
+          theme: string | null;
           created_at: string;
         };
-        Insert: { id: string; full_name: string; role?: Role; roll_number?: string | null; department_id?: string | null; semester_id?: string | null; section?: string | null; avatar_url?: string | null; created_at?: string };
-        Update: { id?: string; full_name?: string; role?: Role; roll_number?: string | null; department_id?: string | null; semester_id?: string | null; section?: string | null; avatar_url?: string | null; created_at?: string };
+        Insert: { id: string; full_name: string; role?: Role; roll_number?: string | null; department_id?: string | null; semester_id?: string | null; section?: string | null; avatar_url?: string | null; theme?: string | null; created_at?: string };
+        Update: { id?: string; full_name?: string; role?: Role; roll_number?: string | null; department_id?: string | null; semester_id?: string | null; section?: string | null; avatar_url?: string | null; theme?: string | null; created_at?: string };
       };
       subjects: {
         Row: {
