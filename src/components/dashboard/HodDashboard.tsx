@@ -160,7 +160,9 @@ export default function HodDashboard() {
     setLoadingUsers(true);
     try {
       const data = await getUsersByDeptAndRoles(profile.department_id, ['staff', 'teacher', 'faculty']);
-      setDepartmentUsers(data as UserProfile[]);
+      // Exclude FYC-managed teachers (created_by is set by FYC)
+      const filtered = (data as UserProfile[]).filter(u => !(u as any).created_by);
+      setDepartmentUsers(filtered);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
   };
@@ -203,7 +205,7 @@ export default function HodDashboard() {
         await supabase.from('notifications').insert([{
           user_id: req.student_id,
           title: 'Final Clearance Approved!',
-          message: 'HOD has approved your final clearance. You can now download your hall ticket.',
+          message: 'HOD has approved your final clearance. You can now view your No Due Clearance Report.',
           type: 'success'
         }]);
       }
@@ -222,7 +224,7 @@ export default function HodDashboard() {
         await supabase.from('notifications').insert([{
           user_id: req.student_id,
           title: 'Final Clearance Approved!',
-          message: 'HOD has approved your final clearance. You can now download your hall ticket.',
+          message: 'HOD has approved your final clearance. You can now view your No Due Clearance Report.',
           type: 'success'
         }]);
       }

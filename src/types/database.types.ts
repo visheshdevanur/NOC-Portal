@@ -19,10 +19,13 @@ export interface Database {
           section: string | null;
           avatar_url: string | null;
           theme: string | null;
+          status: string | null;
+          batch: string | null;
           created_at: string;
+          created_by: string | null;
         };
-        Insert: { id: string; full_name: string; role?: Role; roll_number?: string | null; department_id?: string | null; semester_id?: string | null; section?: string | null; avatar_url?: string | null; theme?: string | null; created_at?: string };
-        Update: { id?: string; full_name?: string; role?: Role; roll_number?: string | null; department_id?: string | null; semester_id?: string | null; section?: string | null; avatar_url?: string | null; theme?: string | null; created_at?: string };
+        Insert: { id: string; full_name: string; role?: Role; roll_number?: string | null; department_id?: string | null; semester_id?: string | null; section?: string | null; avatar_url?: string | null; theme?: string | null; status?: string | null; batch?: string | null; created_at?: string; created_by?: string | null };
+        Update: { id?: string; full_name?: string; role?: Role; roll_number?: string | null; department_id?: string | null; semester_id?: string | null; section?: string | null; avatar_url?: string | null; theme?: string | null; status?: string | null; batch?: string | null; created_at?: string; created_by?: string | null };
       };
       subjects: {
         Row: {

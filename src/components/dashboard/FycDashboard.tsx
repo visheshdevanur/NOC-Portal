@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { approveHodRequest, getAllDepartments } from '../../lib/api';
+import { approveHodRequest, getAllDepartments, getFycStaffActivityLogs } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
-  GraduationCap, BookOpen, Eye, Clock
+  GraduationCap, BookOpen, Eye, Clock, Import, Check
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -62,9 +62,12 @@ type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'teacherDe
 const isFirstYearSem = (name: string) => {
   if (!name) return false;
   const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return n.includes('sem1') || n.includes('sem2') || n.includes('semester1') || n.includes('semester2')
-    || n === '1' || n === '2' || n.endsWith('1stsemester') || n.endsWith('2ndsemester')
-    || /\b1\b/.test(name) || /\b2\b/.test(name);
+  return n.includes('sem1') || n.includes('sem2') || 
+         n.includes('1stsem') || n.includes('2ndsem') ||
+         n.includes('semester1') || n.includes('semester2') ||
+         n === '1' || n === '2' || 
+         n.endsWith('1stsemester') || n.endsWith('2ndsemester') ||
+         /\b1\b/.test(name) || /\b2\b/.test(name);
 };
 
 export default function FycDashboard() {
@@ -87,6 +90,16 @@ export default function FycDashboard() {
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
 
+  // Import Teachers state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importDeptId, setImportDeptId] = useState('');
+  const [importTeachersList, setImportTeachersList] = useState<any[]>([]);
+  const [loadingImportTeachers, setLoadingImportTeachers] = useState(false);
+  const [selectedImportIds, setSelectedImportIds] = useState<Set<string>>(new Set());
+  const [importingTeachers, setImportingTeachers] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+
   // Students state
   const [departmentStudents, setDepartmentStudents] = useState<UserProfile[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
@@ -108,6 +121,7 @@ export default function FycDashboard() {
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [searchLogs, setSearchLogs] = useState('');
+  const [logRoleFilter, setLogRoleFilter] = useState('all');
 
   useEffect(() => {
     fetchDepartments();
@@ -190,10 +204,10 @@ export default function FycDashboard() {
   const fetchApprovedFines = async () => {
     setLoadingFines(true);
     try {
-      const { data, error } = await supabase
-        .from('subject_enrollment')
-        .select('*, profiles!inner(full_name, section, department_id, roll_number, semesters(name), departments!profiles_department_id_fkey(name)), subjects(subject_name, subject_code)')
-        .eq('remarks', 'Approved by Staff after Fine');
+        const { data, error } = await supabase
+          .from('subject_enrollment')
+          .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, section, department_id, roll_number, semesters(name), departments!profiles_department_id_fkey(name)), subjects(subject_name, subject_code)')
+          .eq('remarks', 'Approved by Staff after Fine');
       if (error) throw error;
       const filtered = (data || []).filter((s: any) => isFirstYearSem(s.profiles?.semesters?.name || ''));
       setApprovedFines(filtered || []);
@@ -222,7 +236,7 @@ export default function FycDashboard() {
 
       const { data: enrollments, error: eErr } = await supabase
         .from('subject_enrollment')
-        .select('teacher_id, subject_id, subjects!inner(subject_name, subject_code, semester_id, semesters(name)), profiles!inner(section, semester_id)')
+        .select('teacher_id, subject_id, subjects!inner(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey!inner(section, semester_id)')
         .in('teacher_id', teacherIds);
       if (eErr) throw eErr;
 
@@ -268,15 +282,10 @@ export default function FycDashboard() {
   };
 
   const fetchActivityLogs = async () => {
+    if (!user?.id) return;
     setLoadingLogs(true);
     try {
-      const { data, error } = await supabase
-        .from('activity_logs')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(200);
-      if (error) throw error;
+      const data = await getFycStaffActivityLogs();
       setActivityLogs(data || []);
     } catch (err) { console.error(err); }
     finally { setLoadingLogs(false); }
@@ -290,7 +299,7 @@ export default function FycDashboard() {
         await supabase.from('notifications').insert([{
           user_id: req.student_id,
           title: 'Final Clearance Approved!',
-          message: 'FYC has approved your final clearance. You can now download your hall ticket.',
+          message: 'FYC has approved your final clearance. You can now view your No Due Clearance Report.',
           type: 'success'
         }]);
         await supabase.from('activity_logs').insert([{
@@ -316,7 +325,7 @@ export default function FycDashboard() {
         await supabase.from('notifications').insert([{
           user_id: req.student_id,
           title: 'Final Clearance Approved!',
-          message: 'FYC has approved your final clearance. You can now download your hall ticket.',
+          message: 'FYC has approved your final clearance. You can now view your No Due Clearance Report.',
           type: 'success'
         }]);
         await supabase.from('activity_logs').insert([{
@@ -405,6 +414,86 @@ export default function FycDashboard() {
       fetchUsers();
     } catch (err: any) {
       setUserError(getFriendlyErrorMessage(err));
+    }
+  };
+
+  // ==================== IMPORT TEACHERS ======================
+  const fetchDeptTeachersForImport = async (deptId: string) => {
+    if (!deptId) { setImportTeachersList([]); return; }
+    setLoadingImportTeachers(true);
+    setImportError(null);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, role, email, created_by, departments!profiles_department_id_fkey(name)')
+        .eq('department_id', deptId)
+        .in('role', ['teacher', 'faculty'])
+        .order('full_name');
+      if (error) throw error;
+      setImportTeachersList(data || []);
+      setSelectedImportIds(new Set());
+    } catch (err: any) {
+      setImportError(getFriendlyErrorMessage(err));
+      setImportTeachersList([]);
+    } finally {
+      setLoadingImportTeachers(false);
+    }
+  };
+
+  const handleImportTeachers = async () => {
+    if (selectedImportIds.size === 0) { setImportError('Select at least one teacher to import.'); return; }
+    setImportingTeachers(true);
+    setImportError(null);
+    setImportSuccess(null);
+    try {
+      let count = 0;
+      for (const teacherId of selectedImportIds) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ created_by: user.id } as any)
+          .eq('id', teacherId);
+        if (error) throw error;
+        count++;
+      }
+
+      // Log the import
+      const teacherNames = importTeachersList
+        .filter(t => selectedImportIds.has(t.id))
+        .map(t => t.full_name)
+        .join(', ');
+      await supabase.from('activity_logs').insert([{
+        user_id: user?.id,
+        user_role: 'fyc',
+        user_name: user?.email,
+        action: 'Imported Teachers',
+        details: `Imported ${count} teacher(s) from department: ${teacherNames}`
+      }]);
+
+      setImportSuccess(`Successfully imported ${count} teacher(s)!`);
+      setSelectedImportIds(new Set());
+      setShowImportModal(false);
+      setImportDeptId('');
+      setImportTeachersList([]);
+      fetchUsers();
+    } catch (err: any) {
+      setImportError(getFriendlyErrorMessage(err));
+    } finally {
+      setImportingTeachers(false);
+    }
+  };
+
+  const toggleImportSelection = (teacherId: string) => {
+    const next = new Set(selectedImportIds);
+    if (next.has(teacherId)) next.delete(teacherId);
+    else next.add(teacherId);
+    setSelectedImportIds(next);
+  };
+
+  const toggleAllImport = () => {
+    if (selectedImportIds.size === importTeachersList.length) {
+      setSelectedImportIds(new Set());
+    } else {
+      setSelectedImportIds(new Set(importTeachersList.map(t => t.id)));
     }
   };
 
@@ -658,14 +747,142 @@ export default function FycDashboard() {
                 onChange={e => setSearchUsers(e.target.value)}
               />
             </div>
-            <button
-              onClick={() => setShowCreateUser(true)}
-              className="flex items-center gap-2 bg-violet-500 text-white hover:bg-violet-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm"
-            >
-              <UserPlus className="w-5 h-5" />
-              Add Clerk / Teacher
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => { setShowImportModal(true); setImportError(null); setImportSuccess(null); }}
+                className="flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm"
+              >
+                <Import className="w-5 h-5" />
+                Import from Department
+              </button>
+              <button
+                onClick={() => setShowCreateUser(true)}
+                className="flex items-center gap-2 bg-violet-500 text-white hover:bg-violet-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm"
+              >
+                <UserPlus className="w-5 h-5" />
+                Add Clerk / Teacher
+              </button>
+            </div>
           </div>
+
+          {/* Import Teachers Modal */}
+          {showImportModal && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto p-4 flex items-start justify-center">
+              <div className="bg-card rounded-3xl p-6 shadow-2xl border border-border w-full max-w-2xl mt-10 mb-10 relative">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
+                    <Import className="w-5 h-5 text-blue-500" />
+                    Import Teachers from Department
+                  </h3>
+                  <button onClick={() => { setShowImportModal(false); setImportDeptId(''); setImportTeachersList([]); setSelectedImportIds(new Set()); }} className="p-2 rounded-xl hover:bg-secondary transition-colors">
+                    <X className="w-5 h-5 text-muted-foreground" />
+                  </button>
+                </div>
+
+                {importError && (
+                  <div className="p-3 mb-3 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
+                    <span><strong>Error:</strong> {importError}</span>
+                    <button onClick={() => setImportError(null)}><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+                {importSuccess && (
+                  <div className="p-3 mb-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
+                    <span>✓ {importSuccess}</span>
+                    <button onClick={() => setImportSuccess(null)}><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Select Department</label>
+                    <select
+                      className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={importDeptId}
+                      onChange={e => { setImportDeptId(e.target.value); fetchDeptTeachersForImport(e.target.value); }}
+                    >
+                      <option value="">Choose a department...</option>
+                      {departments.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {importDeptId && (
+                    <div className="border border-border rounded-2xl overflow-hidden">
+                      {loadingImportTeachers ? (
+                        <div className="p-8 text-center text-muted-foreground animate-pulse">Loading teachers...</div>
+                      ) : importTeachersList.length === 0 ? (
+                        <div className="p-8 text-center text-muted-foreground">No teachers found in this department.</div>
+                      ) : (
+                        <>
+                          <div className="bg-secondary/50 px-4 py-3 border-b border-border flex items-center justify-between">
+                            <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-foreground">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-border text-blue-500 focus:ring-blue-500"
+                                checked={selectedImportIds.size === importTeachersList.length && importTeachersList.length > 0}
+                                onChange={toggleAllImport}
+                              />
+                              Select All ({importTeachersList.length} teachers)
+                            </label>
+                            <span className="text-xs text-muted-foreground">{selectedImportIds.size} selected</span>
+                          </div>
+                          <div className="max-h-[40vh] overflow-y-auto">
+                            {importTeachersList.map(teacher => {
+                              const isAlreadyManaged = teacher.created_by === user?.id;
+                              return (
+                                <label
+                                  key={teacher.id}
+                                  className={`flex items-center gap-4 p-4 border-b border-border last:border-b-0 cursor-pointer transition-colors ${
+                                    isAlreadyManaged ? 'bg-emerald-500/5 opacity-70' : 'hover:bg-secondary/30'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="w-4 h-4 rounded border-border text-blue-500 focus:ring-blue-500"
+                                    checked={selectedImportIds.has(teacher.id)}
+                                    onChange={() => toggleImportSelection(teacher.id)}
+                                    disabled={isAlreadyManaged}
+                                  />
+                                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
+                                    {teacher.full_name?.charAt(0)?.toUpperCase() || 'T'}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-foreground truncate">{teacher.full_name}</p>
+                                    <p className="text-xs text-muted-foreground">{teacher.email || 'No email'}</p>
+                                  </div>
+                                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${roleColors[teacher.role] || 'bg-secondary text-foreground'}`}>
+                                    {teacher.role}
+                                  </span>
+                                  {isAlreadyManaged && (
+                                    <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                                      <Check className="w-3.5 h-3.5" /> Already imported
+                                    </span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 mt-6">
+                  <button onClick={() => { setShowImportModal(false); setImportDeptId(''); setImportTeachersList([]); setSelectedImportIds(new Set()); }} className="flex-1 py-2.5 px-4 rounded-xl border border-border font-medium hover:bg-secondary transition-all">Cancel</button>
+                  <button
+                    onClick={handleImportTeachers}
+                    disabled={importingTeachers || selectedImportIds.size === 0}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-blue-500 text-white font-bold hover:bg-blue-600 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Import className="w-4 h-4" />
+                    {importingTeachers ? 'Importing...' : `Import ${selectedImportIds.size} Teacher${selectedImportIds.size !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Create User Modal */}
           {showCreateUser && (
@@ -1167,26 +1384,42 @@ export default function FycDashboard() {
             </p>
           </div>
 
-          <div className="relative w-full md:max-w-xs">
-            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search logs..."
-              className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 w-full"
-              value={searchLogs}
-              onChange={e => setSearchLogs(e.target.value)}
-            />
-          </div>
+            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+              <select
+                className="px-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 w-full sm:w-auto"
+                value={logRoleFilter}
+                onChange={e => setLogRoleFilter(e.target.value)}
+              >
+                <option value="all">All Roles</option>
+                <option value="clerk">Clerks</option>
+                <option value="teacher">Faculty & Teachers</option>
+              </select>
+              <div className="relative w-full sm:w-64">
+                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search logs..."
+                  className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 w-full"
+                  value={searchLogs}
+                  onChange={e => setSearchLogs(e.target.value)}
+                />
+              </div>
+            </div>
 
           <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
             {loadingLogs ? (
               <div className="p-8 text-center text-muted-foreground animate-pulse">Loading activity logs...</div>
             ) : (() => {
-              const filteredLogs = activityLogs.filter(log =>
-                log.user_name?.toLowerCase().includes(searchLogs.toLowerCase()) ||
-                log.action?.toLowerCase().includes(searchLogs.toLowerCase()) ||
-                log.details?.toLowerCase().includes(searchLogs.toLowerCase())
-              );
+              const filteredLogs = activityLogs.filter(log => {
+                const matchesSearch = log.user_name?.toLowerCase().includes(searchLogs.toLowerCase()) ||
+                                      log.action?.toLowerCase().includes(searchLogs.toLowerCase()) ||
+                                      log.details?.toLowerCase().includes(searchLogs.toLowerCase());
+                const logRole = log.user_role?.toLowerCase() || 'user';
+                const matchesRole = logRoleFilter === 'all' 
+                                    || (logRoleFilter === 'clerk' && logRole === 'clerk')
+                                    || (logRoleFilter === 'teacher' && ['teacher', 'faculty'].includes(logRole));
+                return matchesSearch && matchesRole;
+              });
               return filteredLogs.length === 0 ? (
                 <div className="p-12 text-center flex flex-col items-center">
                   <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-4">

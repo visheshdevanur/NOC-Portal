@@ -3,14 +3,14 @@ import { useAuth } from '../../lib/useAuth';
 import {
   getUsersByDeptAndRoles,
   getSubjectsByDepartment, createSubject, deleteSubject, getDepartmentSections,
-  assignTeacherToSection, updateSubjectAPI, getDepartmentById, getStaffAttendanceFines, overrideAttendanceFine, getSemestersByDepartment, createSemester, updateUserAPI,
-  updateStudentPaidAmount, promoteStudents
+  assignTeacherToSection, updateSubjectAPI, getDepartmentById, getStaffAttendanceFines, overrideAttendanceFine, getSemestersByDepartment, updateUserAPI,
+  updateStudentPaidAmount
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import {
   X, Search, BookOpen, Users, UserPlus,
-  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, ArrowUpRight, Activity, Eye, Download
+  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -24,6 +24,7 @@ type UserProfile = {
   section: string | null;
   roll_number?: string | null;
   created_at: string;
+  created_by?: string | null;
 };
 
 type Subject = {
@@ -36,12 +37,23 @@ type Subject = {
   semesters?: { name: string } | null;
 };
 
-type TabType = 'users' | 'subjects' | 'sections' | 'attendances' | 'semesters' | 'dues' | 'promote' | 'logs' | 'studentdues';
+type TabType = 'users' | 'subjects' | 'sections' | 'attendances' | 'dues' | 'logs' | 'studentdues';
 
 type Semester = {
   id: string;
   name: string;
   department_id: string;
+};
+
+const isFirstYearSem = (name: string) => {
+  if (!name) return false;
+  const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return n.includes('sem1') || n.includes('sem2') || 
+         n.includes('1stsem') || n.includes('2ndsem') ||
+         n.includes('semester1') || n.includes('semester2') ||
+         n === '1' || n === '2' || 
+         n.endsWith('1stsemester') || n.endsWith('2ndsemester') ||
+         /\b1\b/.test(name) || /\b2\b/.test(name);
 };
 
 export default function ClerkDashboard() {
@@ -79,12 +91,6 @@ export default function ClerkDashboard() {
 
   // Semesters State
   const [semestersList, setSemestersList] = useState<Semester[]>([]);
-  const [loadingSemesters, setLoadingSemesters] = useState(false);
-  const [showCreateSemester, setShowCreateSemester] = useState(false);
-  const [newSemesterName, setNewSemesterName] = useState('');
-  const [semesterCreating, setSemesterCreating] = useState(false);
-  const [semesterError, setSemesterError] = useState<string | null>(null);
-  const [semesterSuccess, setSemesterSuccess] = useState<string | null>(null);
 
   // Section Assignment State
   const [sections, setSections] = useState<string[]>([]);
@@ -106,15 +112,7 @@ export default function ClerkDashboard() {
   // Search states for tabs
   const [searchAttendances, setSearchAttendances] = useState('');
   const [searchDues, setSearchDues] = useState('');
-  const [searchSemesters, setSearchSemesters] = useState('');
   const [searchSubjects, setSearchSubjects] = useState('');
-
-  // Promote state
-  const [promoteSrcSem, setPromoteSrcSem] = useState('');
-  const [promoteTgtSem, setPromoteTgtSem] = useState('');
-  const [promoting, setPromoting] = useState(false);
-  const [promoteMsg, setPromoteMsg] = useState<string | null>(null);
-  const [promoteErr, setPromoteErr] = useState<string | null>(null);
 
   // Activity Logs State
   const [clerkLogs, setclerkLogs] = useState<any[]>([]);
@@ -146,7 +144,6 @@ export default function ClerkDashboard() {
     if (activeTab === 'sections') fetchSectionData();
     if (activeTab === 'subjects') fetchSubjects();
     if (activeTab === 'attendances') fetchAttendances();
-    if (activeTab === 'semesters' || activeTab === 'promote') fetchSemesters();
     if (activeTab === 'dues') fetchDues();
     if (activeTab === 'logs') fetchclerkLogs();
     if (activeTab === 'studentdues') { fetchStudentDuesOverview(); fetchSemesters(); }
@@ -157,7 +154,12 @@ export default function ClerkDashboard() {
     setLoadingDues(true);
     try {
       const data = await import('../../lib/api').then(m => m.getStaffStudentDues(profile.department_id!));
-      setDepartmentDues(data || []);
+      // Clerk only handles 1st/2nd sem students
+      const filtered = (data || []).filter((d: any) => {
+        const semName = d.profiles?.semesters?.name || '';
+        return isFirstYearSem(semName);
+      });
+      setDepartmentDues(filtered);
     } catch (err) { console.error(err); }
     finally { setLoadingDues(false); }
   };
@@ -183,28 +185,6 @@ export default function ClerkDashboard() {
     }
   };
 
-  const handlePromote = async () => {
-    if (!promoteSrcSem || !promoteTgtSem || !profile?.department_id) return;
-    if (promoteSrcSem === promoteTgtSem) { setPromoteErr('Source and target semesters must be different.'); return; }
-    const srcName = semestersList.find(s => s.id === promoteSrcSem)?.name || promoteSrcSem;
-    const tgtName = semestersList.find(s => s.id === promoteTgtSem)?.name || promoteTgtSem;
-    if (!confirm(`Promote ALL students from "${srcName}" → "${tgtName}"? This will reset their clearance journey, enrollments, and dues.`)) return;
-    setPromoting(true);
-    setPromoteMsg(null);
-    setPromoteErr(null);
-    try {
-      const count = await promoteStudents(promoteSrcSem, promoteTgtSem, profile.department_id);
-      setPromoteMsg(`✅ Successfully promoted ${count} student${count !== 1 ? 's' : ''} from ${srcName} to ${tgtName}.`);
-      setPromoteSrcSem('');
-      setPromoteTgtSem('');
-      fetchUsers();
-    } catch (err: any) {
-      setPromoteErr('Failed: ' + getFriendlyErrorMessage(err));
-    } finally {
-      setPromoting(false);
-    }
-  };
-
   const fetchDeptName = async () => {
     if (!profile?.department_id) return;
     try {
@@ -215,20 +195,41 @@ export default function ClerkDashboard() {
 
   // ==================== ACTIVITY LOGS ======================
   const fetchclerkLogs = async () => {
-    if (!profile?.department_id) return;
+    if (!profile?.department_id || !profile?.id) return;
     setLogsLoading(true);
     try {
-      // Fetch logs for faculty/teacher roles in this department
+      // Build list of creator IDs: the clerk itself + whoever created the clerk (FYC)
+      const creatorIds: string[] = [profile.id];
+      if (profile.created_by) creatorIds.push(profile.created_by);
+
+      // Get teachers created by either the clerk or the FYC
+      const { data: validTeachers } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('department_id', profile.department_id)
+        .in('role', ['teacher', 'faculty'])
+        .in('created_by', creatorIds);
+
+      const validTeacherIds = (validTeachers || []).map(t => t.id);
+
+      if (validTeacherIds.length === 0) {
+        setclerkLogs([]);
+        setLogsLoading(false);
+        return;
+      }
+
+      // Fetch logs only for these specific teachers
       const { data, error } = await supabase
         .from('activity_logs')
         .select('*')
         .eq('department_id', profile.department_id)
-        .in('user_role', ['faculty', 'teacher'])
+        .in('user_id', validTeacherIds)
         .order('created_at', { ascending: false })
         .limit(300);
       if (error) throw error;
+
       setclerkLogs(data || []);
-    } catch (err: any) { console.error('Failed to fetch faculty logs:', err); }
+    } catch (err: any) { console.error('Failed to fetch clerk logs:', err); }
     finally { setLogsLoading(false); }
   };
 
@@ -244,7 +245,7 @@ export default function ClerkDashboard() {
     setStudentDuesLoading(true);
     try {
       // Fetch students in department
-      const { data: students, error: studErr } = await supabase
+      const { data: allStudents, error: studErr } = await supabase
         .from('profiles')
         .select('id, full_name, roll_number, section, semester_id, semesters(name)')
         .eq('department_id', profile.department_id)
@@ -252,7 +253,14 @@ export default function ClerkDashboard() {
         .order('full_name');
       if (studErr) throw studErr;
 
-      const studentIds = (students || []).map((s: any) => s.id);
+      // Clerk only sees 1st/2nd semester students
+      const students = (allStudents || []).filter((s: any) => {
+        const semName = s.semesters?.name;
+        if (!semName) return true;
+        return isFirstYearSem(semName);
+      });
+
+      const studentIds = students.map((s: any) => s.id);
       if (studentIds.length === 0) { setStudentDuesOverview([]); setStudentDuesLoading(false); return; }
 
       // Fetch library dues for these students
@@ -286,7 +294,7 @@ export default function ClerkDashboard() {
       });
 
       // Merge into combined records
-      const combined = (students || []).map((s: any) => ({
+      const combined = students.map((s: any) => ({
         ...s,
         library: libMap.get(s.id) || null,
         college: colMap.get(s.id) || null,
@@ -317,7 +325,12 @@ export default function ClerkDashboard() {
     setLoadingAttendances(true);
     try {
       const data = await getStaffAttendanceFines(profile.department_id);
-      setAttendanceFines(data);
+      // Clerk only handles 1st/2nd sem students
+      const filtered = (data || []).filter((item: any) => {
+        const semName = item.profiles?.semesters?.name || '';
+        return isFirstYearSem(semName);
+      });
+      setAttendanceFines(filtered);
     } catch (err) { console.error(err); }
     finally { setLoadingAttendances(false); }
   };
@@ -343,7 +356,20 @@ export default function ClerkDashboard() {
     setLoadingUsers(true);
     try {
       const data = await getUsersByDeptAndRoles(profile.department_id, ['teacher', 'faculty', 'student']);
-      setDepartmentUsers(data as UserProfile[]);
+      // Clerk only handles 1st/2nd sem students — filter out higher sem students
+      const sems = await getSemestersByDepartment(profile.department_id);
+      const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
+      const filtered = (data as UserProfile[]).filter(u => {
+        if (u.role === 'student') {
+          return u.semester_id ? firstYearSemIds.has(u.semester_id) : true;
+        }
+        // Only show FYC-created/imported teachers
+        if (u.role === 'teacher' || u.role === 'faculty') {
+          return !!(u as any).created_by;
+        }
+        return true;
+      });
+      setDepartmentUsers(filtered);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
   };
@@ -424,6 +450,7 @@ export default function ClerkDashboard() {
           full_name,
           role,
           department_id: profile.department_id,
+          created_by: profile.created_by || profile.id,
         };
 
         if (role === 'student') {
@@ -437,6 +464,12 @@ export default function ClerkDashboard() {
           if (semNameOrId) {
             const matchedSem = fetchedSemesters.find(s => s.name.toLowerCase() === semNameOrId.toLowerCase() || s.id === semNameOrId);
             if (matchedSem) {
+              // Clerk can only create 1st/2nd sem students
+              if (!isFirstYearSem(matchedSem.name)) {
+                errorCount++;
+                errorDetails.push(`Row ${i + 1} (${email}): Clerk can only create 1st or 2nd semester students. "${matchedSem.name}" is not allowed.`);
+                continue;
+              }
               profileData.semester_id = matchedSem.id;
             } else {
               errorCount++;
@@ -508,6 +541,7 @@ export default function ClerkDashboard() {
         full_name: newUser.full_name,
         role: newUser.role,
         department_id: profile.department_id,
+        created_by: profile.created_by || profile.id,
       };
       if (newUser.role === 'student') {
         if (newUser.section) profileData.section = newUser.section.toUpperCase();
@@ -687,7 +721,13 @@ export default function ClerkDashboard() {
     setLoadingSubjects(true);
     try {
       const data = await getSubjectsByDepartment(profile.department_id);
-      setSubjects(data as Subject[]);
+      // Clerk only sees 1st/2nd semester subjects
+      const filtered = (data as Subject[]).filter(s => {
+        const semName = (s as any).semesters?.name;
+        if (!semName) return true;
+        return isFirstYearSem(semName);
+      });
+      setSubjects(filtered);
     } catch (err) { console.error(err); }
     finally { setLoadingSubjects(false); }
   };
@@ -755,47 +795,26 @@ export default function ClerkDashboard() {
   // ==================== SEMESTERS ======================
   const fetchSemesters = async () => {
     if (!profile?.department_id) return;
-    setLoadingSemesters(true);
     try {
       const data = await getSemestersByDepartment(profile.department_id);
-      setSemestersList(data);
+      const filtered = (data as Semester[]).filter(s => isFirstYearSem(s.name));
+      setSemestersList(filtered);
     } catch (err) { console.error(err); }
-    finally { setLoadingSemesters(false); }
-  };
-
-  const handleCreateSemester = async () => {
-    if (!newSemesterName.trim()) {
-      setSemesterError('Semester name is required');
-      return;
-    }
-    setSemesterCreating(true);
-    setSemesterError(null);
-    setSemesterSuccess(null);
-    try {
-      await createSemester(newSemesterName, profile!.department_id!);
-      setSemesterSuccess(`Semester "${newSemesterName}" created!`);
-      setNewSemesterName('');
-      setShowCreateSemester(false);
-      fetchSemesters();
-    } catch (err: any) {
-      setSemesterError(getFriendlyErrorMessage(err));
-    } finally {
-      setSemesterCreating(false);
-    }
   };
 
   // ==================== SECTION ASSIGN ======================
   const fetchSectionData = async () => {
     if (!profile?.department_id) return;
     try {
-      const [secs, subs, teachers] = await Promise.all([
+      const [secs, subs, allTeachers] = await Promise.all([
         getDepartmentSections(profile.department_id),
         getSubjectsByDepartment(profile.department_id),
         getUsersByDeptAndRoles(profile.department_id, ['teacher', 'faculty']),
       ]);
       setSections(secs);
       setDeptSubjects(subs as Subject[]);
-      setDeptTeachers(teachers);
+      // Clerk can only assign FYC-created/imported teachers
+      setDeptTeachers((allTeachers || []).filter((t: any) => !!t.created_by));
     } catch (err) { console.error(err); }
   };
 
@@ -842,12 +861,10 @@ export default function ClerkDashboard() {
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'attendances', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4 text-destructive" /> },
-    { id: 'semesters', label: 'Semesters', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
     { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'sections', label: 'Section Assign', icon: <Link2 className="w-4 h-4" /> },
     { id: 'studentdues', label: 'Student Dues', icon: <Eye className="w-4 h-4 text-indigo-500" /> },
-    { id: 'promote', label: 'Promote', icon: <ArrowUpRight className="w-4 h-4 text-blue-500" /> },
     { id: 'logs', label: 'Activity Logs', icon: <Activity className="w-4 h-4" /> },
   ];
 
@@ -1077,6 +1094,7 @@ export default function ClerkDashboard() {
                             <option key={sem.id} value={sem.id}>{sem.name}</option>
                           ))}
                         </select>
+                        <p className="text-xs text-amber-500 mt-1 italic">Only 1st & 2nd semester available for clerk.</p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-1.5">Section</label>
@@ -1145,6 +1163,7 @@ export default function ClerkDashboard() {
                             <option key={sem.id} value={sem.id}>{sem.name}</option>
                           ))}
                         </select>
+                        <p className="text-xs text-amber-500 mt-1 italic">Only 1st & 2nd semester available for clerk.</p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-1.5">Section</label>
@@ -1217,109 +1236,6 @@ export default function ClerkDashboard() {
         </div>
       )}
 
-      {/* ========= SEMESTERS TAB ========= */}
-      {activeTab === 'semesters' && (
-        <div className="space-y-6">
-          {semesterSuccess && (
-            <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>✓ {semesterSuccess}</span>
-              <button onClick={() => setSemesterSuccess(null)}><X className="w-4 h-4" /></button>
-            </div>
-          )}
-
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div className="relative flex-1 w-full md:max-w-xs">
-              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search semesters..."
-                className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 w-full"
-                value={searchSemesters}
-                onChange={e => setSearchSemesters(e.target.value)}
-              />
-            </div>
-            <button onClick={() => setShowCreateSemester(true)} className="flex items-center gap-2 bg-amber-500 text-white hover:bg-amber-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm">
-              <Plus className="w-5 h-5" />
-              Add Semester
-            </button>
-          </div>
-
-          {/* Create Semester Modal */}
-          {showCreateSemester && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-              <div className="bg-card rounded-3xl p-8 shadow-2xl border border-border w-full max-w-md">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
-                    <BookOpen className="w-5 h-5 text-amber-500" />
-                    New Semester
-                  </h3>
-                  <button onClick={() => setShowCreateSemester(false)} className="p-2 rounded-xl hover:bg-secondary transition-colors">
-                    <X className="w-5 h-5 text-muted-foreground" />
-                  </button>
-                </div>
-                {semesterError && (
-                  <div className="p-4 mb-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
-                    <span><strong>Error:</strong> {semesterError}</span>
-                    <button onClick={() => setSemesterError(null)}><X className="w-4 h-4" /></button>
-                  </div>
-                )}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Semester Name/Number</label>
-                    <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="e.g. Semester 1" value={newSemesterName} onChange={e => setNewSemesterName(e.target.value)} />
-                  </div>
-                </div>
-                <div className="flex gap-3 mt-8">
-                  <button onClick={() => setShowCreateSemester(false)} className="flex-1 py-3 px-4 rounded-xl border border-border text-foreground font-medium hover:bg-secondary transition-all">Cancel</button>
-                  <button onClick={handleCreateSemester} disabled={semesterCreating} className="flex-1 py-3 px-4 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600 disabled:opacity-50 transition-all">
-                    {semesterCreating ? 'Creating...' : 'Create Semester'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Semesters Table */}
-          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-            {loadingSemesters ? (
-              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading semesters...</div>
-            ) : (() => {
-              const filtered = semestersList.filter(sem =>
-                sem.name.toLowerCase().includes(searchSemesters.toLowerCase())
-              );
-              return filtered.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">No semesters found. Create one to get started!</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
-                        <th className="p-4 font-semibold">Semester Name</th>
-                        <th className="p-4 font-semibold">Students</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filtered.map(sem => {
-                        const studentCount = departmentUsers.filter(u => u.role === 'student' && u.semester_id === sem.id).length;
-                        return (
-                          <tr key={sem.id} className="hover:bg-secondary/20 transition-colors">
-                            <td className="p-4 font-bold text-foreground">{sem.name}</td>
-                            <td className="p-4">
-                              <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                                {studentCount} {studentCount === 1 ? 'student' : 'students'}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
 
       {/* ========= SUBJECTS TAB ========= */}
       {activeTab === 'subjects' && (
@@ -1821,20 +1737,16 @@ export default function ClerkDashboard() {
                     <th className="p-4 font-semibold">Section</th>
                     <th className="p-4 font-semibold">Semester</th>
                     <th className="p-4 font-semibold text-center">Library Dues</th>
-                    <th className="p-4 font-semibold">Library Financials (₹)</th>
-                    <th className="p-4 font-semibold">Library Remarks</th>
                     <th className="p-4 font-semibold text-center">College Fee Status</th>
-                    <th className="p-4 font-semibold">College Financials (₹)</th>
-                    <th className="p-4 font-semibold">Attendance Fine (₹)</th>
-                    <th className="p-4 font-semibold">Total Fine (₹)</th>
+                    <th className="p-4 font-semibold">Department Dues (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {studentDuesLoading ? (
-                    <tr><td colSpan={11} className="p-8 text-center text-muted-foreground animate-pulse">Loading student dues overview...</td></tr>
+                    <tr><td colSpan={8} className="p-8 text-center text-muted-foreground animate-pulse">Loading student dues overview...</td></tr>
                   ) : filteredStudentDuesOverview.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="p-12 text-center">
+                      <td colSpan={8} className="p-12 text-center">
                         <div className="flex flex-col items-center">
                           <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
                             <Eye className="w-8 h-8 text-muted-foreground/50" />
@@ -1847,13 +1759,8 @@ export default function ClerkDashboard() {
                   ) : (
                     filteredStudentDuesOverview.map((s, idx) => {
                       const hasLibDues = s.library?.has_dues;
-                      const libFine = Number(s.library?.fine_amount) || 0;
-                      const libRemarks = s.library?.remarks || '—';
                       const colStatus = s.college?.status || 'N/A';
-                      const colFine = Number(s.college?.fine_amount) || 0;
                       const attFine = Number(s.attendance_fine) || 0;
-                      
-                      const totalFine = (Number(s.library?.paid_amount) || 0) + (Number(s.college?.paid_amount) || 0) + attFine;
 
                       return (
                         <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
@@ -1873,24 +1780,6 @@ export default function ClerkDashboard() {
                               </span>
                             )}
                           </td>
-                          <td className="p-4 text-sm">
-                            {libFine > 0 ? (
-                              <div className="flex flex-col gap-1">
-                                <span className="font-bold text-muted-foreground text-xs">Total Fine: ₹{libFine}</span>
-                                <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs">
-                                  Paid: ₹{Number(s.library?.paid_amount) || 0}
-                                </span>
-                                <span className={`font-bold ${Math.max(0, libFine - (Number(s.library?.paid_amount) || 0)) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                                  Rem: ₹{Math.max(0, libFine - (Number(s.library?.paid_amount) || 0))}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="font-bold text-muted-foreground">—</span>
-                            )}
-                          </td>
-                          <td className="p-4 text-sm text-muted-foreground max-w-[200px] truncate" title={libRemarks}>
-                            {libRemarks}
-                          </td>
                           <td className="p-4 text-center">
                             {colStatus === 'pending' ? (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-red-500/15 text-red-600 dark:text-red-400">
@@ -1904,26 +1793,8 @@ export default function ClerkDashboard() {
                               <span className="text-xs text-muted-foreground">N/A</span>
                             )}
                           </td>
-                          <td className="p-4 text-sm">
-                            {colFine > 0 ? (
-                              <div className="flex flex-col gap-1">
-                                <span className="font-bold text-muted-foreground text-xs">Total Fine: ₹{colFine}</span>
-                                <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs">
-                                  Paid: ₹{Number(s.college?.paid_amount) || 0}
-                                </span>
-                                <span className={`font-bold ${Math.max(0, colFine - (Number(s.college?.paid_amount) || 0)) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                                  Rem: ₹{Math.max(0, colFine - (Number(s.college?.paid_amount) || 0))}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="font-bold text-muted-foreground">—</span>
-                            )}
-                          </td>
                           <td className={`p-4 font-bold text-sm ${attFine > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
                             {attFine > 0 ? `₹${attFine}` : '—'}
-                          </td>
-                          <td className={`p-4 font-bold text-sm ${totalFine > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-muted-foreground'}`}>
-                            {totalFine > 0 ? `₹${totalFine}` : '—'}
                           </td>
                         </tr>
                       );
@@ -1941,79 +1812,6 @@ export default function ClerkDashboard() {
         </div>
       )}
 
-      {/* ========= PROMOTE TAB ========= */}
-      {activeTab === 'promote' && (
-        <div className="space-y-6">
-          <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
-            <h2 className="text-xl font-bold text-foreground flex items-center gap-2 mb-2">
-              <ArrowUpRight className="w-5 h-5 text-blue-500" />
-              Promote Students to Next Semester
-            </h2>
-            <p className="text-muted-foreground text-sm mb-6">
-              Move all students from one semester to the next. This resets their clearance requests, subject enrollments, IA records, and college dues.
-            </p>
-
-            {promoteMsg && (
-              <div className="p-4 mb-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-                <span>{promoteMsg}</span>
-                <button onClick={() => setPromoteMsg(null)}><X className="w-4 h-4" /></button>
-              </div>
-            )}
-            {promoteErr && (
-              <div className="p-4 mb-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
-                <span>{promoteErr}</span>
-                <button onClick={() => setPromoteErr(null)}><X className="w-4 h-4" /></button>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">From Semester (Source)</label>
-                <select
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={promoteSrcSem}
-                  onChange={e => setPromoteSrcSem(e.target.value)}
-                >
-                  <option value="">Select source semester...</option>
-                  {semestersList.map(sem => (
-                    <option key={sem.id} value={sem.id}>{sem.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">To Semester (Target)</label>
-                <select
-                  className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={promoteTgtSem}
-                  onChange={e => setPromoteTgtSem(e.target.value)}
-                >
-                  <option value="">Select target semester...</option>
-                  {semestersList.map(sem => (
-                    <option key={sem.id} value={sem.id}>{sem.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {promoteSrcSem && (
-              <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl mb-6">
-                <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
-                  📊 Students in selected source semester: <strong>{departmentUsers.filter(u => u.role === 'student' && u.semester_id === promoteSrcSem).length}</strong>
-                </p>
-              </div>
-            )}
-
-            <button
-              onClick={handlePromote}
-              disabled={promoting || !promoteSrcSem || !promoteTgtSem || promoteSrcSem === promoteTgtSem}
-              className="bg-blue-500 text-white hover:bg-blue-600 px-8 py-3 rounded-xl font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <ArrowUpRight className="w-5 h-5" />
-              {promoting ? 'Promoting...' : 'Promote All Students'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ========= ACTIVITY LOGS TAB ========= */}
       {activeTab === 'logs' && (

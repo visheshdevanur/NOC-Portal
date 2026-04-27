@@ -4,11 +4,11 @@ import { createClient } from '@supabase/supabase-js';
 import {
   ShieldCheck, Users, Activity, BookOpen, AlertTriangle,
   Plus, Trash2, Search, UserPlus, X, Building2,
-  Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft
+  Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft, ArrowUpCircle, Archive
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
-type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'hallticket' | 'logs';
+type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'hallticket' | 'logs' | 'academic';
 
 type Department = {
   id: string;
@@ -88,6 +88,12 @@ export default function AdminDashboard() {
   const [selectedDeptSubjects, setSelectedDeptSubjects] = useState<Department | null>(null);
   const [selectedSemSubjects, setSelectedSemSubjects] = useState<any>(null);
   const [semestersList, setSemestersList] = useState<any[]>([]);
+  // Semester Creation State
+  const [showCreateSemester, setShowCreateSemester] = useState(false);
+  const [newSemesterName, setNewSemesterName] = useState('');
+  const [semesterCreating, setSemesterCreating] = useState(false);
+  const [semesterError, setSemesterError] = useState<string | null>(null);
+  const [semesterSuccess, setSemesterSuccess] = useState<string | null>(null);
 
   // Department Management State
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -122,6 +128,19 @@ export default function AdminDashboard() {
   const [logsUserFilter, setLogsUserFilter] = useState('all');
   const [logsUsersList, setLogsUsersList] = useState<{id: string, name: string}[]>([]);
 
+  // Academic Management State
+  const [promotionPreview, setPromotionPreview] = useState<any[]>([]);
+  const [graduatedStudents, setGraduatedStudents] = useState<any[]>([]);
+  const [academicLoading, setAcademicLoading] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+  const [promotionResult, setPromotionResult] = useState<any>(null);
+  const [academicError, setAcademicError] = useState<string | null>(null);
+  const [academicSuccess, setAcademicSuccess] = useState<string | null>(null);
+  const [showPromoteConfirm, setShowPromoteConfirm] = useState(false);
+  const [expandedGradDepts, setExpandedGradDepts] = useState<Set<string>>(new Set());
+  const [expandedGradBatches, setExpandedGradBatches] = useState<Set<string>>(new Set());
+  const [exportingPreData, setExportingPreData] = useState(false);
+
 
   useEffect(() => {
     fetchAnalytics();
@@ -134,6 +153,7 @@ export default function AdminDashboard() {
     if (activeTab === 'allusers') fetchAllUsers();
     if (activeTab === 'hallticket') { fetchStudentStatuses(); fetchDepartments(); }
     if (activeTab === 'logs') fetchAdminLogs();
+    if (activeTab === 'academic') { fetchPromotionPreview(); fetchGraduatedStudents(); fetchDepartments(); }
   }, [activeTab]);
 
   // ==================== SYSTEM LOGS ====================
@@ -358,6 +378,46 @@ export default function AdminDashboard() {
       const data = await import('../../lib/api').then(m => m.getSemestersByDepartment(deptId));
       setSemestersList(data || []);
     } catch (err) { console.error(err); }
+  };
+
+  const handleAdminCreateSemester = async (massCreate: boolean = false) => {
+    if (!newSemesterName.trim()) {
+      setSemesterError('Semester name is required.');
+      return;
+    }
+    if (!massCreate && !selectedDeptSubjects?.id) {
+      setSemesterError('No department selected.');
+      return;
+    }
+    setSemesterCreating(true);
+    setSemesterError(null);
+    setSemesterSuccess(null);
+    try {
+      if (massCreate) {
+        // Create the same semester in ALL departments
+        const names = newSemesterName.split(',').map(n => n.trim()).filter(n => n.length > 0);
+        const rows = departments.flatMap(dept =>
+          names.map(name => ({ name, department_id: dept.id }))
+        );
+        const { error } = await supabase.from('semesters').upsert(rows, { onConflict: 'name,department_id', ignoreDuplicates: true });
+        if (error) throw error;
+        setSemesterSuccess(`Created ${names.length} semester(s) across ${departments.length} departments!`);
+      } else {
+        // Single department
+        const names = newSemesterName.split(',').map(n => n.trim()).filter(n => n.length > 0);
+        const rows = names.map(name => ({ name, department_id: selectedDeptSubjects!.id }));
+        const { error } = await supabase.from('semesters').upsert(rows, { onConflict: 'name,department_id', ignoreDuplicates: true });
+        if (error) throw error;
+        setSemesterSuccess(`Created ${names.length} semester(s) for ${selectedDeptSubjects!.name}!`);
+        fetchSemestersForDept(selectedDeptSubjects!.id);
+      }
+      setNewSemesterName('');
+      setShowCreateSemester(false);
+    } catch (err: any) {
+      setSemesterError(getFriendlyErrorMessage(err));
+    } finally {
+      setSemesterCreating(false);
+    }
   };
 
   const handleCreateSubjectWithSem = async () => {
@@ -597,6 +657,125 @@ export default function AdminDashboard() {
     });
   };
 
+  // ==================== ACADEMIC MANAGEMENT ====================
+  const fetchPromotionPreview = async () => {
+    setAcademicLoading(true);
+    try {
+      const { getPromotionPreview } = await import('../../lib/api');
+      const data = await getPromotionPreview();
+      setPromotionPreview(data || []);
+    } catch (err: any) { console.error('Failed to fetch promotion preview:', err); }
+    finally { setAcademicLoading(false); }
+  };
+
+  const fetchGraduatedStudents = async () => {
+    try {
+      const { getGraduatedStudents } = await import('../../lib/api');
+      const data = await getGraduatedStudents();
+      setGraduatedStudents(data || []);
+    } catch (err: any) { console.error('Failed to fetch graduated students:', err); }
+  };
+
+  const handleExportPreData = async () => {
+    setExportingPreData(true);
+    setAcademicError(null);
+    try {
+      const { getPrePromotionData } = await import('../../lib/api');
+      const data = await getPrePromotionData();
+      // Build CSV from students data
+      const students = data?.students || [];
+      if (students.length === 0) { setAcademicError('No student data to export.'); return; }
+      const header = 'Name,Roll Number,Department,Semester,Section,Clearance Stage,Clearance Status\n';
+      const rows = students.map((s: any) =>
+        `"${s.full_name || ''}","${s.roll_number || ''}","${s.department || ''}","${s.semester || ''}","${s.section || ''}","${s.clearance_stage || ''}","${s.clearance_status || ''}"`
+      ).join('\n');
+      const blob = new Blob([header + rows], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pre_promotion_data_${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setAcademicSuccess('Pre-promotion data downloaded successfully!');
+    } catch (err: any) {
+      setAcademicError(getFriendlyErrorMessage(err));
+    } finally { setExportingPreData(false); }
+  };
+
+  const handlePromoteAll = async () => {
+    setPromoting(true);
+    setAcademicError(null);
+    setAcademicSuccess(null);
+    setPromotionResult(null);
+    try {
+      const { promoteAllStudents: doPromote } = await import('../../lib/api');
+      const result = await doPromote();
+      setPromotionResult(result);
+      setAcademicSuccess(`Promotion complete! ${result.total_promoted} promoted, ${result.total_graduated} graduated.`);
+      setShowPromoteConfirm(false);
+      fetchPromotionPreview();
+      fetchGraduatedStudents();
+      fetchAnalytics();
+    } catch (err: any) {
+      setAcademicError(getFriendlyErrorMessage(err));
+    } finally { setPromoting(false); }
+  };
+
+  const handleExportGraduatedCSV = (students: any[]) => {
+    if (students.length === 0) { alert('No graduated students to export.'); return; }
+    const header = 'Name,Roll Number,Department,Batch,Section,Enrolled\n';
+    const rows = students.map((s: any) =>
+      `"${s.full_name || ''}","${s.roll_number || ''}","${s.departments?.name || ''}","${s.batch || ''}","${s.section || ''}","${new Date(s.created_at).toLocaleDateString()}"`
+    ).join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `graduated_students_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportAndRemove = async (students: any[]) => {
+    handleExportGraduatedCSV(students);
+    // Wait a moment for download to start
+    await new Promise(r => setTimeout(r, 500));
+    if (!confirm(`CSV has been downloaded. Do you want to permanently remove these ${students.length} graduated students from the software?`)) return;
+    try {
+      const { removeGraduatedStudents } = await import('../../lib/api');
+      await removeGraduatedStudents(students.map((s: any) => s.id));
+      setAcademicSuccess(`${students.length} graduated students permanently removed.`);
+      fetchGraduatedStudents();
+    } catch (err: any) {
+      setAcademicError(getFriendlyErrorMessage(err));
+    }
+  };
+
+  // Build promotion preview summary
+  const promotionSummary = (() => {
+    const byDeptSem: Record<string, Record<string, number>> = {};
+    for (const s of promotionPreview) {
+      const dept = (s as any).departments?.name || 'Unassigned';
+      const sem = (s as any).semesters?.name || 'Unassigned';
+      if (!byDeptSem[dept]) byDeptSem[dept] = {};
+      byDeptSem[dept][sem] = (byDeptSem[dept][sem] || 0) + 1;
+    }
+    return byDeptSem;
+  })();
+
+  // Group graduated students by dept then batch
+  const graduatedByDeptBatch = (() => {
+    const groups: Record<string, Record<string, any[]>> = {};
+    for (const s of graduatedStudents) {
+      const dept = s.departments?.name || 'Unassigned';
+      const batch = s.batch || 'Unknown';
+      if (!groups[dept]) groups[dept] = {};
+      if (!groups[dept][batch]) groups[dept][batch] = [];
+      groups[dept][batch].push(s);
+    }
+    return groups;
+  })();
+
   // ==================== EXPORT ====================
   const handleExportCSV = async () => {
     try {
@@ -651,6 +830,7 @@ export default function AdminDashboard() {
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'overview', label: 'Overview', icon: <Activity className="w-4 h-4" /> },
+    { id: 'academic', label: 'Academic', icon: <ArrowUpCircle className="w-4 h-4" /> },
     { id: 'departments', label: 'Departments', icon: <Building2 className="w-4 h-4" /> },
     { id: 'hods', label: 'Core Staff', icon: <UserPlus className="w-4 h-4" /> },
     { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-4 h-4" /> },
@@ -715,6 +895,217 @@ export default function AdminDashboard() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ========= ACADEMIC MANAGEMENT TAB ========= */}
+      {activeTab === 'academic' && (
+        <div className="space-y-6">
+          {academicSuccess && <AlertBanner type="success" message={academicSuccess} onClose={() => setAcademicSuccess(null)} />}
+          {academicError && <AlertBanner type="error" message={academicError} onClose={() => setAcademicError(null)} />}
+
+          {/* Promote Students Section */}
+          <div className="bg-card rounded-3xl p-8 shadow-sm border border-border relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-primary/5 to-transparent rounded-full -translate-y-1/2 translate-x-1/2"></div>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
+                  <ArrowUpCircle className="w-7 h-7 text-primary" />
+                  Promote All Students
+                </h2>
+                <p className="text-muted-foreground mt-1">Advance all eligible students to the next semester across all departments.</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={handleExportPreData} disabled={exportingPreData} className="flex items-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-5 py-3 rounded-xl font-medium border border-border transition-all shadow-sm disabled:opacity-50">
+                  <Download className="w-4 h-4" />
+                  {exportingPreData ? 'Exporting...' : 'Download Current Data'}
+                </button>
+                <button onClick={() => setShowPromoteConfirm(true)} className="flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-xl font-bold transition-all shadow-md hover:shadow-lg">
+                  <ArrowUpCircle className="w-5 h-5" />
+                  Promote All Students
+                </button>
+              </div>
+            </div>
+
+            {/* Current Distribution */}
+            {academicLoading ? (
+              <div className="p-6 text-center text-muted-foreground animate-pulse">Loading student distribution...</div>
+            ) : Object.keys(promotionSummary).length === 0 ? (
+              <div className="p-6 text-center text-muted-foreground">No active students found.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.entries(promotionSummary).map(([dept, sems]) => (
+                  <div key={dept} className="bg-background rounded-2xl p-5 border border-border">
+                    <h3 className="font-bold text-foreground mb-3 flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-primary" /> {dept}
+                    </h3>
+                    <div className="space-y-2">
+                      {Object.entries(sems).sort(([a], [b]) => {
+                        const numA = parseInt(a) || 99;
+                        const numB = parseInt(b) || 99;
+                        return numA - numB;
+                      }).map(([sem, count]) => {
+                        const semNum = parseInt(sem);
+                        const arrow = semNum === 8 ? '→ Graduated' : isNaN(semNum) ? '' : `→ Sem ${semNum + 1}`;
+                        return (
+                          <div key={sem} className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">
+                              Sem {sem} <span className="text-primary font-medium">{arrow}</span>
+                            </span>
+                            <span className="font-bold text-foreground bg-secondary px-2 py-0.5 rounded-lg">{count}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Promotion Confirmation Modal */}
+          {showPromoteConfirm && (
+            <Modal title="Confirm Mass Promotion" icon={<ArrowUpCircle className="w-5 h-5 text-primary" />} onClose={() => setShowPromoteConfirm(false)}>
+              <div className="space-y-4">
+                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                  <p className="text-amber-600 dark:text-amber-400 font-medium text-sm">
+                    ⚠️ This action will promote ALL students across ALL departments to their next semester.
+                  </p>
+                </div>
+                <div className="text-sm text-muted-foreground space-y-2">
+                  <p>• Semesters 1→2, 2→3, ... 7→8</p>
+                  <p>• <strong>8th Sem</strong> students will be moved to <strong>Graduated</strong></p>
+                  <p>• <strong>2nd→3rd Sem</strong> students will have sections cleared for reassignment</p>
+                  <p>• All old clearance data, enrollments, IA attendance will be cleared</p>
+                </div>
+                <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl">
+                  <p className="text-foreground text-sm font-medium">
+                    💡 Tip: Use "Download Current Data" before promoting to backup all records.
+                  </p>
+                </div>
+                <p className="text-foreground font-bold text-center">Are you sure you want to promote all eligible students?</p>
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button onClick={() => setShowPromoteConfirm(false)} className="flex-1 py-3 px-4 rounded-xl border border-border text-foreground font-medium hover:bg-secondary transition-all">Cancel</button>
+                <button onClick={handlePromoteAll} disabled={promoting} className="flex-1 py-3 px-4 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-all disabled:opacity-50">
+                  {promoting ? 'Promoting...' : 'Yes, Promote All'}
+                </button>
+              </div>
+            </Modal>
+          )}
+
+          {/* Promotion Result */}
+          {promotionResult && (
+            <div className="bg-card rounded-3xl p-6 shadow-sm border border-emerald-500/20">
+              <h3 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
+                <GraduationCap className="w-5 h-5 text-emerald-500" /> Promotion Results
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="bg-emerald-500/10 rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-emerald-600">{promotionResult.total_promoted}</p>
+                  <p className="text-sm text-muted-foreground">Promoted</p>
+                </div>
+                <div className="bg-blue-500/10 rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-blue-600">{promotionResult.total_graduated}</p>
+                  <p className="text-sm text-muted-foreground">Graduated</p>
+                </div>
+                <div className="bg-amber-500/10 rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-amber-600">{promotionResult.total_sections_cleared}</p>
+                  <p className="text-sm text-muted-foreground">Sections Cleared (need reassignment)</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Graduated Students Section */}
+          <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
+                  <Archive className="w-7 h-7 text-indigo-500" />
+                  Graduated Students
+                </h2>
+                <p className="text-muted-foreground mt-1">{graduatedStudents.length} total graduated students</p>
+              </div>
+              {graduatedStudents.length > 0 && (
+                <div className="flex gap-3">
+                  <button onClick={() => handleExportGraduatedCSV(graduatedStudents)} className="flex items-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-5 py-3 rounded-xl font-medium border border-border transition-all">
+                    <Download className="w-4 h-4" /> Download All CSV
+                  </button>
+                  <button onClick={() => handleExportAndRemove(graduatedStudents)} className="flex items-center gap-2 bg-destructive/10 text-destructive hover:bg-destructive hover:text-white px-5 py-3 rounded-xl font-bold transition-all border border-destructive/20">
+                    <Trash2 className="w-4 h-4" /> Export & Remove All
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {Object.keys(graduatedByDeptBatch).length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">No graduated students found.</div>
+            ) : (
+              <div className="space-y-4">
+                {Object.entries(graduatedByDeptBatch).map(([dept, batches]) => {
+                  const deptStudents = Object.values(batches).flat();
+                  const isDeptExpanded = expandedGradDepts.has(dept);
+                  return (
+                    <div key={dept} className="bg-background rounded-2xl border border-border overflow-hidden">
+                      <button onClick={() => { const next = new Set(expandedGradDepts); isDeptExpanded ? next.delete(dept) : next.add(dept); setExpandedGradDepts(next); }} className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors">
+                        <div className="flex items-center gap-3">
+                          {isDeptExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                          <div>
+                            <h3 className="text-lg font-bold text-foreground">{dept}</h3>
+                            <p className="text-sm text-muted-foreground">{deptStudents.length} graduated students • {Object.keys(batches).length} batch(es)</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={(e) => { e.stopPropagation(); handleExportGraduatedCSV(deptStudents); }} className="p-2 rounded-xl bg-secondary hover:bg-secondary/80 transition-colors" title="Download CSV"><Download className="w-4 h-4" /></button>
+                          <button onClick={(e) => { e.stopPropagation(); handleExportAndRemove(deptStudents); }} className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors" title="Export & Remove"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </button>
+                      {isDeptExpanded && (
+                        <div className="border-t border-border p-4 space-y-3">
+                          {Object.entries(batches).sort(([a], [b]) => b.localeCompare(a)).map(([batch, students]) => {
+                            const batchKey = `${dept}-${batch}`;
+                            const isBatchExpanded = expandedGradBatches.has(batchKey);
+                            return (
+                              <div key={batch} className="bg-card rounded-xl border border-border overflow-hidden">
+                                <button onClick={() => { const next = new Set(expandedGradBatches); isBatchExpanded ? next.delete(batchKey) : next.add(batchKey); setExpandedGradBatches(next); }} className="w-full flex items-center justify-between p-4 text-left hover:bg-secondary/20 transition-colors">
+                                  <div className="flex items-center gap-2">
+                                    {isBatchExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                                    <span className="font-bold text-foreground">Batch {batch}</span>
+                                    <span className="text-sm text-muted-foreground">({students.length} students)</span>
+                                  </div>
+                                </button>
+                                {isBatchExpanded && (
+                                  <div className="border-t border-border overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                      <thead><tr className="bg-secondary/30 text-foreground text-sm border-b border-border">
+                                        <th className="p-3 font-semibold">Name</th>
+                                        <th className="p-3 font-semibold">Roll Number</th>
+                                        <th className="p-3 font-semibold">Enrolled</th>
+                                      </tr></thead>
+                                      <tbody className="divide-y divide-border">
+                                        {students.map((s: any) => (
+                                          <tr key={s.id} className="hover:bg-secondary/10 transition-colors">
+                                            <td className="p-3 font-medium text-foreground">{s.full_name}</td>
+                                            <td className="p-3 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
+                                            <td className="p-3 text-muted-foreground text-sm">{new Date(s.created_at).toLocaleDateString()}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ========= DEPARTMENTS TAB ========= */}
@@ -1021,20 +1412,75 @@ export default function AdminDashboard() {
 
           {/* Views */}
           {!selectedDeptSubjects ? (
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {departments.map((dept) => (
-                  <button key={dept.id} onClick={() => { setSelectedDeptSubjects(dept); fetchSemestersForDept(dept.id); }} className="bg-card p-6 rounded-3xl shadow-sm border border-border hover:border-primary/50 hover:shadow-md transition-all text-left group">
-                     <Building2 className="w-8 h-8 text-primary mb-4" />
-                     <h3 className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">{dept.name}</h3>
-                     <p className="text-muted-foreground mt-2">{subjects.filter(s => s.department_id === dept.id).length} subjects total</p>
-                  </button>
-                ))}
+             <div className="space-y-4">
+               <div className="flex justify-between items-center">
+                 <p className="text-foreground font-bold pl-2">Select a Department</p>
+                 <button onClick={() => { setShowCreateSemester(true); setSemesterError(null); setSemesterSuccess(null); }} className="flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-5 py-3 rounded-xl font-bold transition-all shadow-sm">
+                   <Plus className="w-5 h-5" />
+                   Mass Create Semesters
+                 </button>
+               </div>
+               {semesterSuccess && <AlertBanner type="success" message={semesterSuccess} onClose={() => setSemesterSuccess(null)} />}
+
+               {/* Mass Create Semester Modal (no dept selected) */}
+               {showCreateSemester && !selectedDeptSubjects && (
+                 <Modal title="Mass Create Semesters — All Departments" icon={<Plus className="w-5 h-5 text-primary" />} onClose={() => setShowCreateSemester(false)}>
+                   {semesterError && <div className="mb-4"><AlertBanner type="error" message={semesterError} onClose={() => setSemesterError(null)} /></div>}
+                   <div className="space-y-4">
+                     <FormField label="Semester Names (comma-separated)">
+                       <input type="text" className="modal-input" placeholder="e.g. Semester 1, Semester 2, Semester 3" value={newSemesterName} onChange={e => setNewSemesterName(e.target.value)} />
+                     </FormField>
+                     <p className="text-sm text-muted-foreground italic">These semesters will be created in ALL {departments.length} departments. Duplicates are automatically skipped.</p>
+                   </div>
+                   <ModalActions onCancel={() => setShowCreateSemester(false)} onSubmit={() => handleAdminCreateSemester(true)} loading={semesterCreating} label={`Create in All ${departments.length} Departments`} />
+                 </Modal>
+               )}
+
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {departments.map((dept) => (
+                    <button key={dept.id} onClick={() => { setSelectedDeptSubjects(dept); fetchSemestersForDept(dept.id); }} className="bg-card p-6 rounded-3xl shadow-sm border border-border hover:border-primary/50 hover:shadow-md transition-all text-left group">
+                       <Building2 className="w-8 h-8 text-primary mb-4" />
+                       <h3 className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">{dept.name}</h3>
+                       <p className="text-muted-foreground mt-2">{subjects.filter(s => s.department_id === dept.id).length} subjects total</p>
+                    </button>
+                  ))}
+               </div>
              </div>
           ) : !selectedSemSubjects ? (
              <div className="space-y-4">
-               <h3 className="text-xl font-bold text-foreground">Select a Semester for {selectedDeptSubjects.name}</h3>
+               <div className="flex justify-between items-center">
+                 <h3 className="text-xl font-bold text-foreground">Select a Semester for {selectedDeptSubjects.name}</h3>
+                 <button onClick={() => { setShowCreateSemester(true); setSemesterError(null); setSemesterSuccess(null); }} className="flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-5 py-3 rounded-xl font-bold transition-all shadow-sm">
+                   <Plus className="w-5 h-5" />
+                   Add Semester
+                 </button>
+               </div>
+               {semesterSuccess && <AlertBanner type="success" message={semesterSuccess} onClose={() => setSemesterSuccess(null)} />}
+
+               {/* Create Semester Modal (dept selected) */}
+               {showCreateSemester && (
+                 <Modal title={`Add Semesters to ${selectedDeptSubjects.name}`} icon={<Plus className="w-5 h-5 text-primary" />} onClose={() => setShowCreateSemester(false)}>
+                   {semesterError && <div className="mb-4"><AlertBanner type="error" message={semesterError} onClose={() => setSemesterError(null)} /></div>}
+                   <div className="space-y-4">
+                     <FormField label="Semester Names (comma-separated)">
+                       <input type="text" className="modal-input" placeholder="e.g. Semester 1, Semester 2" value={newSemesterName} onChange={e => setNewSemesterName(e.target.value)} />
+                     </FormField>
+                     <p className="text-sm text-muted-foreground italic">Separate multiple names with commas. Duplicates are automatically skipped.</p>
+                   </div>
+                   <div className="flex gap-3 mt-8">
+                     <button onClick={() => setShowCreateSemester(false)} className="flex-1 py-3 px-4 rounded-xl border border-border font-medium hover:bg-secondary">Cancel</button>
+                     <button onClick={() => handleAdminCreateSemester(false)} disabled={semesterCreating} className="flex-1 py-3 px-4 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 disabled:opacity-50">
+                       {semesterCreating ? 'Creating...' : `Create for ${selectedDeptSubjects.name}`}
+                     </button>
+                     <button onClick={() => handleAdminCreateSemester(true)} disabled={semesterCreating} className="flex-1 py-3 px-4 rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 disabled:opacity-50">
+                       {semesterCreating ? 'Creating...' : `Create in All Depts`}
+                     </button>
+                   </div>
+                 </Modal>
+               )}
+
                {semestersList.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground bg-card rounded-3xl border border-border">No semesters found in this department. Create them via HOD login.</div>
+                  <div className="p-8 text-center text-muted-foreground bg-card rounded-3xl border border-border">No semesters found in this department. Click "Add Semester" to create one.</div>
                ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {semestersList.map(sem => (

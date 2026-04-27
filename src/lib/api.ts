@@ -356,12 +356,13 @@ export const getHodStaffApprovedFines = async (departmentId: string) => {
 };
 
 export const getHodTeacherAssignments = async (departmentId: string) => {
-  // Get all teachers/faculty in the department
+  // Get all teachers/faculty in the department (exclude FYC-managed teachers)
   const { data: teachers, error: tErr } = await supabase
     .from('profiles')
     .select('id, full_name, role, section, email, created_at')
     .eq('department_id', departmentId)
     .in('role', ['teacher', 'faculty'])
+    .is('created_by', null)
     .order('full_name');
   if (tErr) throw tErr;
 
@@ -423,6 +424,21 @@ export const getHodStaffActivityLogs = async (departmentId: string) => {
     .select('*')
     .eq('department_id', departmentId)
     .neq('user_role', 'student')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return data;
+};
+
+export const getFycStaffActivityLogs = async () => {
+  const { data, error } = await supabase
+    .from('activity_logs')
+    .select('*')
+    .neq('user_role', 'fyc')
+    // We fetch logs where user_id matches FYC themselves, OR users they created.
+    // The RLS policy will automatically handle the permission.
+    // To simplify the query, we can fetch all logs that RLS permits, but we should sort and limit.
+    // We don't have created_by in activity_logs, so we rely on RLS returning the right set.
     .order('created_at', { ascending: false })
     .limit(200);
   if (error) throw error;
@@ -500,7 +516,7 @@ export const getDepartmentSections = async (departmentId: string) => {
 };
 
 export const deleteUser = async (userId: string) => {
-  const { error } = await supabase.from('profiles').delete().eq('id', userId);
+  const { error } = await supabase.rpc('admin_delete_user', { target_user_id: userId });
   if (error) throw error;
 };
 
@@ -537,7 +553,7 @@ export const getAllStudentStatuses = async () => {
 export const getStaffAttendanceFines = async (departmentId: string) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, section, department_id), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+    .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
     .eq('status', 'rejected')
     .eq('profiles.department_id', departmentId);
   if (error) throw error;
@@ -833,4 +849,183 @@ export const bulkProcessLibraryDues = async (rows: { roll_number: string; fine_a
   logActivity('Bulk Processed Library Dues', `Processed ${upsertPayload.length} valid CSV records`);
 
   return upsertPayload.length;
+};
+
+// =======================
+// STUDENT PROMOTION SYSTEM
+// =======================
+
+/** Export all pre-promotion data for CSV download */
+export const getPrePromotionData = async () => {
+  const { data, error } = await supabase.rpc('export_pre_promotion_data');
+  if (error) throw error;
+  return data;
+};
+
+/** Promote all students across all departments */
+export const promoteAllStudents = async () => {
+  const { data, error } = await supabase.rpc('promote_all_students');
+  if (error) throw error;
+  logActivity('Promoted All Students', `Mass promotion completed: ${JSON.stringify(data)}`);
+  return data;
+};
+
+/** Get semester distribution for promotion preview */
+export const getPromotionPreview = async () => {
+  // Get all active students grouped by department and semester
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, department_id, semester_id, section, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)')
+    .eq('role', 'student')
+    .or('status.is.null,status.eq.active')
+    .order('full_name');
+  if (error) throw error;
+  return data;
+};
+
+/** Get all graduated students grouped by department and batch */
+export const getGraduatedStudents = async () => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, roll_number, department_id, batch, section, created_at, departments!profiles_department_id_fkey(name)')
+    .eq('role', 'student')
+    .eq('status', 'graduated')
+    .order('full_name');
+  if (error) throw error;
+  return data;
+};
+
+/** Remove graduated students permanently */
+export const removeGraduatedStudents = async (studentIds: string[]) => {
+  if (studentIds.length === 0) return 0;
+
+  // Process in chunks of 200
+  for (let i = 0; i < studentIds.length; i += 200) {
+    const chunk = studentIds.slice(i, i + 200);
+    const { error } = await supabase.from('profiles').delete().in('id', chunk);
+    if (error) throw error;
+  }
+
+  logActivity('Removed Graduated Students', `Permanently removed ${studentIds.length} graduated students`);
+  return studentIds.length;
+};
+
+/** Get students needing section assignment (3rd sem, no section) */
+export const getStudentsNeedingSections = async (departmentId: string) => {
+  const { data: semesters, error: semErr } = await supabase
+    .from('semesters')
+    .select('id')
+    .eq('department_id', departmentId)
+    .eq('name', '3');
+  if (semErr) throw semErr;
+  if (!semesters || semesters.length === 0) return [];
+
+  const semId = semesters[0].id;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, roll_number, section, semester_id, semesters!profiles_semester_id_fkey(name)')
+    .eq('department_id', departmentId)
+    .eq('semester_id', semId)
+    .eq('role', 'student')
+    .is('section', null)
+    .order('full_name');
+  if (error) throw error;
+  return data;
+};
+
+/** Bulk assign sections to students */
+export const bulkAssignSections = async (assignments: { student_id: string; section: string }[]) => {
+  let updated = 0;
+  for (const a of assignments) {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ section: a.section.toUpperCase() } as any)
+      .eq('id', a.student_id);
+    if (error) throw error;
+    updated++;
+  }
+  logActivity('Bulk Assigned Sections', `Assigned sections to ${updated} students`);
+  return updated;
+};
+
+/** Bulk assign sections via CSV (matching by roll_number/USN) */
+export const bulkAssignSectionsCSV = async (departmentId: string, rows: { roll_number: string; section: string }[]) => {
+  const rollNumbers = rows.map(r => r.roll_number.trim().toUpperCase());
+
+  const { data: students, error: studentError } = await supabase
+    .from('profiles')
+    .select('id, roll_number')
+    .eq('role', 'student')
+    .eq('department_id', departmentId)
+    .in('roll_number', rollNumbers);
+
+  if (studentError) throw studentError;
+  if (!students || students.length === 0) {
+    throw new Error('No matching students found for the provided USNs.');
+  }
+
+  const studentMap = new Map(students.map(s => [s.roll_number?.toUpperCase(), s.id]));
+  let updated = 0;
+  const errors: string[] = [];
+
+  for (const row of rows) {
+    const studentId = studentMap.get(row.roll_number.trim().toUpperCase());
+    if (!studentId) {
+      errors.push(`USN "${row.roll_number}" not found`);
+      continue;
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ section: row.section.trim().toUpperCase() } as any)
+      .eq('id', studentId);
+
+    if (error) {
+      errors.push(`USN "${row.roll_number}": ${error.message}`);
+    } else {
+      updated++;
+    }
+  }
+
+  logActivity('CSV Section Assignment', `Assigned sections to ${updated}/${rows.length} students in department`);
+  return { updated, errors };
+};
+
+/** Get all unique sections in a department for a specific semester */
+export const getSectionsForSemester = async (departmentId: string, semesterId: string) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('section')
+    .eq('department_id', departmentId)
+    .eq('semester_id', semesterId)
+    .eq('role', 'student')
+    .not('section', 'is', null);
+  if (error) throw error;
+  const sections = [...new Set((data || []).map((d: any) => d.section).filter(Boolean))];
+  return sections.sort() as string[];
+};
+
+/** Update a student's section */
+export const updateStudentSection = async (studentId: string, section: string | null) => {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ section: section ? section.toUpperCase() : null } as any)
+    .eq('id', studentId);
+  if (error) throw error;
+  logActivity('Updated Section', `Updated section for student to ${section || 'None'}`);
+};
+
+/** Remove section from all students in a specific section/semester */
+export const deleteSection = async (departmentId: string, semesterId: string, sectionName: string) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ section: null } as any)
+    .eq('department_id', departmentId)
+    .eq('semester_id', semesterId)
+    .eq('section', sectionName)
+    .eq('role', 'student')
+    .select('id');
+  if (error) throw error;
+  logActivity('Deleted Section', `Removed section "${sectionName}" from ${data?.length || 0} students`);
+  return data?.length || 0;
 };

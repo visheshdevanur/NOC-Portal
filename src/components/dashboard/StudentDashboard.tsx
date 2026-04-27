@@ -8,7 +8,7 @@ import {
   getStudentIAAttendance,
   getStudentLibraryDues
 } from '../../lib/api';
-import { CheckCircle2, Clock, XCircle, AlertCircle, FileDown, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, AlertCircle, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap, Eye } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type ClearanceRequest = {
@@ -64,6 +64,7 @@ export default function StudentDashboard() {
   const [iaRecords, setIaRecords] = useState<IAAttendanceRecord[]>([]);
   const [libraryDue, setLibraryDue] = useState<any>(null);
   const [departmentName, setDepartmentName] = useState<string>('N/A');
+  const [showReportModal, setShowReportModal] = useState(false);
 
   // Debounce realtime refetches to avoid cascading re-renders
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,209 +166,31 @@ export default function StudentDashboard() {
     }
   };
 
-  const generatePDF = async () => {
-    if (request?.current_stage !== 'cleared') return;
-    // Block if IA attendance insufficient
-    const iaCheck: Record<string, number> = {};
-    iaRecords.forEach(r => {
-      if (r.is_present) iaCheck[r.subject_id] = (iaCheck[r.subject_id] || 0) + 1;
-    });
-    const iaSubjects = Object.keys(iaCheck);
-    if (iaRecords.length > 0 && iaSubjects.some(sid => (iaCheck[sid] || 0) < 2)) return;
-
-    // Lazy-load jsPDF only when needed (~500KB saved from initial bundle)
-    const { default: jsPDF } = await import('jspdf');
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
-    const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
+  useEffect(() => {
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'PrintScreen') {
+        navigator.clipboard.writeText(''); // Attempt to clear clipboard
+        alert('Screenshots are disabled for security reasons.');
+      }
+    };
     
-    // Use template or sensible defaults
-    const institution = hallTemplate?.institution_name || "Institutional Name";
-    const title = hallTemplate?.title || "EXAMINATION HALL TICKET";
-    const instructions = hallTemplate?.instructions || "1. Bring this ticket.\n2. No electronics permitted.";
-    const sigs: string[] = hallTemplate?.signatures?.length ? hallTemplate.signatures : ['Controller of Examinations'];
-
-    // Check if COE has chosen Visual Builder mode
-    // Mode is stored inside mapping_coordinates JSONB as '_mode' key
-    const storedMode = hallTemplate?.mapping_coordinates?._mode || hallTemplate?.template_mode;
-    const isBuilderMode = storedMode === 'builder';
-    const hasCustomTemplate = isBuilderMode && hallTemplate?.bg_image_url && hallTemplate?.mapping_coordinates && Object.keys(hallTemplate.mapping_coordinates).length > 1;
-
-    if (hasCustomTemplate) {
-      // =================== CUSTOM TEMPLATE MODE ===================
-      // The uploaded image already contains college name, logo, signatures, etc.
-      // We only overlay: Student Name, Roll Number, and Subject Table
-      const coords = hallTemplate.mapping_coordinates;
-
-      // 1. Render background image covering full A4
-      try {
-        doc.addImage(hallTemplate.bg_image_url!, 'PNG', 0, 0, pageWidth, pageHeight);
-      } catch (e) {
-        console.warn("Could not load background image into PDF", e);
+    // Also listen to visibility change
+    const handleVisibilityChange = () => {
+      if (document.hidden && showReportModal) {
+        setShowReportModal(false);
       }
+    };
 
-      // Helper to convert percentage coords to mm
-      const toX = (pct: number) => (pct / 100) * pageWidth;
-      const toY = (pct: number) => (pct / 100) * pageHeight;
-
-      // 2. Student Name
-      if (coords.student_name) {
-        const fs = coords.student_name.fontSize || 12;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(fs);
-        doc.setTextColor(0, 0, 0);
-        doc.text(`${profile?.full_name || 'N/A'}`, toX(coords.student_name.x), toY(coords.student_name.y) + (fs * 0.35));
-      }
-
-      // 3. Roll Number
-      if (coords.roll_no) {
-        const fs = coords.roll_no.fontSize || 12;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(fs);
-        doc.setTextColor(0, 0, 0);
-        doc.text(`${(profile as any)?.roll_number || profile?.id.substring(0,8).toUpperCase()}`, toX(coords.roll_no.x), toY(coords.roll_no.y) + (fs * 0.35));
-      }
-
-      // 4. Department (show name, not ID)
-      if (coords.department) {
-        const fs = coords.department.fontSize || 12;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(fs);
-        doc.setTextColor(0, 0, 0);
-        doc.text(`${departmentName}`, toX(coords.department.x), toY(coords.department.y) + (fs * 0.35));
-      }
-
-      // 5. Subject Table
-      if (coords.subject_table) {
-        const startX = toX(coords.subject_table.x);
-        const startY = toY(coords.subject_table.y);
-        const tableW = toX(coords.subject_table.w);
-        const fs = coords.subject_table.fontSize || 9;
-
-        // Table header
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(fs + 1);
-        doc.setTextColor(0, 0, 0);
-        doc.setFillColor(230, 230, 230);
-        doc.rect(startX, startY, tableW, 7, 'F');
-        
-        const colCode = startX + 2;
-        const colName = startX + tableW * 0.18;
-        const colDate = startX + tableW * 0.58;
-        const colTime = startX + tableW * 0.78;
-        
-        doc.text("Subject Code", colCode, startY + 5);
-        doc.text("Subject Name", colName, startY + 5);
-        doc.text("Date", colDate, startY + 5);
-        doc.text("Time", colTime, startY + 5);
-
-        // Table rows
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(fs);
-        let rowY = startY + 12;
-        enrollments.forEach((e) => {
-          const rowSubject: any = e.subjects;
-          doc.text(`${rowSubject.subject_code}`, colCode, rowY);
-          doc.text(doc.splitTextToSize(`${rowSubject.subject_name}`, tableW * 0.35), colName, rowY);
-          doc.text(`${rowSubject.exam_date || 'TBA'}`, colDate, rowY);
-          doc.text(`${rowSubject.exam_time || 'TBA'}`, colTime, rowY);
-          rowY += 7;
-        });
-      }
-
-    } else {
-      // =================== LEGACY HARDCODED MODE ===================
-      // Logo
-      if (hallTemplate?.logo_url) {
-        try {
-          doc.addImage(hallTemplate.logo_url, 'PNG', 15, 10, 18, 18);
-        } catch(e) {
-          console.warn("Could not load logo into PDF", e);
-        }
-      }
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
-      doc.setTextColor(30, 64, 175); 
-      doc.text(institution.toUpperCase(), pageWidth / 2, 18, { align: "center", maxWidth: pageWidth - 50 });
-      
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.setTextColor(80, 80, 80);
-      doc.text(title.toUpperCase(), pageWidth / 2, 30, { align: "center" });
-      
-      doc.setDrawColor(200, 200, 200);
-      doc.line(20, 36, pageWidth - 20, 36);
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(40, 40, 40);
-      doc.setFontSize(14);
-      doc.text("Student Details", 20, 50);
-      
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(12);
-      doc.text(`Name: ${profile?.full_name}`, 20, 60);
-      doc.text(`Student ID: ${(profile as any)?.roll_number || profile?.id.substring(0,8).toUpperCase()}`, 20, 68);
-      doc.text(`Department: ${departmentName}`, 20, 76);
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(40, 40, 40);
-      doc.text("Examination Subject Schedule", 20, 92);
-      
-      doc.setFontSize(10);
-      doc.setFillColor(245, 245, 245);
-      const colPositions = { sno: 22, code: 38, name: 72, date: 130, time: 165 };
-      doc.rect(20, 97, pageWidth - 40, 8, 'F');
-      doc.text("S.No", colPositions.sno, 102);
-      doc.text("Subject Code", colPositions.code, 102);
-      doc.text("Subject Name", colPositions.name, 102);
-      doc.text("Exam Date", colPositions.date, 102);
-      doc.text("Exam Time", colPositions.time, 102);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      let yPos = 110;
-      enrollments.forEach((e, index) => {
-        const rowSubject: any = e.subjects;
-        doc.text(`${index + 1}`, colPositions.sno, yPos);
-        doc.text(`${rowSubject.subject_code}`, colPositions.code, yPos);
-        doc.text(doc.splitTextToSize(`${rowSubject.subject_name}`, 55), colPositions.name, yPos);
-        doc.text(`${rowSubject.exam_date || 'TBA'}`, colPositions.date, yPos);
-        doc.text(`${rowSubject.exam_time || 'TBA'}`, colPositions.time, yPos);
-        yPos += 8;
-      });
-
-      // Instructions
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.setTextColor(40, 40, 40);
-      doc.text("Instructions to Candidates", 20, yPos + 10);
-      
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(80, 80, 80);
-      const splitInstructions = doc.splitTextToSize(instructions, pageWidth - 40);
-      doc.text(splitInstructions, 20, yPos + 18);
-
-      // Signatures
-      const sigCount = sigs.length;
-      const padding = 20;
-      const availableWidth = pageWidth - (padding * 2);
-      const sigSpacing = sigCount > 1 ? availableWidth / (sigCount - 1) : 0;
-
-      doc.setDrawColor(0, 0, 0);
-      doc.setFontSize(10);
-      doc.setTextColor(0, 0, 0);
-      
-      sigs.forEach((sigName, i) => {
-        const alignLeft = sigCount === 1 ? pageWidth / 2 : padding + (sigSpacing * i);
-        doc.line(alignLeft - 15, 275, alignLeft + 15, 275);
-        doc.text(sigName, alignLeft, 281, { align: "center" });
-      });
-    }
-
-    doc.save(`HallTicket_${profile?.full_name?.replace(/\s+/g, '_')}.pdf`);
-  };
+    window.addEventListener('keyup', handleKeyUp);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('keyup', handleKeyUp);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleVisibilityChange);
+    };
+  }, [showReportModal]);
 
   const isHodApproved = request?.current_stage === 'cleared';
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(e => e.status === 'completed'), [enrollments]);
@@ -463,25 +286,25 @@ export default function StudentDashboard() {
           )}
         </div>
         
-        {/* Hall Ticket Download */}
+        {/* Clearance Report View */}
         <div className={`p-6 rounded-2xl border-2 transition-all flex flex-col sm:flex-row items-start sm:items-center gap-4 ${canDownloadHallTicket ? "bg-emerald-500/10 border-emerald-500/30" : "bg-secondary border-border"}`}>
           <div className="flex-1">
-            <h3 className="font-semibold text-foreground text-lg">Hall Ticket</h3>
+            <h3 className="font-semibold text-foreground text-lg">No Due Clearance Report</h3>
             <p className={`text-sm ${canDownloadHallTicket ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
               {canDownloadHallTicket
-                ? 'Ready to download'
+                ? 'Ready to view'
                 : !isHodApproved
                   ? 'Requires Final Approval'
                   : 'Blocked: Insufficient IA Attendance'}
             </p>
             {isHodApproved && !allIAEligible && (
               <p className="text-xs text-destructive mt-1 font-medium">
-                ⚠ You must attend at least 2 IAs in every subject to download your hall ticket.
+                ⚠ You must attend at least 2 IAs in every subject to view your report.
               </p>
             )}
           </div>
           <button
-            onClick={generatePDF}
+            onClick={() => setShowReportModal(true)}
             disabled={!canDownloadHallTicket}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all shadow-sm ${
               canDownloadHallTicket
@@ -489,8 +312,8 @@ export default function StudentDashboard() {
                 : "bg-secondary text-muted-foreground cursor-not-allowed"
             }`}
           >
-            <FileDown className="w-5 h-5" />
-            Download PDF
+            <Eye className="w-5 h-5" />
+            View Report
           </button>
         </div>
       </div>
@@ -775,6 +598,89 @@ export default function StudentDashboard() {
         </div>
 
       </div>
+
+      {/* NO DUE CLEARANCE REPORT MODAL */}
+      {showReportModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+        >
+          <div className="bg-card rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col relative overflow-hidden shadow-2xl border border-border">
+            <div className="flex justify-between items-center p-6 border-b border-border bg-secondary/50">
+              <h2 className="text-2xl font-bold flex items-center gap-2"><ShieldCheck className="w-6 h-6 text-emerald-500" /> No Due Clearance Report</h2>
+              <button onClick={() => setShowReportModal(false)} className="p-2 hover:bg-destructive/10 hover:text-destructive rounded-xl transition-colors">
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div 
+              className="p-8 overflow-y-auto select-none relative" 
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              {/* Watermark */}
+              <div className="fixed inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] rotate-[-30deg]">
+                <h1 className="text-8xl font-black whitespace-nowrap">CONFIDENTIAL & CLEARED</h1>
+              </div>
+
+              <div className="text-center mb-10 relative z-10 pointer-events-none">
+                <h1 className="text-3xl font-bold uppercase tracking-widest text-primary mb-2">{hallTemplate?.institution_name || 'NOC PORTAL'}</h1>
+                <h2 className="text-xl font-semibold text-muted-foreground">OFFICIAL NO DUE CLEARANCE REPORT</h2>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10 relative z-10 pointer-events-none">
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground uppercase tracking-wider font-semibold">Student Name</p>
+                  <p className="text-xl font-bold">{profile?.full_name}</p>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground uppercase tracking-wider font-semibold">Roll Number</p>
+                  <p className="text-xl font-bold font-mono">{(profile as any)?.roll_number || profile?.id?.substring(0,8).toUpperCase()}</p>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground uppercase tracking-wider font-semibold">Department</p>
+                  <p className="text-xl font-bold">{departmentName}</p>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground uppercase tracking-wider font-semibold">Clearance Status</p>
+                  <div className="inline-flex items-center gap-2 bg-emerald-500/10 text-emerald-600 px-4 py-2 rounded-xl border border-emerald-500/20">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span className="font-bold">Fully Cleared</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative z-10 pointer-events-none">
+                <h3 className="text-lg font-bold border-b border-border pb-2 mb-4">Subject Schedule & Attendance</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-secondary text-muted-foreground text-sm">
+                        <th className="p-3 font-semibold rounded-tl-lg">Code</th>
+                        <th className="p-3 font-semibold">Subject</th>
+                        <th className="p-3 font-semibold text-center">Attendance</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border border-b border-border">
+                      {enrollments.map(e => (
+                        <tr key={e.id} className="hover:bg-secondary/30">
+                          <td className="p-3 font-mono text-sm">{e.subjects?.subject_code}</td>
+                          <td className="p-3 font-medium">{e.subjects?.subject_name}</td>
+                          <td className="p-3 text-center font-bold text-emerald-500">{e.attendance_pct || 100}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-destructive/10 p-4 text-center border-t border-border mt-auto">
+              <p className="text-sm font-bold text-destructive uppercase tracking-widest flex items-center justify-center gap-2">
+                <AlertCircle className="w-4 h-4" /> Downloads and Screenshots Prohibited
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
