@@ -224,25 +224,9 @@ export default function StudentDashboard() {
         prefill: {
           name: profile?.full_name || "",
           email: user?.email || "",
-          contact: "",
         },
         theme: {
           color: "#f59e0b"
-        },
-        // UPI-focused checkout: shows QR code, UPI ID collect (PhonePe/GPay/Paytm), and intent
-        config: {
-          display: {
-            blocks: {
-              upi: {
-                name: "Pay via UPI",
-                instruments: [
-                  { method: "upi", flows: ["qr", "collect", "intent"] }
-                ]
-              }
-            },
-            sequence: ["block.upi"],
-            preferences: { show_default_blocks: false }
-          }
         },
         modal: {
           ondismiss: function () {
@@ -312,25 +296,9 @@ export default function StudentDashboard() {
         prefill: {
           name: profile?.full_name || "",
           email: user?.email || "",
-          contact: "",
         },
         theme: {
           color: "#f59e0b"
-        },
-        // UPI-focused checkout: shows QR code, UPI ID collect (PhonePe/GPay/Paytm), and intent
-        config: {
-          display: {
-            blocks: {
-              upi: {
-                name: "Pay via UPI",
-                instruments: [
-                  { method: "upi", flows: ["qr", "collect", "intent"] }
-                ]
-              }
-            },
-            sequence: ["block.upi"],
-            preferences: { show_default_blocks: false }
-          }
         },
         modal: {
           ondismiss: function () {
