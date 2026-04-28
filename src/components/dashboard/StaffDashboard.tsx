@@ -47,13 +47,9 @@ type Semester = {
 // Helper: detect 1st/2nd year semesters by name
 const isFirstYearSem = (name: string) => {
   if (!name) return false;
-  const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return n.includes('sem1') || n.includes('sem2') || 
-         n.includes('1stsem') || n.includes('2ndsem') ||
-         n.includes('semester1') || n.includes('semester2') ||
-         n === '1' || n === '2' || 
-         n.endsWith('1stsemester') || n.endsWith('2ndsemester') ||
-         /\b1\b/.test(name) || /\b2\b/.test(name);
+  const trimmed = name.trim();
+  // Semester names are "1", "2", "3", etc. — only 1 and 2 are first year
+  return trimmed === '1' || trimmed === '2';
 };
 
 export default function StaffDashboard() {
@@ -355,7 +351,7 @@ export default function StaffDashboard() {
         if ((u.role === 'teacher' || u.role === 'faculty') && (u as any).created_by) return false;
         if (u.role === 'student') {
           // Exclude 1st/2nd sem students
-          return u.semester_id ? !firstYearSemIds.has(u.semester_id) : true;
+          return u.semester_id ? !firstYearSemIds.has(u.semester_id) : false;
         }
         return true;
       });
