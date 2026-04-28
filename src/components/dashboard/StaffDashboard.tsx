@@ -351,7 +351,7 @@ export default function StaffDashboard() {
         if ((u.role === 'teacher' || u.role === 'faculty') && (u as any).created_by) return false;
         if (u.role === 'student') {
           // Exclude 1st/2nd sem students
-          return u.semester_id ? !firstYearSemIds.has(u.semester_id) : false;
+          return u.semester_id ? !firstYearSemIds.has(u.semester_id) : true;
         }
         return true;
       });

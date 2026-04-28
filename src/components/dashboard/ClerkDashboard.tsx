@@ -357,7 +357,7 @@ export default function ClerkDashboard() {
       const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
       const filtered = (data as UserProfile[]).filter(u => {
         if (u.role === 'student') {
-          return u.semester_id ? firstYearSemIds.has(u.semester_id) : false;
+          return u.semester_id ? firstYearSemIds.has(u.semester_id) : true;
         }
         // Only show FYC-created/imported teachers
         if (u.role === 'teacher' || u.role === 'faculty') {
