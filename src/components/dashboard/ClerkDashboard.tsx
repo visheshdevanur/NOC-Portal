@@ -541,6 +541,12 @@ export default function ClerkDashboard() {
           continue; 
         }
 
+        if (password.length < 6) {
+          errorCount++;
+          errorDetails.push(`Row ${i + 1} (${email}): Password must be at least 6 characters.`);
+          continue;
+        }
+
         const { data: authData, error: authError } = await tempSupabase.auth.signUp({
           email, password
         });
