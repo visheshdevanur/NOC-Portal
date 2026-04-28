@@ -775,11 +775,13 @@ export const getAccountsVerifiedFees = async () => {
 // =======================
 
 export const createRazorpayOrder = async (amount: number, enrollmentId: string) => {
-  const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
-    body: { amount, receipt: enrollmentId },
+  const response = await fetch('/api/create-razorpay-order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount, receipt: enrollmentId }),
   });
-  if (error) throw error;
-  if (data?.error) throw new Error(data.error);
+  const data = await response.json();
+  if (!response.ok || data?.error) throw new Error(data?.error || 'Failed to create order');
   return data;
 };
 
@@ -789,10 +791,13 @@ export const verifyAndProcessRazorpayPayment = async (
   razorpay_payment_id: string, 
   razorpay_signature: string
 ) => {
-  const { data: verification, error: verifyError } = await supabase.functions.invoke('verify-razorpay-payment', {
-    body: { razorpay_order_id, razorpay_payment_id, razorpay_signature },
+  const response = await fetch('/api/verify-razorpay-payment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ razorpay_order_id, razorpay_payment_id, razorpay_signature }),
   });
-  if (verifyError || !verification?.verified) throw verifyError || new Error(verification?.error || "Payment verification failed");
+  const verification = await response.json();
+  if (!response.ok || !verification?.verified) throw new Error(verification?.error || 'Payment verification failed');
 
   // If verified, update the subject_enrollment
   const { data, error } = await supabase
@@ -1049,11 +1054,13 @@ export const reduceStudentFine = async (enrollmentId: string, newAmount: number)
 
 /** Create a bulk Razorpay order for Pay All (total of multiple enrollments) */
 export const createBulkRazorpayOrder = async (totalAmount: number, enrollmentIds: string[]) => {
-  const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
-    body: { amount: totalAmount, receipt: `bulk_${enrollmentIds.length}_${Date.now()}` },
+  const response = await fetch('/api/create-razorpay-order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount: totalAmount, receipt: `bulk_${enrollmentIds.length}_${Date.now()}` }),
   });
-  if (error) throw error;
-  if (data?.error) throw new Error(data.error);
+  const data = await response.json();
+  if (!response.ok || data?.error) throw new Error(data?.error || 'Failed to create bulk order');
   return data;
 };
 
@@ -1065,10 +1072,13 @@ export const verifyAndProcessBulkRazorpayPayment = async (
   razorpay_signature: string
 ) => {
   // 1. Verify signature
-  const { data: verification, error: verifyError } = await supabase.functions.invoke('verify-razorpay-payment', {
-    body: { razorpay_order_id, razorpay_payment_id, razorpay_signature },
+  const response = await fetch('/api/verify-razorpay-payment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ razorpay_order_id, razorpay_payment_id, razorpay_signature }),
   });
-  if (verifyError || !verification?.verified) throw verifyError || new Error(verification?.error || "Payment verification failed");
+  const verification = await response.json();
+  if (!response.ok || !verification?.verified) throw new Error(verification?.error || 'Payment verification failed');
 
   // 2. Update all enrollments
   const results = [];
