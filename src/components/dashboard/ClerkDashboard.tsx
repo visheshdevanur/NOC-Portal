@@ -47,13 +47,9 @@ type Semester = {
 
 const isFirstYearSem = (name: string) => {
   if (!name) return false;
-  const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return n.includes('sem1') || n.includes('sem2') || 
-         n.includes('1stsem') || n.includes('2ndsem') ||
-         n.includes('semester1') || n.includes('semester2') ||
-         n === '1' || n === '2' || 
-         n.endsWith('1stsemester') || n.endsWith('2ndsemester') ||
-         /\b1\b/.test(name) || /\b2\b/.test(name);
+  const trimmed = name.trim();
+  // Semester names are "1", "2", "3", etc. — only allow 1 and 2
+  return trimmed === '1' || trimmed === '2';
 };
 
 export default function ClerkDashboard() {
