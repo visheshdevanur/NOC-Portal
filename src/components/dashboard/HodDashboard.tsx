@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
 import {
   getHodPendingRequests, approveHodRequest, getUsersByDeptAndRoles,
-  getDepartmentById, getHodDepartmentStudents, getHodStaffApprovedFines
+  getDepartmentById, getHodDepartmentStudents, getHodFinePayments
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 
@@ -88,7 +88,7 @@ export default function HodDashboard() {
   const [expandedSems, setExpandedSems] = useState<Set<string>>(new Set());
   const [searchStudents, setSearchStudents] = useState('');
 
-  // Fine Approvals state
+  // Fine Payments state
   const [approvedFines, setApprovedFines] = useState<any[]>([]);
   const [loadingFines, setLoadingFines] = useState(false);
   const [searchFines, setSearchFines] = useState('');
@@ -171,7 +171,7 @@ export default function HodDashboard() {
     if (!profile?.department_id) return;
     setLoadingFines(true);
     try {
-      const data = await getHodStaffApprovedFines(profile.department_id);
+      const data = await getHodFinePayments(profile.department_id);
       setApprovedFines(data || []);
     } catch (err) { console.error(err); }
     finally { setLoadingFines(false); }
@@ -338,7 +338,7 @@ export default function HodDashboard() {
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'approvals', label: 'Clearances', icon: <Activity className="w-4 h-4" /> },
-    { id: 'fineApprovals', label: 'Fine Approvals', icon: <FileCheck className="w-4 h-4" /> },
+    { id: 'fineApprovals', label: 'Fine Payments', icon: <FileCheck className="w-4 h-4" /> },
     { id: 'users', label: 'Staff & Teachers', icon: <Users className="w-4 h-4" /> },
     { id: 'teacherDetails', label: 'Teacher Details', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> },
@@ -761,24 +761,52 @@ export default function HodDashboard() {
         </div>
       )}
 
-      {/* ========= FINE APPROVALS TAB ========= */}
+      {/* ========= FINE PAYMENTS TAB ========= */}
       {activeTab === 'fineApprovals' && (
         <div className="space-y-4">
           <div className="bg-card rounded-2xl p-5 shadow-sm border border-border">
             <h2 className="text-xl font-bold text-foreground flex items-center gap-2 mb-1">
               <FileCheck className="w-5 h-5 text-emerald-500" />
-              Attendance Fine Approvals by Staff
+              Attendance Fine Payments
             </h2>
             <p className="text-muted-foreground text-sm">
-              Students whose attendance fines were approved (overridden) by staff in your department.
+              Track all student attendance fines — pending, paid, and verified.
             </p>
           </div>
+
+          {/* Summary Stats */}
+          {!loadingFines && approvedFines.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[{
+                label: 'Total Students',
+                value: approvedFines.length,
+                color: 'bg-blue-500/10 text-blue-600'
+              }, {
+                label: 'Total Fines',
+                value: `\u20b9${approvedFines.reduce((s: number, i: any) => s + (Number(i.attendance_fee) || 0), 0)}`,
+                color: 'bg-amber-500/10 text-amber-600'
+              }, {
+                label: 'Paid',
+                value: approvedFines.filter((i: any) => i.attendance_fee_verified).length,
+                color: 'bg-emerald-500/10 text-emerald-600'
+              }, {
+                label: 'Pending',
+                value: approvedFines.filter((i: any) => !i.attendance_fee_verified && i.attendance_fee > 0).length,
+                color: 'bg-red-500/10 text-red-600'
+              }].map((stat, idx) => (
+                <div key={idx} className={`${stat.color} rounded-2xl p-4 text-center`}>
+                  <p className="text-2xl font-bold">{stat.value}</p>
+                  <p className="text-xs font-medium mt-1">{stat.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="relative w-full md:max-w-xs">
             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search by student or subject..."
+              placeholder="Search by student, subject, or USN..."
               className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
               value={searchFines}
               onChange={e => setSearchFines(e.target.value)}
@@ -787,7 +815,7 @@ export default function HodDashboard() {
 
           <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
             {loadingFines ? (
-              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading approved fines...</div>
+              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading fine payments...</div>
             ) : (() => {
               const filtered = approvedFines.filter(item =>
                 item.profiles?.full_name?.toLowerCase().includes(searchFines.toLowerCase()) ||
@@ -800,8 +828,8 @@ export default function HodDashboard() {
                   <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-4">
                     <FileCheck className="w-10 h-10 text-emerald-500/50" />
                   </div>
-                  <h3 className="text-xl font-bold text-foreground">No Fine Approvals</h3>
-                  <p className="text-muted-foreground mt-2">No attendance fines have been approved by staff yet.</p>
+                  <h3 className="text-xl font-bold text-foreground">No Fine Records</h3>
+                  <p className="text-muted-foreground mt-2">No attendance fines recorded for this department.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -810,21 +838,19 @@ export default function HodDashboard() {
                       <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
                         <th className="p-4 font-semibold">Student Name</th>
                         <th className="p-4 font-semibold">Roll No</th>
-                        <th className="p-4 font-semibold">Section</th>
                         <th className="p-4 font-semibold">Subject</th>
                         <th className="p-4 font-semibold text-center">Attendance %</th>
-                        <th className="p-4 font-semibold text-center">Paid Fine (₹)</th>
-                        <th className="p-4 font-semibold">Status</th>
+                        <th className="p-4 font-semibold text-center">Fine (\u20b9)</th>
+                        <th className="p-4 font-semibold text-center">Status</th>
+                        <th className="p-4 font-semibold">Transaction ID</th>
+                        <th className="p-4 font-semibold">Date</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                       {filtered.map(item => (
                         <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
                           <td className="p-4 font-medium text-foreground">{item.profiles?.full_name}</td>
-                          <td className="p-4 text-muted-foreground font-mono text-sm">{item.profiles?.roll_number || '—'}</td>
-                          <td className="p-4">
-                            <span className="px-2 py-1 bg-secondary rounded-md text-xs font-medium">{item.profiles?.section || 'None'}</span>
-                          </td>
+                          <td className="p-4 text-muted-foreground font-mono text-sm">{item.profiles?.roll_number || '\u2014'}</td>
                           <td className="p-4">
                             <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
                             <div className="text-xs text-muted-foreground">{item.subjects?.subject_code}</div>
@@ -833,12 +859,22 @@ export default function HodDashboard() {
                             <span className="text-amber-600 dark:text-amber-400 font-bold">{item.attendance_pct}%</span>
                           </td>
                           <td className="p-4 text-center font-bold text-foreground">
-                            {item.attendance_fee ? `₹${item.attendance_fee}` : '—'}
+                            {item.attendance_fee ? `\u20b9${item.attendance_fee}` : '\u2014'}
                           </td>
-                          <td className="p-4">
-                            <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-                              Fine Approved
-                            </span>
+                          <td className="p-4 text-center">
+                            {item.attendance_fee_verified ? (
+                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">Paid</span>
+                            ) : item.attendance_fee > 0 ? (
+                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">Pending</span>
+                            ) : (
+                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
+                            )}
+                          </td>
+                          <td className="p-4 text-xs font-mono text-muted-foreground max-w-[120px] truncate" title={item.razorpay_payment_id || ''}>
+                            {item.razorpay_payment_id || '\u2014'}
+                          </td>
+                          <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
+                            {item.payment_date ? new Date(item.payment_date).toLocaleDateString() : '\u2014'}
                           </td>
                         </tr>
                       ))}

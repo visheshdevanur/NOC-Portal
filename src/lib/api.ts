@@ -924,6 +924,188 @@ export const bulkSetAttendanceDuesCSV = async (departmentId: string | undefined,
 };
 
 // =======================
+// ATTENDANCE FINE CATEGORIES
+// =======================
+
+/** Get all attendance fine categories for a department */
+export const getAttendanceCategories = async (departmentId: string) => {
+  const { data, error } = await supabase
+    .from('attendance_fine_categories')
+    .select('*')
+    .eq('department_id', departmentId)
+    .order('min_pct', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+/** Create a new attendance fine category */
+export const createAttendanceCategory = async (departmentId: string, label: string, minPct: number, maxPct: number, amount: number) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('attendance_fine_categories')
+    .insert([{ department_id: departmentId, label, min_pct: minPct, max_pct: maxPct, fine_amount: amount, created_by: user?.id }] as any)
+    .select()
+    .single();
+  if (error) throw error;
+  logActivity('Created Fine Category', `${label}: ${minPct}%-${maxPct}% → ₹${amount}`);
+  return data;
+};
+
+/** Update an attendance fine category */
+export const updateAttendanceCategory = async (id: string, label: string, minPct: number, maxPct: number, amount: number) => {
+  const { data, error } = await supabase
+    .from('attendance_fine_categories')
+    .update({ label, min_pct: minPct, max_pct: maxPct, fine_amount: amount, updated_at: new Date().toISOString() } as any)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  logActivity('Updated Fine Category', `${label}: ${minPct}%-${maxPct}% → ₹${amount}`);
+  return data;
+};
+
+/** Delete an attendance fine category */
+export const deleteAttendanceCategory = async (id: string) => {
+  const { error } = await supabase
+    .from('attendance_fine_categories')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+  logActivity('Deleted Fine Category', `Removed category ${id}`);
+};
+
+/** Apply mass fines: match attendance_pct against categories, set attendance_fee on rejected enrollments */
+export const applyMassFines = async (departmentId: string, isFirstYear: boolean) => {
+  // 1. Get categories for this department
+  const categories = await getAttendanceCategories(departmentId);
+  if (categories.length === 0) throw new Error('No attendance fine categories configured. Please create categories first.');
+
+  // 2. Get all rejected enrollments for this department
+  const fines = await getStaffAttendanceFines(departmentId);
+  
+  // 3. Filter by first year or not
+  const isFirstYearSem = (name: string) => {
+    const n = name.toLowerCase();
+    return n.includes('1st') || n.includes('2nd') || n === '1' || n === '2' || n.includes('first') || n.includes('second');
+  };
+  const filtered = (fines || []).filter((item: any) => {
+    const semName = item.profiles?.semesters?.name || '';
+    return isFirstYear ? isFirstYearSem(semName) : !isFirstYearSem(semName);
+  });
+
+  let updated = 0;
+  let skipped = 0;
+
+  for (const enrollment of filtered) {
+    const pct = enrollment.attendance_pct || 0;
+    
+    // Already has a fee assigned and verified — skip
+    if (enrollment.attendance_fee > 0 && enrollment.attendance_fee_verified) {
+      skipped++;
+      continue;
+    }
+    
+    // Find matching category
+    const match = categories.find((c: any) => pct >= c.min_pct && pct <= c.max_pct);
+    if (!match) {
+      skipped++;
+      continue;
+    }
+
+    const newFee = Number(match.fine_amount);
+    // Skip if same fine already applied
+    if (enrollment.attendance_fee === newFee) {
+      skipped++;
+      continue;
+    }
+
+    const { error } = await supabase
+      .from('subject_enrollment')
+      .update({ attendance_fee: newFee, attendance_fee_verified: false } as any)
+      .eq('id', enrollment.id);
+    
+    if (!error) updated++;
+  }
+
+  logActivity('Applied Mass Fines', `Auto-assigned fines to ${updated} students (${skipped} skipped) based on ${categories.length} categories.`);
+  return { updated, skipped, total: filtered.length };
+};
+
+/** Reduce (modify) a specific student's attendance fine */
+export const reduceStudentFine = async (enrollmentId: string, newAmount: number) => {
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .update({ attendance_fee: newAmount, attendance_fee_verified: false } as any)
+    .eq('id', enrollmentId)
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name), subjects!subject_enrollment_subject_id_fkey(subject_name)')
+    .single();
+  if (error) throw error;
+  
+  const studentName = data?.profiles?.full_name || 'student';
+  const subjName = (data as any)?.subjects?.subject_name || 'subject';
+  logActivity('Reduced Fine', `Set fine to ₹${newAmount} for ${studentName} in ${subjName}`);
+  return data;
+};
+
+/** Create a bulk Razorpay order for Pay All (total of multiple enrollments) */
+export const createBulkRazorpayOrder = async (totalAmount: number, enrollmentIds: string[]) => {
+  const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
+    body: { amount: totalAmount, receipt: `bulk_${enrollmentIds.length}_${Date.now()}` },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+};
+
+/** Verify bulk Razorpay payment and mark ALL enrollments as paid */
+export const verifyAndProcessBulkRazorpayPayment = async (
+  enrollmentIds: string[],
+  razorpay_order_id: string,
+  razorpay_payment_id: string,
+  razorpay_signature: string
+) => {
+  // 1. Verify signature
+  const { data: verification, error: verifyError } = await supabase.functions.invoke('verify-razorpay-payment', {
+    body: { razorpay_order_id, razorpay_payment_id, razorpay_signature },
+  });
+  if (verifyError || !verification?.verified) throw verifyError || new Error(verification?.error || "Payment verification failed");
+
+  // 2. Update all enrollments
+  const results = [];
+  for (const eid of enrollmentIds) {
+    const { data, error } = await supabase
+      .from('subject_enrollment')
+      .update({
+        attendance_fee_verified: true,
+        status: 'completed',
+        remarks: 'Cleared via Online Payment (Bulk)',
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+        payment_date: new Date().toISOString()
+      } as any)
+      .eq('id', eid)
+      .select('*, subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+      .single();
+    if (!error && data) results.push(data);
+  }
+
+  logActivity('Bulk Attendance Payment', `Paid fines for ${results.length} subjects via Razorpay (ID: ${razorpay_payment_id})`);
+  return results;
+};
+
+/** Get all fines for HOD tracking (both paid and unpaid) */
+export const getHodFinePayments = async (departmentId: string) => {
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, section, department_id, roll_number, semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+    .gt('attendance_fee', 0)
+    .eq('profiles.department_id', departmentId);
+  if (error) throw error;
+  return data;
+};
+
+// =======================
 // LIBRARY DUES MANAGEMENT
 // =======================
 

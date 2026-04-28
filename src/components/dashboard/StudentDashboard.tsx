@@ -180,6 +180,8 @@ export default function StudentDashboard() {
     }
   };
 
+  const razorpayKey = (import.meta as any).env?.VITE_RAZORPAY_KEY_ID || 'rzp_test_YourTestKeyHere';
+
   const handleRazorpayPayment = async (enrollment: any) => {
     try {
       setPayingEnrollmentId(enrollment.id);
@@ -189,7 +191,7 @@ export default function StudentDashboard() {
       const order = await createRazorpayOrder(enrollment.attendance_fee, enrollment.id);
       
       const options = {
-        key: 'rzp_test_YourTestKeyHere', // For demo purposes; in prod use env variable
+        key: razorpayKey,
         amount: Math.round(enrollment.attendance_fee * 100),
         currency: "INR",
         name: "NOC Portal",
@@ -204,12 +206,15 @@ export default function StudentDashboard() {
               response.razorpay_signature
             );
             setPaymentReceipt({
+              studentName: profile?.full_name || '',
+              usn: (profile as any)?.roll_number || '',
               amount: enrollment.attendance_fee,
-              subject: enrollment.subjects?.subject_name,
+              subjects: [{ name: enrollment.subjects?.subject_name, code: enrollment.subjects?.subject_code, amount: enrollment.attendance_fee }],
               paymentId: response.razorpay_payment_id,
-              date: new Date().toLocaleString()
+              date: new Date().toLocaleString(),
+              isBulk: false
             });
-            fetchStudentData(); // Refresh to update status
+            fetchStudentData();
           } catch (err: any) {
             setErrorMsg("Payment verification failed: " + err.message);
           }
@@ -219,7 +224,7 @@ export default function StudentDashboard() {
           email: user?.email || "",
         },
         theme: {
-          color: "#f59e0b" // amber-500
+          color: "#f59e0b"
         }
       };
 
@@ -232,6 +237,71 @@ export default function StudentDashboard() {
       setErrorMsg("Error initiating payment: " + err.message);
     } finally {
       setPayingEnrollmentId(null);
+    }
+  };
+
+  const [payingAll, setPayingAll] = useState(false);
+
+  const handlePayAll = async () => {
+    if (pendingAttendanceDues.length === 0) return;
+    const totalAmount = pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0);
+    if (totalAmount <= 0) return;
+
+    try {
+      setPayingAll(true);
+      setErrorMsg(null);
+      const { createBulkRazorpayOrder, verifyAndProcessBulkRazorpayPayment } = await import('../../lib/api');
+      const enrollmentIds = pendingAttendanceDues.map((d: any) => d.id);
+      
+      const order = await createBulkRazorpayOrder(totalAmount, enrollmentIds);
+
+      const options = {
+        key: razorpayKey,
+        amount: Math.round(totalAmount * 100),
+        currency: "INR",
+        name: "NOC Portal",
+        description: `Attendance Dues: ${pendingAttendanceDues.length} subjects`,
+        order_id: order.id,
+        handler: async function (response: any) {
+          try {
+            await verifyAndProcessBulkRazorpayPayment(
+              enrollmentIds,
+              response.razorpay_order_id,
+              response.razorpay_payment_id,
+              response.razorpay_signature
+            );
+            setPaymentReceipt({
+              studentName: profile?.full_name || '',
+              usn: (profile as any)?.roll_number || '',
+              amount: totalAmount,
+              subjects: pendingAttendanceDues.map((d: any) => ({ name: d.subjects?.subject_name, code: d.subjects?.subject_code, amount: d.attendance_fee })),
+              paymentId: response.razorpay_payment_id,
+              date: new Date().toLocaleString(),
+              isBulk: true
+            });
+            fetchStudentData();
+          } catch (err: any) {
+            setErrorMsg("Bulk payment verification failed: " + err.message);
+          }
+        },
+        prefill: {
+          name: profile?.full_name || "",
+          email: user?.email || "",
+        },
+        theme: {
+          color: "#f59e0b"
+        }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on('payment.failed', function (response: any){
+        setErrorMsg(`Payment failed: ${response.error.description}`);
+      });
+      rzp.open();
+    } catch (err: any) {
+      setErrorMsg("Error initiating bulk payment: " + err.message);
+    } finally {
+      setPayingAll(false);
     }
   };
 
@@ -475,14 +545,30 @@ export default function StudentDashboard() {
                 </div>
                 <button
                   onClick={() => handleRazorpayPayment(due)}
-                  disabled={payingEnrollmentId === due.id}
-                  className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all shadow-md w-full md:w-auto"
+                  disabled={payingEnrollmentId === due.id || payingAll}
+                  className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all shadow-md w-full md:w-auto disabled:opacity-50"
                 >
                   {payingEnrollmentId === due.id ? 'Initiating...' : 'Pay Now'}
                 </button>
               </div>
             ))}
           </div>
+          {/* Total + Pay All */}
+          {pendingAttendanceDues.length > 1 && (
+            <div className="mt-6 pt-6 border-t-2 border-amber-500/20 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div>
+                <p className="text-lg font-bold text-foreground">Total: <span className="text-amber-600">₹{pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)}</span></p>
+                <p className="text-sm text-muted-foreground">{pendingAttendanceDues.length} subjects with pending fines</p>
+              </div>
+              <button
+                onClick={handlePayAll}
+                disabled={payingAll || !!payingEnrollmentId}
+                className="px-8 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-md text-lg disabled:opacity-50"
+              >
+                {payingAll ? 'Initiating...' : `Pay All (₹${pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)})`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -859,20 +945,43 @@ export default function StudentDashboard() {
                 <CheckCircle2 className="w-8 h-8" />
               </div>
               <h2 className="text-2xl font-bold text-foreground mb-2">Payment Successful!</h2>
-              <p className="text-muted-foreground mb-6">Your attendance due has been cleared.</p>
+              <p className="text-muted-foreground mb-6">{paymentReceipt.isBulk ? `All ${paymentReceipt.subjects.length} attendance dues cleared.` : 'Your attendance due has been cleared.'}</p>
               
               <div className="w-full bg-secondary/50 rounded-2xl p-5 mb-8 text-left space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground text-sm">Student:</span>
+                  <span className="font-bold">{paymentReceipt.studentName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground text-sm">USN:</span>
+                  <span className="font-mono text-sm font-medium">{paymentReceipt.usn}</span>
+                </div>
+                <div className="pt-3 mt-3 border-t border-border">
+                  <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Subject{paymentReceipt.subjects.length > 1 ? 's' : ''}</span>
+                  {paymentReceipt.subjects.map((sub: any, i: number) => (
+                    <div key={i} className="flex justify-between mt-2">
+                      <span className="text-sm">{sub.name} <span className="text-muted-foreground">({sub.code})</span></span>
+                      <span className="font-bold text-sm">₹{sub.amount}</span>
+                    </div>
+                  ))}
+                </div>
+                {paymentReceipt.subjects.length > 1 && (
+                  <div className="pt-3 mt-3 border-t border-border flex justify-between">
+                    <span className="font-bold">Total Paid:</span>
+                    <span className="font-bold text-emerald-600">₹{paymentReceipt.amount}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground text-sm">Amount Paid:</span>
                   <span className="font-bold">₹{paymentReceipt.amount}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground text-sm">Subject:</span>
-                  <span className="font-medium text-right max-w-[60%] truncate" title={paymentReceipt.subject}>{paymentReceipt.subject}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground text-sm">Date:</span>
+                  <span className="text-muted-foreground text-sm">Date & Time:</span>
                   <span className="font-medium text-right">{paymentReceipt.date}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground text-sm">Status:</span>
+                  <span className="px-2 py-1 bg-emerald-500/10 text-emerald-600 rounded-full text-xs font-bold">✅ Success</span>
                 </div>
                 <div className="pt-3 mt-3 border-t border-border flex justify-between">
                   <span className="text-muted-foreground text-sm">Transaction ID:</span>
