@@ -217,25 +217,48 @@ export default function StudentDashboard() {
             fetchStudentData();
           } catch (err: any) {
             setErrorMsg("Payment verification failed: " + err.message);
+          } finally {
+            setPayingEnrollmentId(null);
           }
         },
         prefill: {
           name: profile?.full_name || "",
           email: user?.email || "",
+          contact: "",
         },
         theme: {
           color: "#f59e0b"
+        },
+        // UPI-focused checkout: shows QR code, UPI ID collect (PhonePe/GPay/Paytm), and intent
+        config: {
+          display: {
+            blocks: {
+              upi: {
+                name: "Pay via UPI",
+                instruments: [
+                  { method: "upi", flows: ["qr", "collect", "intent"] }
+                ]
+              }
+            },
+            sequence: ["block.upi"],
+            preferences: { show_default_blocks: false }
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setPayingEnrollmentId(null);
+          }
         }
       };
 
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', function (response: any){
         setErrorMsg(`Payment failed: ${response.error.description}`);
+        setPayingEnrollmentId(null);
       });
       rzp.open();
     } catch (err: any) {
       setErrorMsg("Error initiating payment: " + err.message);
-    } finally {
       setPayingEnrollmentId(null);
     }
   };
@@ -282,25 +305,48 @@ export default function StudentDashboard() {
             fetchStudentData();
           } catch (err: any) {
             setErrorMsg("Bulk payment verification failed: " + err.message);
+          } finally {
+            setPayingAll(false);
           }
         },
         prefill: {
           name: profile?.full_name || "",
           email: user?.email || "",
+          contact: "",
         },
         theme: {
           color: "#f59e0b"
+        },
+        // UPI-focused checkout: shows QR code, UPI ID collect (PhonePe/GPay/Paytm), and intent
+        config: {
+          display: {
+            blocks: {
+              upi: {
+                name: "Pay via UPI",
+                instruments: [
+                  { method: "upi", flows: ["qr", "collect", "intent"] }
+                ]
+              }
+            },
+            sequence: ["block.upi"],
+            preferences: { show_default_blocks: false }
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setPayingAll(false);
+          }
         }
       };
 
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', function (response: any){
         setErrorMsg(`Payment failed: ${response.error.description}`);
+        setPayingAll(false);
       });
       rzp.open();
     } catch (err: any) {
       setErrorMsg("Error initiating bulk payment: " + err.message);
-    } finally {
       setPayingAll(false);
     }
   };
