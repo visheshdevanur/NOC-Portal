@@ -125,7 +125,7 @@ export default function LibraryDashboard() {
             throw new Error('No valid rows found. Please ensure "roll_number" column exists.');
           }
 
-          const processed = await bulkProcessLibraryDues(notPaidRolls);
+          await bulkProcessLibraryDues(notPaidRolls);
           setSuccessMsg(`Upload processed! ${notPaidRolls.length} students marked as not paid. All other students automatically cleared.`);
           setCsvFile(null);
           fetchDues();
