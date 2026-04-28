@@ -127,11 +127,14 @@ export default function StaffDashboard() {
   const [mgStudents, setMgStudents] = useState<any[]>([]);
   const [mgLoading, setMgLoading] = useState(false);
   const [mgNewSection, setMgNewSection] = useState('');
-  const [mgEditStudent, setMgEditStudent] = useState<any>(null);
-  const [mgEditSection, setMgEditSection] = useState('');
+
   const [mgError, setMgError] = useState<string | null>(null);
   const [mgSuccess, setMgSuccess] = useState<string | null>(null);
   const [mgUploading, setMgUploading] = useState(false);
+  const [mgSearch, setMgSearch] = useState('');
+  const [mgSectionFilter, setMgSectionFilter] = useState<string>('all');
+  const [mgAssignments, setMgAssignments] = useState<Record<string, string>>({});
+  const [mgSaving, setMgSaving] = useState(false);
 
   useEffect(() => {
     if (profile?.department_id) {
@@ -835,6 +838,7 @@ export default function StaffDashboard() {
   const fetchMgData = async (semId: string) => {
     if (!profile?.department_id) return;
     setMgLoading(true);
+    setMgAssignments({});
     try {
       const { getSectionsForSemester } = await import('../../lib/api');
       const secs = await getSectionsForSemester(profile.department_id, semId);
@@ -859,12 +863,10 @@ export default function StaffDashboard() {
   const handleCreateSection = async () => {
     if (!mgNewSection.trim()) { setMgError('Section name is required.'); return; }
     if (mgSections.includes(mgNewSection.trim().toUpperCase())) { setMgError('Section already exists.'); return; }
-    // Creating a section = assigning that section label to the concept. We just add it to state.
-    // Real assignment happens per-student. But we can "create" by noting it.
     const newSec = mgNewSection.trim().toUpperCase();
     setMgSections(prev => [...prev, newSec].sort());
     setMgNewSection('');
-    setMgSuccess(`Section "${newSec}" created.`);
+    setMgSuccess(`Section "${newSec}" created. It is now available in dropdowns.`);
   };
 
   const handleDeleteSection = async (sectionName: string) => {
@@ -880,17 +882,46 @@ export default function StaffDashboard() {
     }
   };
 
-  const handleSaveStudentSection = async () => {
-    if (!mgEditStudent) return;
+
+
+  // Bulk save all dropdown assignments at once
+  const handleBulkSaveAssignments = async () => {
+    const entries = Object.entries(mgAssignments).filter(([studentId, newSection]) => {
+      const student = mgStudents.find(s => s.id === studentId);
+      return student && (student.section || '') !== newSection;
+    });
+    if (entries.length === 0) { setMgError('No changes to save.'); return; }
+    setMgSaving(true);
+    setMgError(null);
+    setMgSuccess(null);
     try {
-      const { updateStudentSection } = await import('../../lib/api');
-      await updateStudentSection(mgEditStudent.id, mgEditSection || null);
-      setMgSuccess(`Section updated for "${mgEditStudent.full_name}".`);
-      setMgEditStudent(null);
+      const { bulkAssignSections } = await import('../../lib/api');
+      const assignments = entries.map(([student_id, section]) => ({ student_id, section }));
+      const updated = await bulkAssignSections(assignments);
+      setMgSuccess(`Saved section assignments for ${updated} students!`);
+      setMgAssignments({});
       fetchMgData(mgSemesterId);
     } catch (err: any) {
       setMgError(getFriendlyErrorMessage(err));
-    }
+    } finally { setMgSaving(false); }
+  };
+
+  // Download CSV template pre-filled with student data
+  const handleDownloadSectionTemplate = () => {
+    if (mgStudents.length === 0) { setMgError('No students to export.'); return; }
+    const semName = semestersList.find(s => s.id === mgSemesterId)?.name || '';
+    const header = 'USN,Student Name,Department,Semester,Section\n';
+    const rows = mgStudents.map(s =>
+      `"${s.roll_number || ''}","${s.full_name || ''}","${deptName}","${semName}",""`
+    ).join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Section_Template_Sem${semName}_${deptName}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setMgSuccess('CSV template downloaded. Fill the Section column and upload it back.');
   };
 
   const handleMgCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -904,14 +935,14 @@ export default function StaffDashboard() {
       const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
       if (lines.length < 2) throw new Error('CSV file is empty or missing data rows.');
 
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
       const usnIdx = headers.findIndex(h => h === 'usn' || h === 'roll_number' || h === 'rollnumber');
       const secIdx = headers.findIndex(h => h === 'section');
       if (usnIdx < 0 || secIdx < 0) throw new Error('CSV must have "USN" (or "roll_number") and "Section" columns.');
 
       const rows = [];
       for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim());
+        const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
         if (cols[usnIdx] && cols[secIdx]) {
           rows.push({ roll_number: cols[usnIdx], section: cols[secIdx] });
         }
@@ -933,6 +964,23 @@ export default function StaffDashboard() {
       event.target.value = '';
     }
   };
+
+  // Filtered students for manage sections
+  const filteredMgStudents = mgStudents.filter(s => {
+    const matchesSearch = !mgSearch ||
+      s.full_name?.toLowerCase().includes(mgSearch.toLowerCase()) ||
+      s.roll_number?.toLowerCase().includes(mgSearch.toLowerCase());
+    const matchesSection = mgSectionFilter === 'all' ||
+      (mgSectionFilter === 'unassigned' ? !s.section : s.section === mgSectionFilter);
+    return matchesSearch && matchesSection;
+  });
+
+  // Count of pending (changed) assignments
+  const pendingAssignmentCount = Object.entries(mgAssignments).filter(([studentId, newSection]) => {
+    const student = mgStudents.find(s => s.id === studentId);
+    return student && (student.section || '') !== newSection;
+  }).length;
+
 
   const roleColors: Record<string, string> = {
     student: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
@@ -2037,13 +2085,56 @@ export default function StaffDashboard() {
 
               {/* Students Table */}
               <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-                <div className="p-4 border-b border-border">
-                  <h3 className="font-bold text-foreground">Students ({mgStudents.length})</h3>
+                <div className="p-4 border-b border-border flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <h3 className="font-bold text-foreground">Students ({filteredMgStudents.length})</h3>
+                  
+                  <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="text"
+                        placeholder="Search by name or USN..."
+                        className="pl-9 pr-4 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 w-full md:w-64"
+                        value={mgSearch}
+                        onChange={e => setMgSearch(e.target.value)}
+                      />
+                    </div>
+                    <select
+                      className="px-4 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      value={mgSectionFilter}
+                      onChange={e => setMgSectionFilter(e.target.value)}
+                    >
+                      <option value="all">All Sections</option>
+                      <option value="unassigned">Unassigned</option>
+                      {mgSections.map(sec => (
+                        <option key={sec} value={sec}>Section {sec}</option>
+                      ))}
+                    </select>
+                    
+                    <button
+                      onClick={handleDownloadSectionTemplate}
+                      className="flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-sm"
+                    >
+                      <Download className="w-4 h-4 text-muted-foreground" />
+                      Template
+                    </button>
+
+                    {pendingAssignmentCount > 0 && (
+                      <button
+                        onClick={handleBulkSaveAssignments}
+                        disabled={mgSaving}
+                        className="flex items-center gap-2 bg-emerald-500 text-white hover:bg-emerald-600 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm"
+                      >
+                        <Settings className="w-4 h-4" />
+                        {mgSaving ? 'Saving...' : `Save All (${pendingAssignmentCount})`}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {mgLoading ? (
                   <div className="p-8 text-center text-muted-foreground animate-pulse">Loading students...</div>
-                ) : mgStudents.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">No students found in this semester.</div>
+                ) : filteredMgStudents.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground">No students found matching your criteria.</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -2052,37 +2143,35 @@ export default function StaffDashboard() {
                           <th className="p-4 font-semibold">Name</th>
                           <th className="p-4 font-semibold">Roll Number</th>
                           <th className="p-4 font-semibold">Section</th>
-                          <th className="p-4 font-semibold text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {mgStudents.map(s => (
-                          <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
-                            <td className="p-4 font-medium text-foreground">{s.full_name}</td>
-                            <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
-                            <td className="p-4">
-                              {mgEditStudent?.id === s.id ? (
-                                <div className="flex items-center gap-2">
-                                  <select className="px-3 py-1.5 bg-background border border-border rounded-lg text-sm" value={mgEditSection} onChange={e => setMgEditSection(e.target.value)}>
-                                    <option value="">None</option>
-                                    {mgSections.map(sec => <option key={sec} value={sec}>{sec}</option>)}
-                                  </select>
-                                  <button onClick={handleSaveStudentSection} className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600">Save</button>
-                                  <button onClick={() => setMgEditStudent(null)} className="px-3 py-1.5 bg-secondary text-foreground rounded-lg text-xs font-medium">Cancel</button>
-                                </div>
-                              ) : (
-                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${s.section ? 'bg-amber-500/10 text-amber-600' : 'bg-secondary text-muted-foreground'}`}>
-                                  {s.section || 'Unassigned'}
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-4 text-right">
-                              <button onClick={() => { setMgEditStudent(s); setMgEditSection(s.section || ''); }} className="p-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white transition-colors" title="Edit section">
-                                <Settings className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {filteredMgStudents.map(s => {
+                          const currentVal = mgAssignments[s.id] !== undefined ? mgAssignments[s.id] : (s.section || '');
+                          const isChanged = currentVal !== (s.section || '');
+                          
+                          return (
+                            <tr key={s.id} className={`transition-colors ${isChanged ? 'bg-amber-500/5' : 'hover:bg-secondary/20'}`}>
+                              <td className="p-4 font-medium text-foreground">{s.full_name}</td>
+                              <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
+                              <td className="p-4">
+                                <select 
+                                  className={`px-3 py-1.5 bg-background border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 ${isChanged ? 'border-amber-500 text-amber-700 dark:text-amber-400 font-bold' : 'border-border'}`}
+                                  value={currentVal} 
+                                  onChange={e => {
+                                    setMgAssignments(prev => ({
+                                      ...prev,
+                                      [s.id]: e.target.value
+                                    }));
+                                  }}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {mgSections.map(sec => <option key={sec} value={sec}>{sec}</option>)}
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

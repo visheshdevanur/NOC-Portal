@@ -11,3 +11,4 @@ USING (
     AND department_id = activity_logs.department_id
   )
 );
+

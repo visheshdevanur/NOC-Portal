@@ -8,7 +8,7 @@ import {
   getStudentIAAttendance,
   getStudentLibraryDues
 } from '../../lib/api';
-import { CheckCircle2, Clock, XCircle, AlertCircle, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap, Eye } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, AlertCircle, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap, Eye, User, Hash, Layers, MapPin } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type ClearanceRequest = {
@@ -64,6 +64,7 @@ export default function StudentDashboard() {
   const [iaRecords, setIaRecords] = useState<IAAttendanceRecord[]>([]);
   const [libraryDue, setLibraryDue] = useState<any>(null);
   const [departmentName, setDepartmentName] = useState<string>('N/A');
+  const [semesterName, setSemesterName] = useState<string>('N/A');
   const [showReportModal, setShowReportModal] = useState(false);
 
   // Debounce realtime refetches to avoid cascading re-renders
@@ -98,9 +99,10 @@ export default function StudentDashboard() {
       if (!user) return;
 
       // Execute all independent database queries simultaneously in a single network round-trip.
-      const [req, deptRes, subsDataRes, subs, depts, templateRes, iaData, libData] = await Promise.all([
+      const [req, deptRes, semRes, subsDataRes, subs, depts, templateRes, iaData, libData] = await Promise.all([
         getStudentClearanceRequest(user.id),
         profile?.department_id ? supabase.from('departments').select('name').eq('id', profile.department_id).single() : Promise.resolve({ data: null }),
+        profile?.semester_id ? supabase.from('semesters').select('name').eq('id', profile.semester_id).single() : Promise.resolve({ data: null }),
         profile?.semester_id ? supabase.from('subjects').select('*').eq('semester_id', profile.semester_id) : Promise.resolve({ data: null }),
         getStudentSubjects(user.id),
         getStudentDues(user.id),
@@ -112,6 +114,7 @@ export default function StudentDashboard() {
       setRequest(req);
       
       if (deptRes.data) setDepartmentName(deptRes.data.name);
+      if (semRes.data) setSemesterName(semRes.data.name);
       if (!req && subsDataRes.data) setAvailableSubjects(subsDataRes.data);
       if (templateRes.data) setHallTemplate(templateRes.data);
       setIaRecords((iaData || []) as unknown as IAAttendanceRecord[]);
@@ -216,55 +219,124 @@ export default function StudentDashboard() {
     <div className="h-64 bg-card rounded-2xl w-full"></div>
   </div>;
 
+  // Student Info Card Component (shared between both views)
+  const StudentInfoCard = () => (
+    <div className="bg-card rounded-3xl p-6 shadow-sm border border-border relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-2 h-full bg-primary"></div>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-foreground mb-3 flex items-center gap-2">
+            <User className="w-5 h-5 text-primary" />
+            Student Information
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                <User className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Name</p>
+                <p className="text-sm font-bold text-foreground">{profile?.full_name || 'N/A'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-violet-500/10 rounded-lg flex items-center justify-center">
+                <Hash className="w-4 h-4 text-violet-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">USN</p>
+                <p className="text-sm font-bold text-foreground font-mono">{(profile as any)?.roll_number || 'N/A'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+                <Building2 className="w-4 h-4 text-emerald-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Department</p>
+                <p className="text-sm font-bold text-foreground">{departmentName}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-amber-500/10 rounded-lg flex items-center justify-center">
+                <Layers className="w-4 h-4 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Semester</p>
+                <p className="text-sm font-bold text-foreground">Semester {semesterName}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center">
+            <MapPin className="w-4 h-4 text-blue-500" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground font-medium">Section</p>
+            <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${(profile as any)?.section ? 'bg-emerald-500/10 text-emerald-600' : 'bg-secondary text-muted-foreground'}`}>
+              {(profile as any)?.section || 'Unassigned'}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   if (!request) {
     return (
-      <div className="max-w-4xl mx-auto mt-12 bg-card p-10 rounded-3xl shadow-xl border border-border flex flex-col items-center text-center">
-         <div className="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center mb-6">
-           <Hand className="w-12 h-12 text-primary" />
-         </div>
-         <h1 className="text-3xl font-bold text-foreground mb-4">Welcome to NOC Clearance</h1>
-         <p className="text-muted-foreground text-lg mb-8 max-w-xl">
-           You have not initiated your clearance pipeline yet. Hit the button below to formally apply for clearance.
-         </p>
-         {errorMsg && (
-           <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm w-full max-w-lg">
-             <strong>Error:</strong> {errorMsg}
+      <div className="space-y-6">
+        <StudentInfoCard />
+        <div className="max-w-4xl mx-auto bg-card p-10 rounded-3xl shadow-xl border border-border flex flex-col items-center text-center">
+           <div className="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center mb-6">
+             <Hand className="w-12 h-12 text-primary" />
            </div>
-         )}
-         <div className="w-full max-w-lg mb-8 text-left">
-           <h3 className="font-semibold text-lg mb-3">Select your enrolled subjects:</h3>
-           <div className="bg-background rounded-xl border border-border p-4 space-y-3 max-h-64 overflow-y-auto">
-             {availableSubjects.map(sub => (
-               <label key={sub.id} className="flex items-center gap-3 p-2 hover:bg-secondary rounded-lg cursor-pointer transition-colors">
-                 <input 
-                   type="checkbox" 
-                   className="w-5 h-5 rounded border-border text-primary focus:ring-primary"
-                   checked={selectedSubjects.includes(sub.id)}
-                   onChange={(e) => {
-                     if (e.target.checked) setSelectedSubjects([...selectedSubjects, sub.id]);
-                     else setSelectedSubjects(selectedSubjects.filter(id => id !== sub.id));
-                   }}
-                 />
-                 <span><span className="font-bold text-primary">{sub.subject_code}</span> - {sub.subject_name}</span>
-               </label>
-             ))}
-             {availableSubjects.length === 0 && <p className="text-muted-foreground text-sm text-center">No subjects available to select.</p>}
-           </div>
-         </div>
+           <h1 className="text-3xl font-bold text-foreground mb-4">Welcome to NOC Clearance</h1>
+           <p className="text-muted-foreground text-lg mb-8 max-w-xl">
+             You have not initiated your clearance pipeline yet. Hit the button below to formally apply for clearance.
+           </p>
+           {errorMsg && (
+              <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm w-full max-w-lg">
+                <strong>Error:</strong> {errorMsg}
+              </div>
+            )}
+           <div className="w-full max-w-lg mb-8 text-left">
+              <h3 className="font-semibold text-lg mb-3">Select your enrolled subjects:</h3>
+              <div className="bg-background rounded-xl border border-border p-4 space-y-3 max-h-64 overflow-y-auto">
+                {availableSubjects.map(sub => (
+                  <label key={sub.id} className="flex items-center gap-3 p-2 hover:bg-secondary rounded-lg cursor-pointer transition-colors">
+                    <input 
+                      type="checkbox" 
+                      className="w-5 h-5 rounded border-border text-primary focus:ring-primary"
+                      checked={selectedSubjects.includes(sub.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedSubjects([...selectedSubjects, sub.id]);
+                        else setSelectedSubjects(selectedSubjects.filter(id => id !== sub.id));
+                      }}
+                    />
+                    <span><span className="font-bold text-primary">{sub.subject_code}</span> - {sub.subject_name}</span>
+                  </label>
+                ))}
+                {availableSubjects.length === 0 && <p className="text-muted-foreground text-sm text-center">No subjects available to select.</p>}
+              </div>
+            </div>
 
-         <button 
-           onClick={handleApplyForClearance}
-           disabled={applying || selectedSubjects.length === 0}
-           className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-4 px-8 rounded-xl text-lg shadow-md transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed"
-         >
-           {applying ? 'Initializing System...' : 'Apply for Clearance'}
-         </button>
+           <button 
+              onClick={handleApplyForClearance}
+              disabled={applying || selectedSubjects.length === 0}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-4 px-8 rounded-xl text-lg shadow-md transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed"
+            >
+              {applying ? 'Initializing System...' : 'Apply for Clearance'}
+            </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-8 fade-in">
+      {/* Student Info Card */}
+      <StudentInfoCard />
       {/* Error Display */}
       {errorMsg && (
         <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm">
