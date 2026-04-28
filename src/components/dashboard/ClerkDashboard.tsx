@@ -565,8 +565,8 @@ export default function ClerkDashboard() {
   const handleDeleteUser = async (userId: string, userName: string) => {
     if (!confirm(`Are you sure you want to delete "${userName}"?`)) return;
     try {
-      const { error } = await supabase.from('profiles').delete().eq('id', userId);
-      if (error) throw error;
+      const { deleteUser } = await import('../../lib/api');
+      await deleteUser(userId);
       setUserSuccess(`"${userName}" deleted.`);
       fetchUsers();
     } catch (err: any) {
