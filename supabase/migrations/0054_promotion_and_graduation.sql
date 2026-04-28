@@ -33,7 +33,7 @@ BEGIN
           d.name AS department,
           sem.name AS semester,
           COALESCE(cr.current_stage::text, 'none') AS clearance_stage,
-          COALESCE(cr.status::text, 'none') AS clearance_status
+          COALESCE(cr.status, 'none') AS clearance_status
         FROM profiles p
         LEFT JOIN departments d ON d.id = p.department_id
         LEFT JOIN semesters sem ON sem.id = p.semester_id
@@ -229,9 +229,9 @@ BEGIN
         -- Update semester
         UPDATE profiles SET semester_id = next_sem.id WHERE id = student_row.id;
 
-        -- Special: 2nd → 3rd sem: clear section for reassignment
+        -- Special: 2nd → 3rd sem: clear section and remove from FYC/clerk/teacher dashboards
         IF sem_number = 2 THEN
-          UPDATE profiles SET section = NULL WHERE id = student_row.id;
+          UPDATE profiles SET section = NULL, created_by = NULL WHERE id = student_row.id;
           dept_section_cleared := dept_section_cleared + 1;
           section_cleared_count := section_cleared_count + 1;
         END IF;
