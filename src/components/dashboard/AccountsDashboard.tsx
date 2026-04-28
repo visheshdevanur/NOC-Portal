@@ -133,11 +133,11 @@ export default function AccountsDashboard() {
   };
 
   const downloadTemplate = () => {
-    const csvContent = "data:text/csv;charset=utf-8,roll_number,due_amount\n21CS001,1500\n21CS002,500";
+    const csvContent = "data:text/csv;charset=utf-8,roll_number\n4MH24CS001\n4MH24CS002";
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "College_Dues_Upload_Template.csv");
+    link.setAttribute("download", "College_Dues_Not_Paid_Template.csv");
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -158,9 +158,8 @@ export default function AccountsDashboard() {
       if (lines.length < 2) throw new Error("CSV file is empty or missing data rows.");
       
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const hasAmountCol = headers.includes('fine_amount') || headers.includes('due_amount');
-      if (!headers.includes('roll_number') || !hasAmountCol) {
-        throw new Error("Missing required CSV column: roll_number or due_amount");
+      if (!headers.includes('roll_number')) {
+        throw new Error("Missing required CSV column: roll_number");
       }
 
       const pendingDuesToUpdate: { id: string, fine_amount: number }[] = [];
@@ -170,13 +169,9 @@ export default function AccountsDashboard() {
 
       for (let i = 1; i < lines.length; i++) {
         const columns = lines[i].split(',').map(c => c.trim());
-        const getVal = (colName: string) => columns[headers.indexOf(colName)] || '';
+        const roll_number = columns[headers.indexOf('roll_number')] || '';
         
-        const roll_number = getVal('roll_number');
-        const fine_str = getVal('due_amount') || getVal('fine_amount');
-        const fine_amount = parseInt(fine_str, 10);
-        
-        if (!roll_number || isNaN(fine_amount)) {
+        if (!roll_number) {
           errorCount++;
           continue;
         }
@@ -184,7 +179,7 @@ export default function AccountsDashboard() {
         // Find the match in our dues array
         const match = dues.find(d => d.profiles?.roll_number === roll_number);
         if (match) {
-          pendingDuesToUpdate.push({ id: match.id, fine_amount });
+          pendingDuesToUpdate.push({ id: match.id, fine_amount: match.fine_amount || 0 });
         } else {
           errorCount++;
         }
@@ -193,7 +188,7 @@ export default function AccountsDashboard() {
       const { bulkProcessCollegeDues } = await import('../../lib/api');
       await bulkProcessCollegeDues(pendingDuesToUpdate, allDuesIds);
 
-      setSuccess(`Upload processed! Set ${pendingDuesToUpdate.length} students as pending with dues. All other students marked as completed.`);
+      setSuccess(`Upload processed! ${pendingDuesToUpdate.length} students marked as not paid. All other students automatically cleared.`);
       if (errorCount > 0) setError(`Skipped ${errorCount} invalid rows or unmatched roll numbers.`);
       
       fetchDues();
@@ -262,10 +257,10 @@ export default function AccountsDashboard() {
               onClick={downloadTemplate}
               className="flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 px-4 py-3 rounded-xl font-medium transition-all shadow-sm"
             >
-              Template
+              📄 Not-Paid Template
             </button>
             <label className="flex items-center gap-2 bg-emerald-500 text-white hover:bg-emerald-600 px-4 py-3 rounded-xl font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50">
-              {uploadingCSV ? "Processing..." : "Mass Upload CSV"}
+              {uploadingCSV ? "Processing..." : "Upload Not-Paid List"}
               <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} disabled={uploadingCSV} />
             </label>
           </div>

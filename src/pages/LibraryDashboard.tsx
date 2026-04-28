@@ -117,20 +117,16 @@ export default function LibraryDashboard() {
       complete: async (results) => {
         try {
           const rows = results.data as any[];
-          const validRows = rows
+          const notPaidRolls = rows
             .filter(r => r.roll_number)
-            .map(r => ({
-              roll_number: String(r.roll_number).trim(),
-              fine_amount: parseFloat(r.fine_amount) || 0,
-              remarks: String(r.remarks || '').trim()
-            }));
+            .map(r => String(r.roll_number).trim());
 
-          if (validRows.length === 0) {
+          if (notPaidRolls.length === 0) {
             throw new Error('No valid rows found. Please ensure "roll_number" column exists.');
           }
 
-          const processed = await bulkProcessLibraryDues(validRows);
-          setSuccessMsg(`Successfully processed ${processed} student records.`);
+          const processed = await bulkProcessLibraryDues(notPaidRolls);
+          setSuccessMsg(`Upload processed! ${notPaidRolls.length} students marked as not paid. All other students automatically cleared.`);
           setCsvFile(null);
           fetchDues();
         } catch (err: any) {
@@ -147,11 +143,11 @@ export default function LibraryDashboard() {
   };
 
   const downloadTemplate = () => {
-    const csvContent = "data:text/csv;charset=utf-8,roll_number,fine_amount,remarks\nUSN123,500,Lost Book\nUSN124,0,Cleared";
+    const csvContent = "data:text/csv;charset=utf-8,roll_number\n4MH24CS001\n4MH24CS002";
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "library_fine_template.csv");
+    link.setAttribute("download", "Library_Dues_Not_Paid_Template.csv");
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -471,8 +467,8 @@ export default function LibraryDashboard() {
           <div className="space-y-6">
             <div className="bg-card border border-border rounded-3xl p-6 shadow-sm overflow-hidden relative">
               <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-full pointer-events-none"></div>
-              <h3 className="font-bold text-lg text-foreground mb-4">Bulk Upload</h3>
-              <p className="text-sm text-muted-foreground mb-6">Upload an export from legacy software to batch update fines instantly.</p>
+              <h3 className="font-bold text-lg text-foreground mb-4">Upload Not-Paid List</h3>
+              <p className="text-sm text-muted-foreground mb-6">Upload a CSV with USNs of students who have NOT paid. All other students will be automatically cleared.</p>
               <input type="file" accept=".csv" className="hidden" id="csv-upload" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
               <label
                 htmlFor="csv-upload"
@@ -484,11 +480,11 @@ export default function LibraryDashboard() {
               </label>
               {csvFile && (
                 <button onClick={handleCsvUpload} disabled={csvProcessing} className="w-full mt-4 bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3 px-4 rounded-xl shadow-md disabled:opacity-50 transition-all active:scale-[0.98]">
-                  {csvProcessing ? 'Processing File...' : 'Upload & Process'}
+                  {csvProcessing ? 'Processing File...' : 'Upload Not-Paid List'}
                 </button>
               )}
               <button onClick={downloadTemplate} className="w-full mt-4 flex justify-center items-center gap-2 text-sm text-primary hover:underline font-medium">
-                <Download className="w-4 h-4" /> Download Template
+                <Download className="w-4 h-4" /> 📄 Download Not-Paid Template
               </button>
             </div>
           </div>

@@ -810,45 +810,55 @@ export const updateLibraryDue = async (studentId: string, hasDues: boolean, fine
   return data;
 };
 
-/** Bulk process library dues from CSV (associating by roll_number) */
-export const bulkProcessLibraryDues = async (rows: { roll_number: string; fine_amount: number; remarks: string }[]) => {
-  const rollNumbers = rows.map(r => r.roll_number.trim().toUpperCase());
-  const { data: students, error: studentError } = await supabase
-    .from('profiles')
-    .select('id, roll_number')
-    .eq('role', 'student')
-    .in('roll_number', rollNumbers);
-    
-  if (studentError) throw studentError;
-  
-  if (!students || students.length === 0) {
-    throw new Error('No mapping found for provided roll numbers in the database.');
-  }
+/** Bulk process library dues from CSV — only USNs of not-paid students. Everyone else is auto-cleared. */
+export const bulkProcessLibraryDues = async (notPaidRolls: string[]) => {
+  const upperRolls = notPaidRolls.map(r => r.trim().toUpperCase());
 
-  const studentMap = new Map(students.map(s => [s.roll_number?.toUpperCase(), s.id]));
-
-  const upsertPayload = rows
-    .filter(row => studentMap.has(row.roll_number.trim().toUpperCase()))
-    .map(row => ({
-      student_id: studentMap.get(row.roll_number.trim().toUpperCase())!,
-      has_dues: row.fine_amount > 0,
-      fine_amount: row.fine_amount,
-      remarks: row.remarks || (row.fine_amount > 0 ? 'Bulk uploaded fine' : 'Cleared via bulk upload')
-    }));
-
-  if (upsertPayload.length === 0) {
-    throw new Error('Could not map any rows to existing students.');
-  }
-
-  const { error: upsertError } = await supabase
+  // Get all library dues with their student roll numbers
+  const { data: allDues, error: duesError } = await supabase
     .from('library_dues')
-    .upsert(upsertPayload, { onConflict: 'student_id' });
+    .select('id, student_id, profiles!library_dues_student_id_fkey(roll_number)');
+  if (duesError) throw duesError;
 
-  if (upsertError) throw upsertError;
+  const notPaidIds: string[] = [];
+  const clearedIds: string[] = [];
 
-  logActivity('Bulk Processed Library Dues', `Processed ${upsertPayload.length} valid CSV records`);
+  for (const due of (allDues || [])) {
+    const roll = (due as any).profiles?.roll_number?.toUpperCase();
+    if (roll && upperRolls.includes(roll)) {
+      notPaidIds.push(due.id);
+    } else {
+      clearedIds.push(due.id);
+    }
+  }
 
-  return upsertPayload.length;
+  // Mark not-paid students as having dues
+  if (notPaidIds.length > 0) {
+    for (let i = 0; i < notPaidIds.length; i += 200) {
+      const chunk = notPaidIds.slice(i, i + 200);
+      const { error } = await supabase
+        .from('library_dues')
+        .update({ has_dues: true, remarks: 'Not paid — bulk upload' } as any)
+        .in('id', chunk);
+      if (error) throw error;
+    }
+  }
+
+  // Auto-clear all other students
+  if (clearedIds.length > 0) {
+    for (let i = 0; i < clearedIds.length; i += 200) {
+      const chunk = clearedIds.slice(i, i + 200);
+      const { error } = await supabase
+        .from('library_dues')
+        .update({ has_dues: false, fine_amount: 0, remarks: 'Cleared — not in upload list' } as any)
+        .in('id', chunk);
+      if (error) throw error;
+    }
+  }
+
+  logActivity('Bulk Processed Library Dues', `${notPaidIds.length} not paid, ${clearedIds.length} auto-cleared`);
+
+  return notPaidIds.length;
 };
 
 // =======================
