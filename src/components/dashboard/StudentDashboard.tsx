@@ -704,6 +704,106 @@ export default function StudentDashboard() {
         </div>
       )}
 
+      {/* Attendance Fines Breakdown */}
+      {enrollments.length > 0 && (
+        <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-3">
+              <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center">
+                <AlertCircle className="w-5 h-5 text-amber-500" />
+              </div>
+              Attendance Fines
+            </h2>
+            {pendingAttendanceDues.length > 0 && (
+              <span className="bg-amber-500/10 text-amber-600 font-bold text-sm px-4 py-2 rounded-full">
+                {pendingAttendanceDues.length} Pending · ₹{pendingAttendanceDues.reduce((s: number, d: any) => s + (d.attendance_fee || 0), 0)}
+              </span>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
+                  <th className="p-4 font-semibold">Subject</th>
+                  <th className="p-4 font-semibold text-center">Attendance %</th>
+                  <th className="p-4 font-semibold text-center">Fine Amount</th>
+                  <th className="p-4 font-semibold text-center">Status</th>
+                  <th className="p-4 font-semibold text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {enrollments.map((enr: any) => {
+                  const hasFine = enr.attendance_fee > 0;
+                  const isPaid = enr.attendance_fee_verified;
+                  return (
+                    <tr key={enr.id} className="hover:bg-secondary/20 transition-colors">
+                      <td className="p-4">
+                        <div className="font-medium text-foreground">{enr.subjects?.subject_name}</div>
+                        <div className="text-xs text-muted-foreground">{enr.subjects?.subject_code}</div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`font-bold ${(enr.attendance_pct || 0) < 85 ? 'text-destructive' : 'text-emerald-500'}`}>
+                          {enr.attendance_pct || 0}%
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        {hasFine ? (
+                          <span className={`px-3 py-1 rounded-lg font-bold ${isPaid ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
+                            ₹{enr.attendance_fee}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-center">
+                        {isPaid ? (
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">✅ Paid</span>
+                        ) : hasFine ? (
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">⏳ Pending</span>
+                        ) : (
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-right">
+                        {hasFine && !isPaid ? (
+                          <button
+                            onClick={() => handleRazorpayPayment(enr)}
+                            disabled={payingEnrollmentId === enr.id || payingAll}
+                            className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all shadow-sm disabled:opacity-50 text-sm"
+                          >
+                            {payingEnrollmentId === enr.id ? 'Paying...' : 'Pay Now'}
+                          </button>
+                        ) : isPaid ? (
+                          <span className="text-emerald-600 text-sm font-medium">Cleared</span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pay All Footer */}
+          {pendingAttendanceDues.length > 1 && (
+            <div className="mt-6 pt-6 border-t-2 border-amber-500/20 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div>
+                <p className="text-lg font-bold text-foreground">Total Due: <span className="text-amber-600">₹{pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)}</span></p>
+                <p className="text-sm text-muted-foreground">{pendingAttendanceDues.length} subjects with pending fines</p>
+              </div>
+              <button
+                onClick={handlePayAll}
+                disabled={payingAll || !!payingEnrollmentId}
+                className="px-8 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-md text-lg disabled:opacity-50"
+              >
+                {payingAll ? 'Initiating...' : `Pay All (₹${pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)})`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Faculty Clearances */}
         <div className="bg-card rounded-3xl p-8 shadow-sm border border-border flex flex-col h-full">
