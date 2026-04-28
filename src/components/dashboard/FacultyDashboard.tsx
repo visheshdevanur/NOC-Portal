@@ -365,11 +365,17 @@ export default function FacultyDashboard() {
             let status = pct >= 85 ? 'completed' : 'rejected';
             let remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
 
-            // Override with IA rule
-            const iaPresentCount = teacherIAs.filter(ia => ia.student_id === enrollment?.student_id && ia.subject_id === enrollment?.subject_id && ia.is_present).length;
-            if (iaPresentCount < 2) {
-              status = 'rejected';
-              remarks = `Low IA Attendance (${iaPresentCount}/2 required)`;
+            // Override with IA rule (only if at least 2 IAs have been conducted for this subject)
+            const subjectIAs = teacherIAs.filter(ia => ia.subject_id === enrollment?.subject_id);
+            // Get unique IA numbers for this subject to see how many IAs have been conducted
+            const uniqueIAsConducted = new Set(subjectIAs.map(ia => ia.ia_number)).size;
+            
+            if (uniqueIAsConducted >= 2) {
+              const iaPresentCount = subjectIAs.filter(ia => ia.student_id === enrollment?.student_id && ia.is_present).length;
+              if (iaPresentCount < 2) {
+                status = 'rejected';
+                remarks = `Low IA Attendance (${iaPresentCount}/2 required)`;
+              }
             }
 
             try {
@@ -416,10 +422,16 @@ export default function FacultyDashboard() {
       let status = pct >= 85 ? 'completed' : 'rejected';
       let remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
 
-      const iaPresentCount = teacherIAs.filter(ia => ia.student_id === enrollment.student_id && ia.subject_id === enrollment.subject_id && ia.is_present).length;
-      if (iaPresentCount < 2) {
-        status = 'rejected';
-        remarks = `Low IA Attendance (${iaPresentCount}/2 required)`;
+      // Override with IA rule (only if at least 2 IAs have been conducted for this subject)
+      const subjectIAs = teacherIAs.filter(ia => ia.subject_id === enrollment.subject_id);
+      const uniqueIAsConducted = new Set(subjectIAs.map(ia => ia.ia_number)).size;
+      
+      if (uniqueIAsConducted >= 2) {
+        const iaPresentCount = subjectIAs.filter(ia => ia.student_id === enrollment.student_id && ia.is_present).length;
+        if (iaPresentCount < 2) {
+          status = 'rejected';
+          remarks = `Low IA Attendance (${iaPresentCount}/2 required)`;
+        }
       }
 
       await markFacultySubjectStatus(id, status, pct, remarks);

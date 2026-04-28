@@ -66,6 +66,17 @@ export default function StudentDashboard() {
   const [departmentName, setDepartmentName] = useState<string>('N/A');
   const [semesterName, setSemesterName] = useState<string>('N/A');
   const [showReportModal, setShowReportModal] = useState(false);
+  const [payingEnrollmentId, setPayingEnrollmentId] = useState<string | null>(null);
+  const [paymentReceipt, setPaymentReceipt] = useState<any>(null);
+
+  // Load Razorpay Script
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    document.body.appendChild(script);
+    return () => { document.body.removeChild(script); };
+  }, []);
 
   // Debounce realtime refetches to avoid cascading re-renders
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,6 +180,61 @@ export default function StudentDashboard() {
     }
   };
 
+  const handleRazorpayPayment = async (enrollment: any) => {
+    try {
+      setPayingEnrollmentId(enrollment.id);
+      setErrorMsg(null);
+      const { createRazorpayOrder, verifyAndProcessRazorpayPayment } = await import('../../lib/api');
+      
+      const order = await createRazorpayOrder(enrollment.attendance_fee, enrollment.id);
+      
+      const options = {
+        key: 'rzp_test_YourTestKeyHere', // For demo purposes; in prod use env variable
+        amount: Math.round(enrollment.attendance_fee * 100),
+        currency: "INR",
+        name: "NOC Portal",
+        description: `Attendance Due: ${enrollment.subjects?.subject_name}`,
+        order_id: order.id,
+        handler: async function (response: any) {
+          try {
+            const data = await verifyAndProcessRazorpayPayment(
+              enrollment.id,
+              response.razorpay_order_id,
+              response.razorpay_payment_id,
+              response.razorpay_signature
+            );
+            setPaymentReceipt({
+              amount: enrollment.attendance_fee,
+              subject: enrollment.subjects?.subject_name,
+              paymentId: response.razorpay_payment_id,
+              date: new Date().toLocaleString()
+            });
+            fetchStudentData(); // Refresh to update status
+          } catch (err: any) {
+            setErrorMsg("Payment verification failed: " + err.message);
+          }
+        },
+        prefill: {
+          name: profile?.full_name || "",
+          email: user?.email || "",
+        },
+        theme: {
+          color: "#f59e0b" // amber-500
+        }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on('payment.failed', function (response: any){
+        setErrorMsg(`Payment failed: ${response.error.description}`);
+      });
+      rzp.open();
+    } catch (err: any) {
+      setErrorMsg("Error initiating payment: " + err.message);
+    } finally {
+      setPayingEnrollmentId(null);
+    }
+  };
+
   useEffect(() => {
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'PrintScreen') {
@@ -199,6 +265,8 @@ export default function StudentDashboard() {
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(e => e.status === 'completed'), [enrollments]);
   const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
   const allDeptCleared = useMemo(() => deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed'), [deptClearances]);
+  
+  const pendingAttendanceDues = useMemo(() => enrollments.filter(e => (e as any).attendance_fee > 0 && !(e as any).attendance_fee_verified), [enrollments]);
 
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
   const { allIAEligible } = useMemo(() => {
@@ -389,6 +457,34 @@ export default function StudentDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Pending Attendance Dues Section */}
+      {pendingAttendanceDues.length > 0 && (
+        <div className="bg-card rounded-3xl p-8 shadow-sm border-2 border-amber-500/20">
+          <h2 className="text-xl font-bold text-foreground mb-6 flex items-center">
+            <AlertCircle className="w-5 h-5 mr-3 text-amber-500" />
+            Action Required: Pending Attendance Dues
+          </h2>
+          <div className="space-y-4">
+            {pendingAttendanceDues.map((due: any) => (
+              <div key={due.id} className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">{due.subjects?.subject_name} ({due.subjects?.subject_code})</h3>
+                  <p className="text-sm text-muted-foreground mt-1">Reason: Attendance Shortage Fine</p>
+                  <p className="text-amber-600 dark:text-amber-400 font-bold mt-2">Fine Amount: ₹{due.attendance_fee}</p>
+                </div>
+                <button
+                  onClick={() => handleRazorpayPayment(due)}
+                  disabled={payingEnrollmentId === due.id}
+                  className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all shadow-md w-full md:w-auto"
+                >
+                  {payingEnrollmentId === due.id ? 'Initiating...' : 'Pay Now'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Pipeline Stepper */}
       <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
@@ -753,6 +849,48 @@ export default function StudentDashboard() {
           </div>
         </div>
       )}
+
+      {/* PAYMENT RECEIPT MODAL */}
+      {paymentReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-card rounded-3xl w-full max-w-md p-8 shadow-2xl border border-border relative animate-in fade-in zoom-in duration-200">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <h2 className="text-2xl font-bold text-foreground mb-2">Payment Successful!</h2>
+              <p className="text-muted-foreground mb-6">Your attendance due has been cleared.</p>
+              
+              <div className="w-full bg-secondary/50 rounded-2xl p-5 mb-8 text-left space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground text-sm">Amount Paid:</span>
+                  <span className="font-bold">₹{paymentReceipt.amount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground text-sm">Subject:</span>
+                  <span className="font-medium text-right max-w-[60%] truncate" title={paymentReceipt.subject}>{paymentReceipt.subject}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground text-sm">Date:</span>
+                  <span className="font-medium text-right">{paymentReceipt.date}</span>
+                </div>
+                <div className="pt-3 mt-3 border-t border-border flex justify-between">
+                  <span className="text-muted-foreground text-sm">Transaction ID:</span>
+                  <span className="font-mono text-xs max-w-[60%] truncate" title={paymentReceipt.paymentId}>{paymentReceipt.paymentId}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setPaymentReceipt(null)}
+                className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-colors"
+              >
+                Close & Return to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

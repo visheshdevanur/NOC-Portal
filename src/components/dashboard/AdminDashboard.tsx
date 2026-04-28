@@ -666,10 +666,10 @@ export default function AdminDashboard() {
 
   const fetchGraduatedStudents = async () => {
     try {
-      const { getGraduatedStudents } = await import('../../lib/api');
-      const data = await getGraduatedStudents();
+      const { getActiveStudentsDetails } = await import('../../lib/api');
+      const data = await getActiveStudentsDetails();
       setGraduatedStudents(data || []);
-    } catch (err: any) { console.error('Failed to fetch graduated students:', err); }
+    } catch (err: any) { console.error('Failed to fetch students details:', err); }
   };
 
   const handleExportPreData = async () => {
@@ -720,16 +720,16 @@ export default function AdminDashboard() {
   };
 
   const handleExportGraduatedCSV = (students: any[]) => {
-    if (students.length === 0) { alert('No graduated students to export.'); return; }
-    const header = 'Name,Roll Number,Department,Batch,Section,Enrolled\n';
+    if (students.length === 0) { alert('No students to export.'); return; }
+    const header = 'Name,Roll Number,Department,Semester,Section,Enrolled\n';
     const rows = students.map((s: any) =>
-      `"${s.full_name || ''}","${s.roll_number || ''}","${s.departments?.name || ''}","${s.batch || ''}","${s.section || ''}","${new Date(s.created_at).toLocaleDateString()}"`
+      `"${s.full_name || ''}","${s.roll_number || ''}","${s.departments?.name || ''}","${s.semesters?.name || ''}","${s.section || ''}","${new Date(s.created_at).toLocaleDateString()}"`
     ).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `graduated_students_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `students_details_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -763,12 +763,12 @@ export default function AdminDashboard() {
     return byDeptSem;
   })();
 
-  // Group graduated students by dept then batch
+  // Group active students by dept then semester
   const graduatedByDeptBatch = (() => {
     const groups: Record<string, Record<string, any[]>> = {};
     for (const s of graduatedStudents) {
       const dept = s.departments?.name || 'Unassigned';
-      const batch = s.batch || 'Unknown';
+      const batch = s.semesters?.name || 'Unassigned';
       if (!groups[dept]) groups[dept] = {};
       if (!groups[dept][batch]) groups[dept][batch] = [];
       groups[dept][batch].push(s);
@@ -1018,30 +1018,27 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* Graduated Students Section */}
+          {/* Active Students Details Section */}
           <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
-                  <Archive className="w-7 h-7 text-indigo-500" />
-                  Graduated Students
+                  <Users className="w-7 h-7 text-indigo-500" />
+                  Students Details
                 </h2>
-                <p className="text-muted-foreground mt-1">{graduatedStudents.length} total graduated students</p>
+                <p className="text-muted-foreground mt-1">{graduatedStudents.length} active students</p>
               </div>
               {graduatedStudents.length > 0 && (
                 <div className="flex gap-3">
                   <button onClick={() => handleExportGraduatedCSV(graduatedStudents)} className="flex items-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-5 py-3 rounded-xl font-medium border border-border transition-all">
                     <Download className="w-4 h-4" /> Download All CSV
                   </button>
-                  <button onClick={() => handleExportAndRemove(graduatedStudents)} className="flex items-center gap-2 bg-destructive/10 text-destructive hover:bg-destructive hover:text-white px-5 py-3 rounded-xl font-bold transition-all border border-destructive/20">
-                    <Trash2 className="w-4 h-4" /> Export & Remove All
-                  </button>
                 </div>
               )}
             </div>
 
             {Object.keys(graduatedByDeptBatch).length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">No graduated students found.</div>
+              <div className="p-8 text-center text-muted-foreground">No students found.</div>
             ) : (
               <div className="space-y-4">
                 {Object.entries(graduatedByDeptBatch).map(([dept, batches]) => {
@@ -1054,12 +1051,11 @@ export default function AdminDashboard() {
                           {isDeptExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
                           <div>
                             <h3 className="text-lg font-bold text-foreground">{dept}</h3>
-                            <p className="text-sm text-muted-foreground">{deptStudents.length} graduated students • {Object.keys(batches).length} batch(es)</p>
+                            <p className="text-sm text-muted-foreground">{deptStudents.length} students • {Object.keys(batches).length} semester(s)</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
                           <button onClick={(e) => { e.stopPropagation(); handleExportGraduatedCSV(deptStudents); }} className="p-2 rounded-xl bg-secondary hover:bg-secondary/80 transition-colors" title="Download CSV"><Download className="w-4 h-4" /></button>
-                          <button onClick={(e) => { e.stopPropagation(); handleExportAndRemove(deptStudents); }} className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors" title="Export & Remove"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </button>
                       {isDeptExpanded && (
@@ -1072,7 +1068,7 @@ export default function AdminDashboard() {
                                 <button onClick={() => { const next = new Set(expandedGradBatches); isBatchExpanded ? next.delete(batchKey) : next.add(batchKey); setExpandedGradBatches(next); }} className="w-full flex items-center justify-between p-4 text-left hover:bg-secondary/20 transition-colors">
                                   <div className="flex items-center gap-2">
                                     {isBatchExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-                                    <span className="font-bold text-foreground">Batch {batch}</span>
+                                    <span className="font-bold text-foreground">Semester {batch}</span>
                                     <span className="text-sm text-muted-foreground">({students.length} students)</span>
                                   </div>
                                 </button>

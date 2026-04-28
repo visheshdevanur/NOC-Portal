@@ -771,6 +771,159 @@ export const getAccountsVerifiedFees = async () => {
 };
 
 // =======================
+// RAZORPAY INTEGRATION
+// =======================
+
+export const createRazorpayOrder = async (amount: number, enrollmentId: string) => {
+  const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
+    body: { amount, receipt: enrollmentId },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+};
+
+export const verifyAndProcessRazorpayPayment = async (
+  enrollmentId: string, 
+  razorpay_order_id: string, 
+  razorpay_payment_id: string, 
+  razorpay_signature: string
+) => {
+  const { data: verification, error: verifyError } = await supabase.functions.invoke('verify-razorpay-payment', {
+    body: { razorpay_order_id, razorpay_payment_id, razorpay_signature },
+  });
+  if (verifyError || !verification?.verified) throw verifyError || new Error(verification?.error || "Payment verification failed");
+
+  // If verified, update the subject_enrollment
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .update({ 
+      attendance_fee_verified: true, 
+      status: 'completed', 
+      remarks: 'Cleared via Online Payment',
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      payment_date: new Date().toISOString()
+    } as any)
+    .eq('id', enrollmentId)
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name)')
+    .single();
+
+  if (error) throw error;
+  
+  const studentName = data?.profiles?.full_name || 'student';
+  logActivity('Attendance Due Paid', `${studentName} paid fine via Razorpay (ID: ${razorpay_payment_id})`);
+  
+  return data;
+};
+
+export const setAttendanceDue = async (studentId: string, subjectId: string, feeAmount: number) => {
+  const { data: existing } = await supabase
+    .from('subject_enrollment')
+    .select('id')
+    .eq('student_id', studentId)
+    .eq('subject_id', subjectId)
+    .single();
+    
+  if (existing) {
+    const { data, error } = await supabase
+      .from('subject_enrollment')
+      .update({ attendance_fee: feeAmount, attendance_fee_verified: false, status: 'rejected' } as any)
+      .eq('id', existing.id)
+      .select('*, profiles!subject_enrollment_student_id_fkey(full_name), subjects!subject_enrollment_subject_id_fkey(subject_name)')
+      .single();
+    if (error) throw error;
+    
+    const studentName = data?.profiles?.full_name || 'student';
+    const subjName = (data as any)?.subjects?.subject_name || 'subject';
+    logActivity('Assigned Attendance Due', `Staff set ₹${feeAmount} fine for ${studentName} in ${subjName}`);
+    return data;
+  } else {
+    throw new Error("Student is not enrolled in this subject.");
+  }
+};
+
+export const getStudentByUSN = async (usn: string, departmentId: string) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, roll_number')
+    .eq('roll_number', usn.toUpperCase())
+    .eq('department_id', departmentId)
+    .single();
+  if (error) throw new Error("Student not found in your department.");
+  
+  const { data: subjects, error: subjErr } = await supabase
+    .from('subject_enrollment')
+    .select('subject_id, subjects(subject_name, subject_code)')
+    .eq('student_id', data.id);
+  if (subjErr) throw subjErr;
+    
+  return { student: data, subjects: subjects || [] };
+};
+
+export const bulkSetAttendanceDuesCSV = async (departmentId: string | undefined, rows: { roll_number: string; subject_code: string; amount: number }[]) => {
+  const rollNumbers = rows.map(r => r.roll_number.trim().toUpperCase());
+  
+  let query = supabase.from('profiles').select('id, roll_number').eq('role', 'student').in('roll_number', rollNumbers);
+  if (departmentId) {
+    query = query.eq('department_id', departmentId);
+  }
+  
+  const { data: students, error: studentError } = await query;
+  if (studentError) throw studentError;
+  if (!students || students.length === 0) throw new Error('No matching students found.');
+
+  const studentMap = new Map(students.map(s => [s.roll_number?.toUpperCase(), s.id]));
+  
+  // Get all subjects
+  const { data: allSubjects, error: subErr } = await supabase.from('subjects').select('id, subject_code');
+  if (subErr) throw subErr;
+  const subjectMap = new Map(allSubjects.map(s => [s.subject_code?.toUpperCase(), s.id]));
+
+  let updated = 0;
+  const errors: string[] = [];
+
+  for (const row of rows) {
+    const studentId = studentMap.get(row.roll_number.trim().toUpperCase());
+    const subjectId = subjectMap.get(row.subject_code.trim().toUpperCase());
+    
+    if (!studentId) {
+      errors.push(`USN ${row.roll_number} not found`);
+      continue;
+    }
+    if (!subjectId) {
+      errors.push(`Subject ${row.subject_code} not found`);
+      continue;
+    }
+
+    try {
+      const { data: existing } = await supabase
+        .from('subject_enrollment')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('subject_id', subjectId)
+        .single();
+        
+      if (existing) {
+        await supabase
+          .from('subject_enrollment')
+          .update({ attendance_fee: row.amount, attendance_fee_verified: false, status: 'rejected' } as any)
+          .eq('id', existing.id);
+        updated++;
+      } else {
+        errors.push(`USN ${row.roll_number} not enrolled in ${row.subject_code}`);
+      }
+    } catch (err: any) {
+      errors.push(`USN ${row.roll_number}: ${err.message}`);
+    }
+  }
+
+  if (updated > 0) logActivity('Bulk Attendance Dues', `Assigned attendance fines for ${updated} students.`);
+  return { updated, errors };
+};
+
+// =======================
 // LIBRARY DUES MANAGEMENT
 // =======================
 
@@ -900,6 +1053,18 @@ export const getGraduatedStudents = async () => {
     .select('id, full_name, roll_number, department_id, batch, section, created_at, departments!profiles_department_id_fkey(name)')
     .eq('role', 'student')
     .eq('status', 'graduated')
+    .order('full_name');
+  if (error) throw error;
+  return data;
+};
+
+/** Get all active students with details */
+export const getActiveStudentsDetails = async () => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, roll_number, department_id, section, created_at, semesters!profiles_semester_id_fkey(name), departments!profiles_department_id_fkey(name)')
+    .eq('role', 'student')
+    .or('status.is.null,status.eq.active')
     .order('full_name');
   if (error) throw error;
   return data;

@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import {
   X, Search, BookOpen, Users, UserPlus,
-  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download
+  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download, Upload
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -104,6 +104,21 @@ export default function ClerkDashboard() {
   const [attendanceFines, setAttendanceFines] = useState<any[]>([]);
   const [loadingAttendances, setLoadingAttendances] = useState(false);
   const [feeAmounts, setFeeAmounts] = useState<Record<string, number>>({});
+
+  // Create Attendance Due State
+  const [showAddDueModal, setShowAddDueModal] = useState(false);
+  const [addDueUSN, setAddDueUSN] = useState('');
+  const [addDueStudent, setAddDueStudent] = useState<any>(null);
+  const [addDueSubjects, setAddDueSubjects] = useState<any[]>([]);
+  const [addDueSelectedSubject, setAddDueSelectedSubject] = useState('');
+  const [addDueAmount, setAddDueAmount] = useState('');
+  const [addDueLoading, setAddDueLoading] = useState(false);
+  const [addDueError, setAddDueError] = useState<string | null>(null);
+  
+  // Attendances CSV State
+  const [attCsvUploading, setAttCsvUploading] = useState(false);
+  const [attCsvError, setAttCsvError] = useState<string | null>(null);
+  const [attCsvSuccess, setAttCsvSuccess] = useState<string | null>(null);
 
   // Search states for tabs
   const [searchAttendances, setSearchAttendances] = useState('');
@@ -331,6 +346,105 @@ export default function ClerkDashboard() {
     finally { setLoadingAttendances(false); }
   };
 
+  const downloadAttendanceDueTemplate = () => {
+    const csvContent = "USN,Subject Code,Fine Amount\n1AB23CS001,CS101,500\n";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = "Attendance_Dues_Template.csv";
+    link.click();
+  };
+
+  const handleAttendanceDueCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile?.department_id) return;
+    setAttCsvUploading(true);
+    setAttCsvError(null);
+    setAttCsvSuccess(null);
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) throw new Error('CSV is empty or missing data rows.');
+      const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
+      
+      const usnIdx = headers.findIndex(h => h.includes('usn') || h.includes('roll'));
+      const subIdx = headers.findIndex(h => h.includes('subject'));
+      const amtIdx = headers.findIndex(h => h.includes('amount') || h.includes('fine'));
+      
+      if (usnIdx === -1 || subIdx === -1 || amtIdx === -1) {
+        throw new Error('CSV must have columns for USN, Subject Code, and Fine Amount.');
+      }
+
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        const amount = parseInt(cols[amtIdx]);
+        if (cols[usnIdx] && cols[subIdx] && !isNaN(amount) && amount > 0) {
+          rows.push({
+            roll_number: cols[usnIdx],
+            subject_code: cols[subIdx],
+            amount
+          });
+        }
+      }
+
+      if (rows.length === 0) throw new Error('No valid rows found to process.');
+      
+      const { bulkSetAttendanceDuesCSV } = await import('../../lib/api');
+      const result = await bulkSetAttendanceDuesCSV(profile.department_id, rows);
+      
+      if (result.errors.length > 0) {
+        setAttCsvError(`Updated ${result.updated}/${rows.length}. Errors: ${result.errors.slice(0, 3).join(' | ')}${result.errors.length > 3 ? '...' : ''}`);
+      } else {
+        setAttCsvSuccess(`Successfully assigned attendance dues for ${result.updated} records!`);
+      }
+      fetchAttendances();
+    } catch (err: any) {
+      setAttCsvError(getFriendlyErrorMessage(err));
+    } finally {
+      setAttCsvUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleSearchUSNForDue = async () => {
+    if (!addDueUSN.trim()) { setAddDueError('Enter USN'); return; }
+    setAddDueLoading(true); setAddDueError(null);
+    try {
+      const { getStudentByUSN } = await import('../../lib/api');
+      const data = await getStudentByUSN(addDueUSN, profile?.department_id || '');
+      setAddDueStudent(data.student);
+      setAddDueSubjects(data.subjects);
+      setAddDueSelectedSubject('');
+    } catch (err: any) {
+      setAddDueError(err.message || 'Error finding student');
+      setAddDueStudent(null);
+      setAddDueSubjects([]);
+    } finally { setAddDueLoading(false); }
+  };
+
+  const handleCreateAttendanceDue = async () => {
+    if (!addDueStudent || !addDueSelectedSubject || !addDueAmount) {
+      setAddDueError('Please select subject and enter amount'); return;
+    }
+    const amt = Number(addDueAmount);
+    if (isNaN(amt) || amt <= 0) { setAddDueError('Amount must be positive'); return; }
+    setAddDueLoading(true); setAddDueError(null);
+    try {
+      const { setAttendanceDue } = await import('../../lib/api');
+      await setAttendanceDue(addDueStudent.id, addDueSelectedSubject, amt);
+      setShowAddDueModal(false);
+      setAddDueStudent(null);
+      setAddDueUSN('');
+      setAddDueAmount('');
+      setAddDueSelectedSubject('');
+      fetchAttendances(); // Refresh list
+    } catch (err: any) {
+      setAddDueError(err.message || 'Error assigning due');
+    } finally { setAddDueLoading(false); }
+  };
+
   const handleApproveFine = async (enrollmentId: string) => {
     const feeAmount = feeAmounts[enrollmentId] || 0;
     if (feeAmount <= 0) {
@@ -508,8 +622,20 @@ export default function ClerkDashboard() {
       setUserCreating(false);
       return;
     }
-    if (newUser.role === 'student' && !newUser.section) {
-      setUserError('Section is required for students.');
+    if (newUser.role === 'student') {
+      if (!newUser.section) {
+        setUserError('Section is required for students.');
+        setUserCreating(false);
+        return;
+      }
+      if (!newUser.roll_number) {
+        setUserError('USN is required for students.');
+        setUserCreating(false);
+        return;
+      }
+    }
+    if (newUser.role === 'teacher' && !newUser.teacher_id) {
+      setUserError('Teacher ID is required for teachers.');
       setUserCreating(false);
       return;
     }
@@ -894,16 +1020,42 @@ export default function ClerkDashboard() {
       {/* ========= ATTENDANCES TAB ========= */}
       {activeTab === 'attendances' && (
         <div className="space-y-4">
-          <div className="relative w-full md:max-w-xs">
-            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search by student or subject..."
-              className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 w-full"
-              value={searchAttendances}
-              onChange={e => setSearchAttendances(e.target.value)}
-            />
+          <div className="flex flex-col md:flex-row gap-4 justify-between">
+            <div className="relative w-full md:max-w-xs">
+              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search by student or subject..."
+                className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 w-full"
+                value={searchAttendances}
+                onChange={e => setSearchAttendances(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={downloadAttendanceDueTemplate}
+                className="flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 border border-border px-4 py-3 rounded-xl font-medium transition-all shadow-sm text-sm"
+              >
+                <Download className="w-4 h-4" />
+                Template
+              </button>
+              <label className="flex items-center gap-2 bg-amber-500/20 text-amber-600 hover:bg-amber-500/30 border border-amber-500/30 px-4 py-3 rounded-xl font-bold transition-all shadow-sm text-sm cursor-pointer disabled:opacity-50">
+                <Upload className="w-4 h-4" />
+                {attCsvUploading ? 'Uploading...' : 'Bulk Upload'}
+                <input type="file" accept=".csv" className="hidden" onChange={handleAttendanceDueCSVUpload} disabled={attCsvUploading} />
+              </label>
+              <button
+                onClick={() => setShowAddDueModal(true)}
+                className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-3 rounded-xl font-bold transition-all shadow-sm"
+              >
+                <Plus className="w-5 h-5" />
+                Create Attendance Due
+              </button>
+            </div>
           </div>
+          
+          {attCsvSuccess && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>✅ {attCsvSuccess}</span><button onClick={() => setAttCsvSuccess(null)}><X className="w-4 h-4" /></button></div>}
+          {attCsvError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center"><span><strong>Error:</strong> {attCsvError}</span><button onClick={() => setAttCsvError(null)}><X className="w-4 h-4" /></button></div>}
           <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
             {loadingAttendances ? (
               <div className="p-8 text-center text-muted-foreground animate-pulse">Loading rejected attendances...</div>
@@ -1068,7 +1220,7 @@ export default function ClerkDashboard() {
                   </div>
                   {newUser.role === 'teacher' && (
                     <div>
-                      <label className="block text-sm font-medium text-foreground mb-1.5">Teacher ID <span className="text-muted-foreground font-normal">(Optional)</span></label>
+                      <label className="block text-sm font-medium text-foreground mb-1.5">Teacher ID</label>
                       <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 uppercase" placeholder="e.g. FAC001" value={newUser.teacher_id} onChange={e => setNewUser({ ...newUser, teacher_id: e.target.value })} />
                     </div>
                   )}
@@ -1089,7 +1241,7 @@ export default function ClerkDashboard() {
                         <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 uppercase" placeholder="e.g. A, B, CSE-A" value={newUser.section} onChange={e => setNewUser({ ...newUser, section: e.target.value })} />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-foreground mb-1.5">Roll Number</label>
+                        <label className="block text-sm font-medium text-foreground mb-1.5">USN</label>
                         <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 uppercase" placeholder="e.g. 21CS001" value={newUser.roll_number} onChange={e => setNewUser({ ...newUser, roll_number: e.target.value })} />
                       </div>
                     </>
@@ -1876,6 +2028,112 @@ export default function ClerkDashboard() {
                 Showing {filteredclerkLogs.length} log{filteredclerkLogs.length !== 1 ? 's' : ''}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Create Attendance Due Modal */}
+      {showAddDueModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-card w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+            <div className="p-6 border-b border-border flex justify-between items-center">
+              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <Plus className="w-5 h-5 text-amber-500" />
+                Create Attendance Due
+              </h2>
+              <button onClick={() => {
+                setShowAddDueModal(false);
+                setAddDueStudent(null);
+                setAddDueUSN('');
+                setAddDueAmount('');
+                setAddDueSelectedSubject('');
+                setAddDueError(null);
+              }} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {addDueError && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-lg">
+                  {addDueError}
+                </div>
+              )}
+              
+              {!addDueStudent ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Student USN</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className="flex-1 px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        placeholder="e.g. 1AB23CS001"
+                        value={addDueUSN}
+                        onChange={e => setAddDueUSN(e.target.value.toUpperCase())}
+                      />
+                      <button
+                        onClick={handleSearchUSNForDue}
+                        disabled={addDueLoading}
+                        className="bg-amber-500 text-white px-4 py-2 rounded-xl font-bold hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        {addDueLoading ? 'Searching...' : 'Search'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-4 bg-secondary/30 rounded-xl">
+                    <p className="font-bold text-foreground">{addDueStudent.full_name}</p>
+                    <p className="text-sm text-muted-foreground">{addDueStudent.roll_number}</p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Select Subject</label>
+                    <select
+                      className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      value={addDueSelectedSubject}
+                      onChange={e => setAddDueSelectedSubject(e.target.value)}
+                    >
+                      <option value="">Choose a subject...</option>
+                      {addDueSubjects.map(sub => (
+                        <option key={sub.subject_id} value={sub.subject_id}>
+                          {sub.subjects?.subject_name} ({sub.subjects?.subject_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Fine Amount (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder="e.g. 500"
+                      value={addDueAmount}
+                      onChange={e => setAddDueAmount(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      onClick={() => setAddDueStudent(null)}
+                      className="flex-1 bg-secondary text-foreground px-4 py-2 rounded-xl font-bold hover:bg-secondary/80"
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={handleCreateAttendanceDue}
+                      disabled={addDueLoading || !addDueSelectedSubject || !addDueAmount}
+                      className="flex-1 bg-amber-500 text-white px-4 py-2 rounded-xl font-bold hover:bg-amber-600 disabled:opacity-50"
+                    >
+                      {addDueLoading ? 'Assigning...' : 'Assign Fine'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

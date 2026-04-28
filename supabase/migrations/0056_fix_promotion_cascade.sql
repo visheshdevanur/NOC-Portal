@@ -1,6 +1,6 @@
--- 0055_keep_section_on_promotion.sql
--- Fix: Keep student section on 2→3 promotion instead of clearing it.
--- Sections persist until staff explicitly reassigns.
+-- 0056_fix_promotion_cascade.sql
+-- Fix: Process semesters in DESCENDING order to prevent students from cascading
+-- through multiple promotions in a single run.
 
 CREATE OR REPLACE FUNCTION promote_all_students()
 RETURNS JSON AS $$
