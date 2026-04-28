@@ -197,7 +197,7 @@ export default function StudentDashboard() {
         order_id: order.id,
         handler: async function (response: any) {
           try {
-            const data = await verifyAndProcessRazorpayPayment(
+            await verifyAndProcessRazorpayPayment(
               enrollment.id,
               response.razorpay_order_id,
               response.razorpay_payment_id,

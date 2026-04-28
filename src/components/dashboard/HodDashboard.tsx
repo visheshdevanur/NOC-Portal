@@ -5,7 +5,7 @@ import {
   getDepartmentById, getHodDepartmentStudents, getHodStaffApprovedFines
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
-import { createClient } from '@supabase/supabase-js';
+
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,

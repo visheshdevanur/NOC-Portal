@@ -7,7 +7,7 @@ import {
   updateStudentPaidAmount
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
-import { createClient } from '@supabase/supabase-js';
+
 import {
   X, Search, BookOpen, Users, UserPlus,
   Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download, Upload

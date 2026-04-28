@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { createClient } from '@supabase/supabase-js';
+
 import {
   ShieldCheck, Users, Activity, BookOpen, AlertTriangle,
   Plus, Trash2, Search, UserPlus, X, Building2,
-  Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft, ArrowUpCircle, Archive
+  Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft, ArrowUpCircle
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -736,20 +736,7 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportAndRemove = async (students: any[]) => {
-    handleExportGraduatedCSV(students);
-    // Wait a moment for download to start
-    await new Promise(r => setTimeout(r, 500));
-    if (!confirm(`CSV has been downloaded. Do you want to permanently remove these ${students.length} graduated students from the software?`)) return;
-    try {
-      const { removeGraduatedStudents } = await import('../../lib/api');
-      await removeGraduatedStudents(students.map((s: any) => s.id));
-      setAcademicSuccess(`${students.length} graduated students permanently removed.`);
-      fetchGraduatedStudents();
-    } catch (err: any) {
-      setAcademicError(getFriendlyErrorMessage(err));
-    }
-  };
+
 
   // Build promotion preview summary
   const promotionSummary = (() => {
