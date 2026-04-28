@@ -357,7 +357,7 @@ export default function ClerkDashboard() {
       const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
       const filtered = (data as UserProfile[]).filter(u => {
         if (u.role === 'student') {
-          return u.semester_id ? firstYearSemIds.has(u.semester_id) : true;
+          return u.semester_id ? firstYearSemIds.has(u.semester_id) : false;
         }
         // Only show FYC-created/imported teachers
         if (u.role === 'teacher' || u.role === 'faculty') {
@@ -1212,7 +1212,7 @@ export default function ClerkDashboard() {
                             {u.role}
                           </span>
                         </td>
-                        <td className="p-4 text-muted-foreground text-sm">{u.semester_id ? (semestersList.find(s => s.id === u.semester_id)?.name || '—') : '—'}</td>
+                        <td className="p-4 text-muted-foreground text-sm">{(u as any).semesters?.name || '—'}</td>
                         <td className="p-4 text-muted-foreground">{u.section || '—'}</td>
                         <td className="p-4 text-right">
                           <button onClick={() => setEditingUser(u)} className="p-2 mr-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white transition-colors" title="Edit user">

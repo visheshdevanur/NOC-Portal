@@ -269,7 +269,7 @@ export const getUsersByRole = async (roles: string[]) => {
 export const getUsersByDeptAndRoles = async (departmentId: string, roles: string[]) => {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select('*, semesters(name)')
     .eq('department_id', departmentId)
     .in('role', roles)
     .order('created_at', { ascending: false });
