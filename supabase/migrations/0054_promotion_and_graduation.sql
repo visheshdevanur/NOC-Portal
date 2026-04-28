@@ -32,7 +32,7 @@ BEGIN
           p.status,
           d.name AS department,
           sem.name AS semester,
-          COALESCE(cr.current_stage, 'none') AS clearance_stage,
+          COALESCE(cr.current_stage::text, 'none') AS clearance_stage,
           COALESCE(cr.status, 'none') AS clearance_status
         FROM profiles p
         LEFT JOIN departments d ON d.id = p.department_id
