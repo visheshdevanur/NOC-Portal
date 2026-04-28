@@ -919,7 +919,9 @@ export default function StaffDashboard() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `Section_Template_Sem${semName}_${deptName}.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setMgSuccess('CSV template downloaded. Fill the Section column and upload it back.');
   };

@@ -309,7 +309,9 @@ export default function HodDashboard() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `dept_students_export.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -332,7 +334,9 @@ export default function HodDashboard() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `dept_clearance_details.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -385,7 +389,11 @@ export default function HodDashboard() {
     const blob = new Blob([header + rows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'teacher_details_export.csv'; a.click();
+    a.href = url;
+    a.download = 'teacher_details_export.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 

@@ -694,7 +694,9 @@ export default function AdminDashboard() {
       const a = document.createElement('a');
       a.href = url;
       a.download = `pre_promotion_data_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
       setAcademicSuccess('Pre-promotion data downloaded successfully!');
     } catch (err: any) {
@@ -732,7 +734,9 @@ export default function AdminDashboard() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `graduated_students_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -793,7 +797,9 @@ export default function AdminDashboard() {
       const a = document.createElement('a');
       a.href = url;
       a.download = `clearance_export_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err: any) {
       alert('Export failed: ' + (err.message || 'Unknown error'));

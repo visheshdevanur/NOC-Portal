@@ -516,7 +516,9 @@ export default function FycDashboard() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `fyc_students_export.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -540,7 +542,9 @@ export default function FycDashboard() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `fyc_clearance_details.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -592,7 +596,11 @@ export default function FycDashboard() {
     const blob = new Blob([header + rows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'fyc_teacher_details_export.csv'; a.click();
+    a.href = url;
+    a.download = 'fyc_teacher_details_export.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
