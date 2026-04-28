@@ -4,3 +4,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder-pr
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+export const tempSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+});

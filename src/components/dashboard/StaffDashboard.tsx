@@ -397,11 +397,7 @@ export default function StaffDashboard() {
         if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}`);
       }
 
-      const tempSupabase = createClient(
-        import.meta.env.VITE_SUPABASE_URL || 'https://placeholder-project.supabase.co',
-        import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key',
-        { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
-      );
+      const { tempSupabase } = await import('../../lib/supabase');
       
       const fetchedSemesters = await import('../../lib/api').then(m => m.getSemestersByDepartment(profile.department_id!));
 
@@ -505,11 +501,7 @@ export default function StaffDashboard() {
     }
 
     try {
-      const tempSupabase = createClient(
-        import.meta.env.VITE_SUPABASE_URL || 'https://placeholder-project.supabase.co',
-        import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key',
-        { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
-      );
+      const { tempSupabase } = await import('../../lib/supabase');
 
       const { data: authData, error: authError } = await tempSupabase.auth.signUp({
         email: newUser.email,
