@@ -1486,6 +1486,12 @@ export default function StaffDashboard() {
       {/* ========= USERS TAB ========= */}
       {activeTab === 'users' && (
         <div className="space-y-6">
+          {userError && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
+              <span><strong>Error:</strong> {userError}</span>
+              <button onClick={() => setUserError(null)}><X className="w-4 h-4" /></button>
+            </div>
+          )}
           {userSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
               <span>✓ {userSuccess}</span>
