@@ -10,6 +10,7 @@ type StudentDues = {
   fine_amount: number | null;
   paid_amount: number | null;
   status: string;
+  permitted_until: string | null;
   profiles: { 
     full_name: string; 
     section?: string; 
@@ -362,7 +363,6 @@ export default function AccountsDashboard() {
                       <th className="p-5 font-semibold">Student Name</th>
                       <th className="p-5 font-semibold">Roll Number</th>
                       <th className="p-5 font-semibold">Dept / Sem / Sec</th>
-                      <th className="p-5 font-semibold">Financials (₹)</th>
                       <th className="p-5 font-semibold">Status</th>
                       <th className="p-5 font-semibold text-right">Actions</th>
                     </tr>
@@ -379,33 +379,57 @@ export default function AccountsDashboard() {
                           <span className="mx-1">·</span>
                           <span>Sec {d.profiles?.section || '—'}</span>
                         </td>
-                        <td className="p-5 font-bold text-foreground">
+                        <td className="p-5">
                           {(() => {
-                            const fine = d.fine_amount || 0;
-                            const paid = d.paid_amount || 0;
-                            const rem = Math.max(0, fine - paid);
-                            return (
-                              <div className="flex flex-col gap-1">
-                                <span className="text-sm">Total Fine: ₹{fine}</span>
-                                <span className="text-sm text-emerald-600 dark:text-emerald-400">Total Paid: ₹{paid}</span>
-                                <span className={`text-sm ${rem > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                                  Remaining: ₹{rem}
+                            const isPermitted = d.permitted_until && new Date(d.permitted_until) > new Date();
+                            if (isPermitted) {
+                              return (
+                                <span className="px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                                  PERMITTED
                                 </span>
-                              </div>
+                              );
+                            }
+                            return (
+                              <span className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                                d.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                d.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
+                                'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                              }`}>
+                                {d.status}
+                              </span>
                             );
                           })()}
                         </td>
-                        <td className="p-5">
-                          <span className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                            d.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                            d.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
-                            'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                          }`}>
-                            {d.status}
-                          </span>
-                        </td>
-                        <td className="p-5 text-right text-muted-foreground text-sm italic">
-                           Managed via Upload
+                        <td className="p-5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {d.status === 'pending' && (
+                                <>
+                                  {!(d.permitted_until && new Date(d.permitted_until) > new Date()) && (
+                                    <button
+                                      onClick={async () => {
+                                        const permitDate = new Date();
+                                        permitDate.setDate(permitDate.getDate() + 2);
+                                        const { error } = await supabase.from('student_dues').update({ permitted_until: permitDate.toISOString() }).eq('id', d.id);
+                                        if (error) setError('Failed to permit student: ' + error.message);
+                                        else {
+                                          setSuccess(`Permitted ${d.profiles?.full_name} for 2 days.`);
+                                          fetchDues();
+                                        }
+                                      }}
+                                      className="px-3 py-1.5 bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                      Permit
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleManualFeeUpdate(d.id, d.fine_amount || 0, d.fine_amount || 0, d.profiles?.full_name || 'Unknown')}
+                                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                  >
+                                    Clear Accounts
+                                  </button>
+                                </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -531,7 +555,6 @@ export default function AccountsDashboard() {
                         <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
                           <th className="p-5 font-semibold">Student Name</th>
                           <th className="p-5 font-semibold">Roll Number</th>
-                          <th className="p-5 font-semibold min-w-[200px]">Financials (₹)</th>
                           <th className="p-5 font-semibold">Clearance Status</th>
                           <th className="p-5 font-semibold text-right">Actions</th>
                         </tr>
@@ -541,88 +564,55 @@ export default function AccountsDashboard() {
                           <tr key={d.id} className="hover:bg-secondary/40 transition-colors">
                             <td className="p-5 font-medium text-foreground text-sm sm:text-base">{d.profiles?.full_name || 'Unknown'}</td>
                             <td className="p-5 text-sm text-muted-foreground font-bold tracking-widest">{d.profiles?.roll_number || 'N/A'}</td>
-                            <td className="p-5 font-bold text-foreground">
+                            <td className="p-5">
                               {(() => {
-                                const fine = d.fine_amount || 0;
-                                const paid = d.paid_amount || 0;
-                                const rem = Math.max(0, fine - paid);
+                                const isPermitted = d.permitted_until && new Date(d.permitted_until) > new Date();
+                                if (isPermitted) {
+                                  return (
+                                    <span className="px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                                      PERMITTED
+                                    </span>
+                                  );
+                                }
                                 return (
-                                  <div className="space-y-3">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-muted-foreground w-12">Fine:</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        className={`w-24 p-1.5 border rounded-lg text-sm bg-background focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold ${
-                                          rem > 0 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
-                                        }`}
-                                        defaultValue={fine}
-                                        onBlur={e => {
-                                          const val = parseInt(e.target.value) || 0;
-                                          if (val !== fine) handleManualFeeUpdate(d.id, val, paid, d.profiles?.full_name || 'Unknown');
-                                        }}
-                                      />
-                                    </div>
-                                    <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
-                                      <span className="text-xs text-muted-foreground w-12">Paid:</span>
-                                      ₹{paid}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-sm">
-                                      <span className="text-xs text-muted-foreground w-12">Rem:</span>
-                                      <span className={rem > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}>
-                                        ₹{rem}
-                                      </span>
-                                    </div>
-                                    {rem > 0 && (
-                                      <div className="flex items-center gap-2 mt-2 pt-2 border-t">
-                                        <span className="text-xs text-muted-foreground w-12">Pay:</span>
-                                        <div className="flex bg-background border border-emerald-500/50 rounded-lg overflow-hidden w-32">
-                                          <input 
-                                            type="number" 
-                                            id={`pay-${d.id}`} 
-                                            className="w-full p-1.5 text-xs outline-none" 
-                                            placeholder={`Max ₹${rem}`} 
-                                            max={rem}
-                                          />
-                                          <button 
-                                            onClick={() => {
-                                              const el = document.getElementById(`pay-${d.id}`) as HTMLInputElement;
-                                              let payment = parseInt(el?.value) || 0;
-                                              if (payment > 0) {
-                                                 payment = Math.min(payment, rem); // Prevent overpayment
-                                                 handleManualFeeUpdate(d.id, fine, paid + payment, d.profiles?.full_name || 'Unknown');
-                                                 el.value = '';
-                                              }
-                                            }}
-                                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-2 font-bold text-xs transition-colors"
-                                          >
-                                            Add
-                                          </button>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
+                                  <span className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                                    d.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                    d.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
+                                    'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                  }`}>
+                                    {d.status}
+                                  </span>
                                 );
                               })()}
                             </td>
-                            <td className="p-5">
-                              <span className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                                d.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                                d.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
-                                'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                              }`}>
-                                {d.status}
-                              </span>
-                            </td>
                             <td className="p-5 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                {Math.max(0, (d.fine_amount || 0) - (d.paid_amount || 0)) > 0 && (
-                                  <button
-                                    onClick={() => handleManualFeeUpdate(d.id, d.fine_amount || 0, d.fine_amount || 0, d.profiles?.full_name || 'Unknown')}
-                                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
-                                  >
-                                    Clear Full Fine
-                                  </button>
+                                {d.status === 'pending' && (
+                                  <>
+                                    {!(d.permitted_until && new Date(d.permitted_until) > new Date()) && (
+                                      <button
+                                        onClick={async () => {
+                                          const permitDate = new Date();
+                                          permitDate.setDate(permitDate.getDate() + 2);
+                                          const { error } = await supabase.from('student_dues').update({ permitted_until: permitDate.toISOString() }).eq('id', d.id);
+                                          if (error) setError('Failed to permit student: ' + error.message);
+                                          else {
+                                            setSuccess(`Permitted ${d.profiles?.full_name} for 2 days.`);
+                                            fetchDues();
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                      >
+                                        Permit
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleManualFeeUpdate(d.id, d.fine_amount || 0, d.fine_amount || 0, d.profiles?.full_name || 'Unknown')}
+                                      className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                      Clear Accounts
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </td>
