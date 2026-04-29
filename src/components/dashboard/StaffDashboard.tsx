@@ -605,6 +605,11 @@ export default function StaffDashboard() {
           if (semNameOrId) {
             const matchedSem = fetchedSemesters.find(s => s.name.toLowerCase() === semNameOrId.toLowerCase() || s.id === semNameOrId);
             if (matchedSem) {
+              if (isFirstYearSem(matchedSem.name)) {
+                errorCount++;
+                errorDetails.push(`Row ${i + 1} (${email}): these(1,2) sem students cannot be inserted`);
+                continue;
+              }
               profileData.semester_id = matchedSem.id;
             } else {
               errorCount++;

@@ -583,18 +583,24 @@ export default function ClerkDashboard() {
           continue;
         }
 
-        const { data: authData, error: authError } = await tempSupabase.auth.signUp({
-          email, password
-        });
+        const roll = getVal('roll_number');
+        const section = getVal('section');
+        const semNameOrId = getVal('semester_id');
         
-        if (authError || !authData.user) {
-          errorCount++;
-          errorDetails.push(`Row ${i + 1} (${email}): Auth error - ${authError?.message || 'Unknown'}`);
-          continue;
+        let existingProfile = null;
+        
+        // Try to find existing user by email or roll_number
+        const { data: existingData } = await supabase
+          .from('profiles')
+          .select('id, email, roll_number')
+          .or(`email.eq.${email}${roll ? `,roll_number.eq.${roll}` : ''}`)
+          .limit(1);
+          
+        if (existingData && existingData.length > 0) {
+          existingProfile = existingData[0];
         }
 
         let profileData: any = {
-          id: authData.user.id,
           full_name,
           role,
           department_id: profile.department_id,
@@ -602,10 +608,6 @@ export default function ClerkDashboard() {
         };
 
         if (role === 'student') {
-          const section = getVal('section');
-          const semNameOrId = getVal('semester_id');
-          const roll = getVal('roll_number');
-          
           if (section) profileData.section = section.toUpperCase();
           if (roll) profileData.roll_number = roll;
           
@@ -615,24 +617,53 @@ export default function ClerkDashboard() {
               // Clerk can only create 1st/2nd sem students
               if (!isFirstYearSem(matchedSem.name)) {
                 errorCount++;
-                errorDetails.push(`Row ${i + 1} (${email}): Clerk can only create 1st or 2nd semester students. "${matchedSem.name}" is not allowed.`);
+                errorDetails.push(`Row ${i + 1} (${email}): these(3,4,5,6,7,8) sem students cannot be inserted`);
                 continue;
               }
               profileData.semester_id = matchedSem.id;
             } else {
               errorCount++;
               errorDetails.push(`Row ${i + 1} (${email}): Target semester "${semNameOrId}" not found in database.`);
-              // Need to delete the orphaned auth user because we bail before profile creation
               continue;
             }
           }
+        } else if (role === 'teacher') {
+             if (roll) profileData.roll_number = roll;
         }
 
-        const { error: profileError } = await supabase.from('profiles').upsert(profileData);
-        if (profileError) {
-          errorCount++;
-          errorDetails.push(`Row ${i + 1} (${email}): Profile error - ${profileError.message}`);
-          continue;
+        if (existingProfile) {
+           // Update existing profile
+           const { error: updateError } = await supabase
+             .from('profiles')
+             .update(profileData)
+             .eq('id', existingProfile.id);
+             
+           if (updateError) {
+              errorCount++;
+              errorDetails.push(`Row ${i + 1} (${email}): Update error - ${updateError.message}`);
+              continue;
+           }
+        } else {
+           // Create new user
+           const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+             email, password
+           });
+           
+           if (authError || !authData.user) {
+             errorCount++;
+             errorDetails.push(`Row ${i + 1} (${email}): Auth error - ${authError?.message || 'Unknown'}`);
+             continue;
+           }
+           
+           profileData.id = authData.user.id;
+           profileData.email = email;
+           
+           const { error: insertError } = await supabase.from('profiles').insert(profileData);
+           if (insertError) {
+             errorCount++;
+             errorDetails.push(`Row ${i + 1} (${email}): Profile insert error - ${insertError.message}`);
+             continue;
+           }
         }
 
         successCount++;
