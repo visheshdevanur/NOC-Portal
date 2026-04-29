@@ -232,44 +232,32 @@ export default function FycDashboard() {
     finally { setLoadingCollegeDues(false); }
   };
 
-  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, paidAmount: number = 0, profileName: string = 'Student') => {
+  const handleManualFeeUpdate = async (dueId: string, _fineAmount: number, _paidAmount: number = 0, profileName: string = 'Student') => {
     try {
-      const { data: currentDue } = await supabase.from('student_dues').select('fine_amount, paid_amount').eq('id', dueId).single();
-      const previousAmount = currentDue?.fine_amount || 0;
-      const diff = previousAmount - fineAmount;
+      // Directly mark as completed (cleared)
+      const { error } = await supabase
+        .from('student_dues')
+        .update({ status: 'completed', updated_at: new Date().toISOString() } as any)
+        .eq('id', dueId);
+      if (error) throw error;
       
-      const { updateStudentDueFee } = await import('../../lib/api');
-      await updateStudentDueFee(dueId, fineAmount, paidAmount);
-      
-      let actionDetails = '';
-      if (fineAmount === 0 && previousAmount > 0) {
-        actionDetails = `Cleared dues for ${profileName} (Paid: ₹${previousAmount})`;
-      } else if (fineAmount === 0 && previousAmount === 0) {
-        actionDetails = `Cleared dues for ${profileName}`;
-      } else if (diff > 0) {
-        actionDetails = `Set due amount to ₹${fineAmount} for ${profileName} (Paid: ₹${diff})`;
-      } else {
-        actionDetails = `Set due amount to ₹${fineAmount} (Paid: ₹${paidAmount}) for ${profileName}`;
-      }
-
       await supabase.from('activity_logs').insert([{
         user_id: user?.id,
         user_role: 'fyc',
         user_name: user?.email,
-        action: 'Updated College Dues',
-        details: actionDetails
+        action: 'Cleared College Dues',
+        details: `Cleared dues for ${profileName}`
       }]);
       
       setCollegeDues(prev => prev.map(d => {
         if (d.id === dueId) {
-          const remaining = fineAmount - paidAmount;
-          return { ...d, fine_amount: fineAmount, paid_amount: paidAmount, status: remaining > 0 ? 'pending' : 'completed' };
+          return { ...d, status: 'completed' };
         }
         return d;
       }));
-      alert(`Due amount updated. Fine: ₹${fineAmount}, Paid: ₹${paidAmount}.`);
+      alert(`Dues cleared for ${profileName}.`);
     } catch (err: any) {
-      alert('Failed to update due amount: ' + (err?.message || 'Unknown'));
+      alert('Failed to clear dues: ' + (err?.message || 'Unknown'));
     }
   };
 

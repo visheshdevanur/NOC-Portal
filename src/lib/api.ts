@@ -76,7 +76,7 @@ export const getStudentDues = async (studentId: string) => {
 export const getFacultyPendingStudents = async (facultyId: string) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, semester_id, semesters(name)), subjects(*)')
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, semester_id, roll_number, semesters(name)), subjects(*)')
     .eq('teacher_id', facultyId);
   if (error) throw error;
   return data;
@@ -615,14 +615,12 @@ export const updateStudentPaidAmount = async (dueId: string, paidAmount: number)
 // =======================
 export const updateStudentDueFee = async (dueId: string, fineAmount: number, paidAmount: number = 0) => {
   const status = fineAmount > 0 && fineAmount > paidAmount ? 'pending' : 'completed';
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('student_dues')
     .update({ fine_amount: fineAmount, paid_amount: paidAmount, status, updated_at: new Date().toISOString() } as any)
-    .eq('id', dueId)
-    .select()
-    .single();
+    .eq('id', dueId);
   if (error) throw error;
-  return data;
+  return { id: dueId, fine_amount: fineAmount, paid_amount: paidAmount, status };
 };
 
 // =======================
