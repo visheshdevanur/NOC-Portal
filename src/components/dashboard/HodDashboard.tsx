@@ -1032,33 +1032,31 @@ export default function HodDashboard() {
                             </td>
                             <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                {d.status === 'pending' && (
-                                  <>
-                                    {!isPermitted && (
-                                      <button
-                                        onClick={async () => {
-                                          const permitDate = new Date();
-                                          permitDate.setDate(permitDate.getDate() + 2);
-                                          const { error } = await supabase.from('student_dues').update({ permitted_until: permitDate.toISOString() }).eq('id', d.id);
-                                          if (error) alert('Failed to permit student: ' + error.message);
-                                          else {
-                                            alert(`Permitted ${d.profiles?.full_name} for 2 days.`);
-                                            fetchCollegeDues();
-                                          }
-                                        }}
-                                        className="px-3 py-1.5 bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold rounded-lg transition-colors"
-                                      >
-                                        Permit
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={() => handleManualFeeUpdate(d.id, d.fine_amount || 0, d.fine_amount || 0, d.profiles?.full_name || 'Unknown')}
-                                      className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
-                                    >
-                                      Clear Accounts
-                                    </button>
-                                  </>
+                                {!isPermitted && (
+                                  <button
+                                    onClick={async () => {
+                                      const permitDate = new Date();
+                                      permitDate.setDate(permitDate.getDate() + 2);
+                                      const { error } = await supabase.from('student_dues').update({ permitted_until: permitDate.toISOString() }).eq('id', d.id);
+                                      if (error) alert('Failed to permit student: ' + error.message);
+                                      else {
+                                        alert(`Permitted ${d.profiles?.full_name} for 2 days.`);
+                                        fetchCollegeDues();
+                                      }
+                                    }}
+                                    disabled={d.status !== 'pending'}
+                                    className={`px-3 py-1.5 text-white text-xs font-bold rounded-lg transition-colors ${d.status === 'pending' ? 'bg-violet-500 hover:bg-violet-600' : 'bg-violet-300 cursor-not-allowed opacity-50'}`}
+                                  >
+                                    Permit
+                                  </button>
                                 )}
+                                <button
+                                  onClick={() => handleManualFeeUpdate(d.id, d.fine_amount || 0, d.fine_amount || 0, d.profiles?.full_name || 'Unknown')}
+                                  disabled={d.status !== 'pending'}
+                                  className={`px-3 py-1.5 text-white text-xs font-bold rounded-lg transition-colors ${d.status === 'pending' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-emerald-300 cursor-not-allowed opacity-50'}`}
+                                >
+                                  Clear Accounts
+                                </button>
                               </div>
                             </td>
                           </tr>
