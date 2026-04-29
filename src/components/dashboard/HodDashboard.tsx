@@ -46,6 +46,18 @@ const getClearanceReq = (student: UserProfile): ClearanceInfo | null => {
   return student.clearance_requests;
 };
 
+// Helper: check if semester is 1st or 2nd
+const isFirstYearSem = (name: string) => {
+  if (!name) return false;
+  const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return n.includes('sem1') || n.includes('sem2') || 
+         n.includes('1stsem') || n.includes('2ndsem') ||
+         n.includes('semester1') || n.includes('semester2') ||
+         n === '1' || n === '2' || 
+         n.endsWith('1stsemester') || n.endsWith('2ndsemester') ||
+         /\b1\b/.test(name) || /\b2\b/.test(name);
+};
+
 type TeacherWithAssignments = {
   id: string;
   full_name: string;
@@ -146,7 +158,8 @@ export default function HodDashboard() {
     setLoadingReqs(true);
     try {
       const data = await getHodPendingRequests(profile.department_id);
-      setRequests(data as unknown as ClearanceRequest[]);
+      const filtered = (data as any[]).filter(r => !isFirstYearSem(r.profiles?.semesters?.name || ''));
+      setRequests(filtered as unknown as ClearanceRequest[]);
     } catch (err) { console.error(err); }
     finally { setLoadingReqs(false); }
   };
@@ -156,7 +169,8 @@ export default function HodDashboard() {
     setLoadingStudents(true);
     try {
       const data = await getHodDepartmentStudents(profile.department_id);
-      setDepartmentStudents(data as unknown as UserProfile[]);
+      const filtered = (data as any[]).filter(s => !isFirstYearSem(s.semesters?.name || ''));
+      setDepartmentStudents(filtered as unknown as UserProfile[]);
     } catch (err) { console.error(err); }
     finally { setLoadingStudents(false); }
   };
@@ -178,7 +192,8 @@ export default function HodDashboard() {
     setLoadingFines(true);
     try {
       const data = await getHodFinePayments(profile.department_id);
-      setApprovedFines(data || []);
+      const filtered = (data || []).filter((f: any) => !isFirstYearSem(f.profiles?.semesters?.name || ''));
+      setApprovedFines(filtered);
     } catch (err) { console.error(err); }
     finally { setLoadingFines(false); }
   };
@@ -188,7 +203,8 @@ export default function HodDashboard() {
     setLoadingCollegeDues(true);
     try {
       const data = await import('../../lib/api').then(m => m.getStaffStudentDues(profile.department_id!));
-      setCollegeDues(data || []);
+      const filtered = (data || []).filter((d: any) => !isFirstYearSem(d.profiles?.semesters?.name || ''));
+      setCollegeDues(filtered);
     } catch (err) { console.error(err); }
     finally { setLoadingCollegeDues(false); }
   };

@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
-  GraduationCap, BookOpen, Eye, Clock, Import, Check
+  GraduationCap, BookOpen, Eye, Clock, Import, Check, Banknote
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -57,7 +57,7 @@ type TeacherWithAssignments = {
   }[];
 };
 
-type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'teacherDetails' | 'activityLogs';
+type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs';
 
 const isFirstYearSem = (name: string) => {
   if (!name) return false;
@@ -111,6 +111,11 @@ export default function FycDashboard() {
   const [loadingFines, setLoadingFines] = useState(false);
   const [searchFines, setSearchFines] = useState('');
 
+  // College Dues state
+  const [collegeDues, setCollegeDues] = useState<any[]>([]);
+  const [loadingCollegeDues, setLoadingCollegeDues] = useState(false);
+  const [searchCollegeDues, setSearchCollegeDues] = useState('');
+
   // Teacher Details state
   const [teacherAssignments, setTeacherAssignments] = useState<TeacherWithAssignments[]>([]);
   const [loadingTeacherDetails, setLoadingTeacherDetails] = useState(false);
@@ -133,6 +138,7 @@ export default function FycDashboard() {
       if (activeTab === 'users') fetchUsers();
       if (activeTab === 'students') fetchStudents();
       if (activeTab === 'fineApprovals') fetchApprovedFines();
+      if (activeTab === 'collegeDues') fetchCollegeDues();
       if (activeTab === 'teacherDetails') fetchTeacherDetails();
       if (activeTab === 'activityLogs') fetchActivityLogs();
     }
@@ -213,6 +219,58 @@ export default function FycDashboard() {
       setApprovedFines(filtered || []);
     } catch (err) { console.error(err); }
     finally { setLoadingFines(false); }
+  };
+
+  const fetchCollegeDues = async () => {
+    setLoadingCollegeDues(true);
+    try {
+      const { getAllStudentDues } = await import('../../lib/api');
+      const data = await getAllStudentDues();
+      const filtered = (data || []).filter((d: any) => isFirstYearSem(d.profiles?.semesters?.name || ''));
+      setCollegeDues(filtered);
+    } catch (err) { console.error(err); }
+    finally { setLoadingCollegeDues(false); }
+  };
+
+  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, paidAmount: number = 0, profileName: string = 'Student') => {
+    try {
+      const { data: currentDue } = await supabase.from('student_dues').select('fine_amount, paid_amount').eq('id', dueId).single();
+      const previousAmount = currentDue?.fine_amount || 0;
+      const diff = previousAmount - fineAmount;
+      
+      const { updateStudentDueFee } = await import('../../lib/api');
+      await updateStudentDueFee(dueId, fineAmount, paidAmount);
+      
+      let actionDetails = '';
+      if (fineAmount === 0 && previousAmount > 0) {
+        actionDetails = `Cleared dues for ${profileName} (Paid: ₹${previousAmount})`;
+      } else if (fineAmount === 0 && previousAmount === 0) {
+        actionDetails = `Cleared dues for ${profileName}`;
+      } else if (diff > 0) {
+        actionDetails = `Set due amount to ₹${fineAmount} for ${profileName} (Paid: ₹${diff})`;
+      } else {
+        actionDetails = `Set due amount to ₹${fineAmount} (Paid: ₹${paidAmount}) for ${profileName}`;
+      }
+
+      await supabase.from('activity_logs').insert([{
+        user_id: user?.id,
+        user_role: 'fyc',
+        user_name: user?.email,
+        action: 'Updated College Dues',
+        details: actionDetails
+      }]);
+      
+      setCollegeDues(prev => prev.map(d => {
+        if (d.id === dueId) {
+          const remaining = fineAmount - paidAmount;
+          return { ...d, fine_amount: fineAmount, paid_amount: paidAmount, status: remaining > 0 ? 'pending' : 'completed' };
+        }
+        return d;
+      }));
+      alert(`Due amount updated. Fine: ₹${fineAmount}, Paid: ₹${paidAmount}.`);
+    } catch (err: any) {
+      alert('Failed to update due amount: ' + (err?.message || 'Unknown'));
+    }
   };
 
   const fetchTeacherDetails = async () => {
@@ -547,6 +605,7 @@ export default function FycDashboard() {
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'approvals', label: 'Clearances', icon: <Activity className="w-4 h-4" /> },
     { id: 'fineApprovals', label: 'Fine Approvals', icon: <FileCheck className="w-4 h-4" /> },
+    { id: 'collegeDues', label: 'College Dues', icon: <Banknote className="w-4 h-4" /> },
     { id: 'users', label: 'Clerks & Teachers', icon: <Users className="w-4 h-4" /> },
     { id: 'teacherDetails', label: 'Teacher Details', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> },
@@ -1190,6 +1249,127 @@ export default function FycDashboard() {
                           </td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ========= COLLEGE DUES TAB ========= */}
+      {activeTab === 'collegeDues' && (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-4 rounded-2xl shadow-sm border border-border">
+            <div>
+              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <Banknote className="w-5 h-5 text-violet-500" />
+                College Fee Dues (1st Year)
+              </h2>
+              <p className="text-muted-foreground text-sm">Permit or clear pending college fees for all first-year students.</p>
+            </div>
+          </div>
+
+          <div className="relative w-full md:max-w-md">
+            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by name or roll number..."
+              className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 w-full"
+              value={searchCollegeDues}
+              onChange={e => setSearchCollegeDues(e.target.value)}
+            />
+          </div>
+
+          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+            {(() => {
+              const filtered = collegeDues.filter(d => 
+                d.profiles?.full_name?.toLowerCase().includes(searchCollegeDues.toLowerCase()) || 
+                d.profiles?.roll_number?.toLowerCase().includes(searchCollegeDues.toLowerCase())
+              );
+
+              return loadingCollegeDues ? (
+                <div className="p-8 text-center text-muted-foreground animate-pulse">Loading college dues...</div>
+              ) : filtered.length === 0 ? (
+                <div className="p-12 text-center flex flex-col items-center">
+                  <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-4">
+                    <Banknote className="w-10 h-10 text-violet-500/50" />
+                  </div>
+                  <h3 className="text-xl font-bold text-foreground">No Records</h3>
+                  <p className="text-muted-foreground mt-2">No pending college fees found for 1st year students.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
+                        <th className="p-4 font-semibold">Student Name</th>
+                        <th className="p-4 font-semibold">Roll No</th>
+                        <th className="p-4 font-semibold">Semester / Sec</th>
+                        <th className="p-4 font-semibold text-center">Status</th>
+                        <th className="p-4 font-semibold text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filtered.map(d => {
+                        const isPermitted = d.permitted_until && new Date(d.permitted_until) > new Date();
+                        return (
+                          <tr key={d.id} className="hover:bg-secondary/20 transition-colors">
+                            <td className="p-4 font-medium text-foreground">{d.profiles?.full_name}</td>
+                            <td className="p-4 text-muted-foreground font-mono text-sm">{d.profiles?.roll_number || '\u2014'}</td>
+                            <td className="p-4 text-sm text-muted-foreground">
+                              {d.profiles?.semesters?.name || '\u2014'} / {d.profiles?.section || '\u2014'}
+                            </td>
+                            <td className="p-4 text-center">
+                              {isPermitted ? (
+                                <span className="px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                                  PERMITTED
+                                </span>
+                              ) : (
+                                <span className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                                  d.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                  d.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
+                                  'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                }`}>
+                                  {d.status}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                {d.status === 'pending' && (
+                                  <>
+                                    {!isPermitted && (
+                                      <button
+                                        onClick={async () => {
+                                          const permitDate = new Date();
+                                          permitDate.setDate(permitDate.getDate() + 2);
+                                          const { error } = await supabase.from('student_dues').update({ permitted_until: permitDate.toISOString() }).eq('id', d.id);
+                                          if (error) alert('Failed to permit student: ' + error.message);
+                                          else {
+                                            alert(`Permitted ${d.profiles?.full_name} for 2 days.`);
+                                            fetchCollegeDues();
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                      >
+                                        Permit
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleManualFeeUpdate(d.id, d.fine_amount || 0, d.fine_amount || 0, d.profiles?.full_name || 'Unknown')}
+                                      className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                      Clear Accounts
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
