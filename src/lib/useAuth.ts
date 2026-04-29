@@ -54,7 +54,17 @@ export function useAuth() {
         .eq('id', userId)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // Handle expired JWTs explicitly by wiping state and forcing sign out
+        if (error.code === 'PGRST303' || error.message?.toLowerCase().includes('jwt') || error.message?.toLowerCase().includes('unauthorized')) {
+          console.warn('Auth token expired or invalid. Forcing logout to clear state.');
+          setUser(null);
+          setProfile(null);
+          await supabase.auth.signOut();
+          return;
+        }
+        throw error;
+      }
       setProfile(data);
     } catch (error) {
       console.error('Error fetching profile:', error);
