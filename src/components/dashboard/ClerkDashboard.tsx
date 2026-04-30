@@ -480,13 +480,31 @@ export default function ClerkDashboard() {
         if (u.role === 'student') {
           return u.semester_id ? firstYearSemIds.has(u.semester_id) : true;
         }
-        // Only show FYC-created/imported teachers
-        if (u.role === 'teacher' || u.role === 'faculty') {
-          return !!(u as any).created_by;
-        }
         return true;
       });
-      setDepartmentUsers(filtered);
+
+      // Also fetch FYC-created teachers (they may have no department_id)
+      const { data: fycTeachers } = await supabase
+        .from('profiles')
+        .select('*, departments!profiles_department_id_fkey(name)')
+        .in('role', ['teacher', 'faculty'])
+        .not('created_by', 'is', null)
+        .order('full_name');
+
+      // Also fetch teachers imported into this department
+      const { getImportedTeachersForDept } = await import('../../lib/api');
+      const importedData = await getImportedTeachersForDept(profile.department_id);
+      const importedTeacherProfiles = (importedData || [])
+        .filter((imp: any) => imp.profiles)
+        .map((imp: any) => ({ ...imp.profiles, _imported: true }));
+
+      // Merge: start with native dept users, add FYC teachers not already in list, add imported teachers not already in list
+      const existingIds = new Set(filtered.map(u => u.id));
+      const fycFiltered = (fycTeachers || []).filter(t => !existingIds.has(t.id));
+      fycFiltered.forEach(t => existingIds.add(t.id));
+      const importedFiltered = importedTeacherProfiles.filter((t: any) => !existingIds.has(t.id));
+
+      setDepartmentUsers([...filtered, ...fycFiltered as UserProfile[], ...importedFiltered as UserProfile[]]);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
   };
