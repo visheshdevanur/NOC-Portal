@@ -1012,6 +1012,70 @@ export default function StaffDashboard() {
     }
   };
 
+  const [sectionCsvUploading, setSectionCsvUploading] = useState(false);
+
+  const downloadSectionAssignTemplate = () => {
+    const csvContent = "Semester Name,Subject Code,Section,Teacher ID\nSemester 3,CS301,A,TCH301\nSemester 3,CS302,B,TCH302\n";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = "Section_Assign_Template.csv";
+    link.click();
+  };
+
+  const handleSectionAssignCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile?.department_id) return;
+    setSectionCsvUploading(true);
+    setSectionError(null);
+    setSectionSuccess(null);
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) throw new Error('CSV is empty or missing data rows.');
+      
+      const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
+      const semIdx = headers.findIndex(h => h.includes('semester'));
+      const subIdx = headers.findIndex(h => h.includes('subject'));
+      const secIdx = headers.findIndex(h => h.includes('section'));
+      const tIdx = headers.findIndex(h => h.includes('teacher'));
+      
+      if (semIdx === -1 || subIdx === -1 || secIdx === -1 || tIdx === -1) {
+        throw new Error('CSV must have columns for Semester Name, Subject Code, Section, and Teacher ID.');
+      }
+
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        if (cols[semIdx] && cols[subIdx] && cols[secIdx] && cols[tIdx]) {
+          rows.push({
+            semester_name: cols[semIdx],
+            subject_code: cols[subIdx],
+            section: cols[secIdx],
+            teacher_id: cols[tIdx]
+          });
+        }
+      }
+
+      if (rows.length === 0) throw new Error('No valid rows found to process.');
+      
+      const { bulkAssignTeacherToSectionCSV } = await import('../../lib/api');
+      const result = await bulkAssignTeacherToSectionCSV(profile.department_id, rows);
+      
+      if (result.errors.length > 0) {
+        setSectionError(`Updated ${result.updated} sections. Errors: ${result.errors.slice(0, 3).join(' | ')}${result.errors.length > 3 ? '...' : ''}`);
+      } else {
+        setSectionSuccess(`Successfully assigned ${result.updated} sections from CSV!`);
+      }
+    } catch (err: any) {
+      setSectionError(getFriendlyErrorMessage(err));
+    } finally {
+      setSectionCsvUploading(false);
+      e.target.value = '';
+    }
+  };
+
   const filteredUsers = departmentUsers.filter(u => {
     // Role filter
     if (roleFilter === 'teacher' && u.role !== 'teacher' && u.role !== 'faculty') return false;
@@ -1927,13 +1991,31 @@ export default function StaffDashboard() {
           )}
 
           <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
-            <h2 className="text-xl font-bold text-foreground mb-2 flex items-center gap-2">
-              <Link2 className="w-5 h-5 text-amber-500" />
-              Bulk Section ↔ Teacher Assignment
-            </h2>
-            <p className="text-muted-foreground text-sm mb-6">
-              Select a subject, section, and teacher. All students in the section will be enrolled and assigned to the teacher for that subject.
-            </p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                  <Link2 className="w-5 h-5 text-amber-500" />
+                  Bulk Section ↔ Teacher Assignment
+                </h2>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Select a subject, section, and teacher. All students in the section will be enrolled and assigned to the teacher for that subject.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={downloadSectionAssignTemplate}
+                  className="flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 border border-border px-4 py-3 rounded-xl font-medium transition-all shadow-sm text-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  Template
+                </button>
+                <label className="flex items-center gap-2 bg-amber-500/20 text-amber-600 hover:bg-amber-500/30 border border-amber-500/30 px-4 py-3 rounded-xl font-bold transition-all shadow-sm text-sm cursor-pointer disabled:opacity-50">
+                  <Upload className="w-4 h-4" />
+                  {sectionCsvUploading ? 'Uploading...' : 'Bulk CSV'}
+                  <input type="file" accept=".csv" className="hidden" onChange={handleSectionAssignCSVUpload} disabled={sectionCsvUploading} />
+                </label>
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>

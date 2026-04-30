@@ -365,6 +365,47 @@ export const assignTeacherToSection = async (subjectId: string, section: string,
   return data;
 };
 
+export const bulkAssignTeacherToSectionCSV = async (
+  departmentId: string,
+  rows: { semester_name: string; subject_code: string; section: string; teacher_id: string }[]
+) => {
+  const result = { updated: 0, errors: [] as string[] };
+  
+  // 1. Fetch semesters for the department
+  const { data: sems } = await supabase.from('semesters').select('id, name').eq('department_id', departmentId);
+  const semMap = new Map((sems || []).map(s => [s.name.toLowerCase(), s.id]));
+
+  // 2. Fetch subjects for the department
+  const { data: subs } = await supabase.from('subjects').select('id, subject_code, semester_id').eq('department_id', departmentId);
+  
+  // 3. Fetch all teachers to map roll_number (teacher_id in CSV) to their profile ID
+  const { data: teachers } = await supabase.from('profiles').select('id, roll_number').in('role', ['teacher', 'faculty']);
+  const teacherMap = new Map((teachers || []).map(t => [t.roll_number?.toLowerCase(), t.id]));
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    try {
+      const semId = semMap.get(row.semester_name.toLowerCase());
+      if (!semId) throw new Error(`Semester '${row.semester_name}' not found.`);
+
+      const sub = (subs || []).find(s => s.subject_code.toLowerCase() === row.subject_code.toLowerCase() && s.semester_id === semId);
+      if (!sub) throw new Error(`Subject '${row.subject_code}' not found in semester '${row.semester_name}'.`);
+
+      const tProfileId = teacherMap.get(row.teacher_id.toLowerCase());
+      if (!tProfileId) throw new Error(`Teacher with ID '${row.teacher_id}' not found.`);
+
+      // Call the existing assign function
+      await assignTeacherToSection(sub.id, row.section.toUpperCase(), tProfileId, semId);
+      result.updated++;
+    } catch (err: any) {
+      result.errors.push(`Row ${i + 1} (${row.subject_code}): ${err.message}`);
+    }
+  }
+
+  logActivity('Bulk Section Assignment', `Assigned ${result.updated} sections via CSV upload in department`);
+  return result;
+};
+
 export const getAllDepartments = async () => {
   const { data, error } = await supabase.from('departments').select('*, profiles!departments_hod_id_fkey(full_name)');
   if (error) throw error;
