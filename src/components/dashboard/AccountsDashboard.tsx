@@ -381,7 +381,7 @@ export default function AccountsDashboard() {
                         </td>
                         <td className="p-5">
                           {(() => {
-                            const isPermitted = d.permitted_until && new Date(d.permitted_until) > new Date();
+                            const isPermitted = d.status === 'pending' && d.permitted_until && new Date(d.permitted_until) > new Date();
                             if (isPermitted) {
                               return (
                                 <span className="px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-violet-500/10 text-violet-600 dark:text-violet-400">
@@ -566,7 +566,7 @@ export default function AccountsDashboard() {
                             <td className="p-5 text-sm text-muted-foreground font-bold tracking-widest">{d.profiles?.roll_number || 'N/A'}</td>
                             <td className="p-5">
                               {(() => {
-                                const isPermitted = d.permitted_until && new Date(d.permitted_until) > new Date();
+                                const isPermitted = d.status === 'pending' && d.permitted_until && new Date(d.permitted_until) > new Date();
                                 if (isPermitted) {
                                   return (
                                     <span className="px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-violet-500/10 text-violet-600 dark:text-violet-400">

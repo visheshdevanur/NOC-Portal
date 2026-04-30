@@ -1050,6 +1050,23 @@ export const reduceStudentFine = async (enrollmentId: string, newAmount: number)
   return data;
 };
 
+/** Manually clear an attendance fine (mark as paid via cash) */
+export const clearStudentFine = async (enrollmentId: string) => {
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .update({ attendance_fee_verified: true, status: 'completed' } as any)
+    .eq('id', enrollmentId)
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name), subjects!subject_enrollment_subject_id_fkey(subject_name)')
+    .single();
+    
+  if (error) throw error;
+  
+  const studentName = data?.profiles?.full_name || 'student';
+  const subjName = (data as any)?.subjects?.subject_name || 'subject';
+  logActivity('Cleared Fine', `Manually cleared fine (cash payment) for ${studentName} in ${subjName}`);
+  return data;
+};
+
 /** Create a bulk Razorpay order for Pay All (total of multiple enrollments) */
 export const createBulkRazorpayOrder = async (totalAmount: number, enrollmentIds: string[]) => {
   const response = await fetch('/api/create-razorpay-order', {

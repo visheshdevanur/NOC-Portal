@@ -118,6 +118,7 @@ export default function StaffDashboard() {
   const [reduceFineId, setReduceFineId] = useState<string | null>(null);
   const [reduceFineAmount, setReduceFineAmount] = useState('');
   const [reduceFineLoading, setReduceFineLoading] = useState(false);
+  const [clearFineLoading, setClearFineLoading] = useState<string | null>(null);
    
   // Attendances CSV State
   const [attCsvUploading, setAttCsvUploading] = useState(false);
@@ -488,6 +489,18 @@ export default function StaffDashboard() {
     } catch (err: any) {
       alert('Failed: ' + getFriendlyErrorMessage(err));
     } finally { setReduceFineLoading(false); }
+  };
+
+  const handleClearFine = async (enrollmentId: string) => {
+    if (!confirm('Are you sure you want to mark this fine as PAID via cash? This will clear the student\'s attendance due.')) return;
+    setClearFineLoading(enrollmentId);
+    try {
+      const { clearStudentFine } = await import('../../lib/api');
+      await clearStudentFine(enrollmentId);
+      await fetchAttendances();
+      alert('Fine successfully cleared!');
+    } catch (err: any) { alert('Failed to clear fine: ' + (err?.message || 'Unknown')); }
+    finally { setClearFineLoading(null); }
   };
 
   // ==================== USERS ======================
@@ -1463,13 +1476,25 @@ export default function StaffDashboard() {
                                 </button>
                               </div>
                             ) : (
-                              <button
-                                onClick={() => { setReduceFineId(item.id); setReduceFineAmount(String(item.attendance_fee || 0)); }}
-                                className="px-3 py-2 bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white text-xs font-bold rounded-xl transition-colors"
-                                title="Modify/Reduce Fine"
-                              >
-                                Modify Fine
-                              </button>
+                              <div className="flex items-center gap-2 justify-end">
+                                <button
+                                  onClick={() => { setReduceFineId(item.id); setReduceFineAmount(String(item.attendance_fee || 0)); }}
+                                  className="px-3 py-2 bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap"
+                                  title="Modify/Reduce Fine"
+                                >
+                                  Modify Fine
+                                </button>
+                                {item.attendance_fee > 0 && !item.attendance_fee_verified && (
+                                  <button
+                                    onClick={() => handleClearFine(item.id)}
+                                    disabled={clearFineLoading === item.id}
+                                    className="px-3 py-2 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap disabled:opacity-50"
+                                    title="Mark as Paid (Cash)"
+                                  >
+                                    {clearFineLoading === item.id ? '...' : 'Clear Fine'}
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </td>
                         </tr>

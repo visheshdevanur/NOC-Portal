@@ -996,7 +996,7 @@ export default function HodDashboard() {
                     </thead>
                     <tbody className="divide-y divide-border">
                       {filtered.map(d => {
-                        const isPermitted = d.permitted_until && new Date(d.permitted_until) > new Date();
+                        const isPermitted = d.status === 'pending' && d.permitted_until && new Date(d.permitted_until) > new Date();
                         return (
                           <tr key={d.id} className="hover:bg-secondary/20 transition-colors">
                             <td className="p-4 font-medium text-foreground">{d.profiles?.full_name}</td>
