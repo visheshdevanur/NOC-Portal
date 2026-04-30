@@ -482,8 +482,14 @@ export default function ClerkDashboard() {
         }
         return true;
       });
+      // Fetch all FYC user IDs first
+      const { data: fycUsers } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'fyc');
+      const fycIds = new Set((fycUsers || []).map(f => f.id));
 
-      // Also fetch FYC-created teachers (they may have no department_id)
+      // Fetch teachers created by FYC users only
       const { data: fycTeachers } = await supabase
         .from('profiles')
         .select('*, departments!profiles_department_id_fkey(name)')
@@ -491,20 +497,14 @@ export default function ClerkDashboard() {
         .not('created_by', 'is', null)
         .order('full_name');
 
-      // Also fetch teachers imported into this department
-      const { getImportedTeachersForDept } = await import('../../lib/api');
-      const importedData = await getImportedTeachersForDept(profile.department_id);
-      const importedTeacherProfiles = (importedData || [])
-        .filter((imp: any) => imp.profiles)
-        .map((imp: any) => ({ ...imp.profiles, _imported: true }));
+      // Filter to only teachers created by FYC users
+      const fycCreatedTeachers = (fycTeachers || []).filter(t => fycIds.has(t.created_by));
 
-      // Merge: start with native dept users, add FYC teachers not already in list, add imported teachers not already in list
+      // Merge: native dept users + FYC-created teachers (deduplicated)
       const existingIds = new Set(filtered.map(u => u.id));
-      const fycFiltered = (fycTeachers || []).filter(t => !existingIds.has(t.id));
-      fycFiltered.forEach(t => existingIds.add(t.id));
-      const importedFiltered = importedTeacherProfiles.filter((t: any) => !existingIds.has(t.id));
+      const fycFiltered = fycCreatedTeachers.filter(t => !existingIds.has(t.id));
 
-      setDepartmentUsers([...filtered, ...fycFiltered as UserProfile[], ...importedFiltered as UserProfile[]]);
+      setDepartmentUsers([...filtered, ...fycFiltered as UserProfile[]]);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
   };
