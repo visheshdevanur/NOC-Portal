@@ -1,21 +1,28 @@
 import { useState, useEffect } from 'react';
-import { getActivityLogs } from '../lib/api';
 import { Activity, Search, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../lib/useAuth';
+import { supabase } from '../lib/supabase';
 
 export default function Logs() {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    fetchLogs();
-  }, []);
+    if (user) fetchLogs();
+  }, [user]);
 
   const fetchLogs = async () => {
     try {
-      const data = await getActivityLogs();
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
       setLogs(data || []);
     } catch (err) {
       console.error(err);
@@ -44,9 +51,12 @@ export default function Logs() {
           </button>
           <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
             <ShieldCheck className="w-8 h-8 mr-3 text-primary" />
-            System Activity Logs
+            My Activity Logs
           </h1>
-          <p className="text-muted-foreground">Monitor and track system operations and audit trails.</p>
+          <p className="text-muted-foreground">Your personal activity history and audit trail.
+            {profile?.full_name && <span className="font-medium text-foreground ml-1">— {profile.full_name}</span>}
+            {profile?.role && <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-bold uppercase bg-secondary text-foreground/70">{profile.role}</span>}
+          </p>
         </div>
       </div>
 
@@ -77,22 +87,14 @@ export default function Logs() {
             <table className="w-full text-left border-collapse min-w-max">
               <thead>
                 <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
-                  <th className="p-4 font-semibold">User</th>
-                  <th className="p-4 font-semibold">Role</th>
                   <th className="p-4 font-semibold">Action</th>
-                  <th className="p-4 font-semibold w-1/3">Details</th>
+                  <th className="p-4 font-semibold w-1/2">Details</th>
                   <th className="p-4 font-semibold text-right">Timestamp</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filteredLogs.map(log => (
                   <tr key={log.id} className="hover:bg-secondary/20 transition-colors">
-                    <td className="p-4 font-medium text-foreground">{log.user_name || 'System User'}</td>
-                    <td className="p-4">
-                       <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-secondary text-foreground/70">
-                         {log.user_role || 'Unknown'}
-                       </span>
-                    </td>
                     <td className="p-4 font-bold text-foreground">{log.action}</td>
                     <td className="p-4 text-sm text-muted-foreground max-w-sm xl:max-w-md truncate" title={log.details || ''}>{log.details || '—'}</td>
                     <td className="p-4 text-sm text-muted-foreground text-right whitespace-nowrap">
