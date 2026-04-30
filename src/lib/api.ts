@@ -18,6 +18,13 @@ export const logActivity = async (action: string, details?: string) => {
   } as any]);
 };
 
+/** Helper to detect 1st/2nd year semesters by name */
+export const isFirstYearSem = (name: string) => {
+  if (!name) return false;
+  const n = name.trim().toLowerCase();
+  return n.includes('1st') || n.includes('2nd') || n === '1' || n === '2' || n.includes('first') || n.includes('second');
+};
+
 export const getActivityLogs = async () => {
   const { data, error } = await supabase
     .from('activity_logs')
@@ -995,10 +1002,6 @@ export const applyMassFines = async (departmentId: string, isFirstYear: boolean)
   const fines = await getStaffAttendanceFines(departmentId);
   
   // 3. Filter by first year or not
-  const isFirstYearSem = (name: string) => {
-    const n = name.toLowerCase();
-    return n.includes('1st') || n.includes('2nd') || n === '1' || n === '2' || n.includes('first') || n.includes('second');
-  };
   const filtered = (fines || []).filter((item: any) => {
     const semName = item.profiles?.semesters?.name || '';
     return isFirstYear ? isFirstYearSem(semName) : !isFirstYearSem(semName);

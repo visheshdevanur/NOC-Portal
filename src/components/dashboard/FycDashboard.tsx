@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
 import { approveHodRequest, getAllDepartments, getFycStaffActivityLogs } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
+import StudentDuesOverviewTab from './shared/StudentDuesOverviewTab';
+import AttendanceFinesTab from './shared/AttendanceFinesTab';
 
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
-  GraduationCap, BookOpen, Eye, Clock, Import, Check, Banknote
+  GraduationCap, BookOpen, Eye, Clock, Import, Check, Banknote, FileWarning
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -57,7 +59,7 @@ type TeacherWithAssignments = {
   }[];
 };
 
-type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs';
+type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs' | 'studentdues' | 'attendances';
 
 const isFirstYearSem = (name: string) => {
   if (!name) return false;
@@ -594,6 +596,8 @@ export default function FycDashboard() {
     { id: 'approvals', label: 'Clearances', icon: <Activity className="w-4 h-4" /> },
     { id: 'fineApprovals', label: 'Fine Approvals', icon: <FileCheck className="w-4 h-4" /> },
     { id: 'collegeDues', label: 'College Dues', icon: <Banknote className="w-4 h-4" /> },
+    { id: 'studentdues', label: 'Student Dues Overview', icon: <Eye className="w-4 h-4" /> },
+    { id: 'attendances', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4 text-destructive" /> },
     { id: 'users', label: 'Clerks & Teachers', icon: <Users className="w-4 h-4" /> },
     { id: 'teacherDetails', label: 'Teacher Details', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> },
@@ -688,12 +692,12 @@ export default function FycDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-card rounded-2xl p-1.5 shadow-sm border border-border flex flex-wrap gap-1 w-full xl:w-max">
+      <div className="bg-card rounded-2xl p-1.5 shadow-sm border border-border flex flex-wrap gap-1">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 min-w-[140px] flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
+            className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
               activeTab === tab.id
                 ? 'bg-violet-500 text-white shadow-md'
                 : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
@@ -1637,6 +1641,16 @@ export default function FycDashboard() {
             })()}
           </div>
         </div>
+      )}
+
+      {/* ========= STUDENT DUES OVERVIEW TAB ========= */}
+      {activeTab === 'studentdues' && (
+        <StudentDuesOverviewTab role="fyc" />
+      )}
+
+      {/* ========= ATTENDANCE FINES TAB ========= */}
+      {activeTab === 'attendances' && (
+        <AttendanceFinesTab role="fyc" />
       )}
 
     </div>

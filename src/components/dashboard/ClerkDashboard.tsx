@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 
 import {
   X, Search, BookOpen, Users, UserPlus,
-  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download, Upload, AlertTriangle
+  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download, Upload
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -112,7 +112,6 @@ export default function ClerkDashboard() {
   const [catForm, setCatForm] = useState({ label: '', minPct: '', maxPct: '', amount: '' });
   const [catError, setCatError] = useState<string | null>(null);
   const [catSaving, setCatSaving] = useState(false);
-  const [massFineLoading, setMassFineLoading] = useState(false);
   const [massFineResult, setMassFineResult] = useState<string | null>(null);
   
   // Reduce Fine State
@@ -448,37 +447,9 @@ export default function ClerkDashboard() {
       fetchCategories();
     } catch (err: any) {
       setCatError(getFriendlyErrorMessage(err));
-    } finally { setCatSaving(false); }
-  };
-
-  const handleDeleteCategory = async (id: string) => {
-    if (!confirm('Delete this attendance fine category?')) return;
-    try {
-      const { deleteAttendanceCategory } = await import('../../lib/api');
-      await deleteAttendanceCategory(id);
-      fetchCategories();
-    } catch (err: any) {
-      alert('Failed to delete: ' + getFriendlyErrorMessage(err));
+    } finally {
+      setCatSaving(false);
     }
-  };
-
-  const handleApplyMassFines = async () => {
-    if (categories.length === 0) {
-      setAttCsvError('Please create attendance fine categories first before applying mass fines.');
-      return;
-    }
-    if (!confirm(`Apply mass fines to all rejected students based on ${categories.length} configured categories?\n\nThis will auto-assign fines based on attendance percentages.`)) return;
-    setMassFineLoading(true);
-    setMassFineResult(null);
-    setAttCsvError(null);
-    try {
-      const { applyMassFines } = await import('../../lib/api');
-      const result = await applyMassFines(profile?.department_id || '', true);
-      setMassFineResult(`Mass fines applied: ${result.updated} updated, ${result.skipped} skipped out of ${result.total} total.`);
-      fetchAttendances();
-    } catch (err: any) {
-      setAttCsvError(getFriendlyErrorMessage(err));
-    } finally { setMassFineLoading(false); }
   };
 
   const handleReduceFine = async (enrollmentId: string) => {
@@ -1103,13 +1074,6 @@ export default function ClerkDashboard() {
                 </h2>
                 <p className="text-muted-foreground text-sm mt-1">Define attendance % ranges and their corresponding fine amounts.</p>
               </div>
-              <button
-                onClick={() => { setEditingCat(null); setCatForm({ label: '', minPct: '', maxPct: '', amount: '' }); setCatError(null); setShowCatModal(true); }}
-                className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
-              >
-                <Plus className="w-4 h-4" />
-                Add Category
-              </button>
             </div>
 
             {loadingCategories ? (
@@ -1127,7 +1091,6 @@ export default function ClerkDashboard() {
                       <th className="p-3 font-semibold text-center">Min %</th>
                       <th className="p-3 font-semibold text-center">Max %</th>
                       <th className="p-3 font-semibold text-center">Fine (₹)</th>
-                      <th className="p-3 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -1137,22 +1100,6 @@ export default function ClerkDashboard() {
                         <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.min_pct}%</span></td>
                         <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.max_pct}%</span></td>
                         <td className="p-3 text-center font-bold text-amber-600">₹{cat.fine_amount}</td>
-                        <td className="p-3 text-right flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => { setEditingCat(cat); setCatForm({ label: cat.label, minPct: String(cat.min_pct), maxPct: String(cat.max_pct), amount: String(cat.fine_amount) }); setCatError(null); setShowCatModal(true); }}
-                            className="p-2 rounded-xl bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white transition-colors"
-                            title="Edit"
-                          >
-                            <Settings className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCategory(cat.id)}
-                            className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1213,14 +1160,6 @@ export default function ClerkDashboard() {
               />
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <button
-                onClick={handleApplyMassFines}
-                disabled={massFineLoading || categories.length === 0}
-                className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-3 rounded-xl font-bold transition-all shadow-sm disabled:opacity-50"
-              >
-                <AlertTriangle className="w-4 h-4" />
-                {massFineLoading ? 'Applying...' : 'Apply Mass Fines'}
-              </button>
               <button
                 onClick={downloadAttendanceDueTemplate}
                 className="flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 border border-border px-4 py-3 rounded-xl font-medium transition-all shadow-sm text-sm"

@@ -5,11 +5,13 @@ import {
   getDepartmentById, getHodDepartmentStudents, getHodFinePayments
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
+import StudentDuesOverviewTab from './shared/StudentDuesOverviewTab';
+import AttendanceFinesTab from './shared/AttendanceFinesTab';
 
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
-  GraduationCap, BookOpen, Eye, Clock, Banknote
+  GraduationCap, BookOpen, Eye, Clock, Banknote, FileWarning
 } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../../lib/errorHandler';
 
@@ -72,7 +74,7 @@ type TeacherWithAssignments = {
   }[];
 };
 
-type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs';
+type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs' | 'studentdues' | 'attendances';
 
 export default function HodDashboard() {
   const { user, profile } = useAuth();
@@ -393,6 +395,8 @@ export default function HodDashboard() {
     { id: 'approvals', label: 'Clearances', icon: <Activity className="w-4 h-4" /> },
     { id: 'fineApprovals', label: 'Fine Payments', icon: <FileCheck className="w-4 h-4" /> },
     { id: 'collegeDues', label: 'College Dues', icon: <Banknote className="w-4 h-4" /> },
+    { id: 'studentdues', label: 'Student Dues Overview', icon: <Eye className="w-4 h-4" /> },
+    { id: 'attendances', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4 text-destructive" /> },
     { id: 'users', label: 'Staff & Teachers', icon: <Users className="w-4 h-4" /> },
     { id: 'teacherDetails', label: 'Teacher Details', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> },
@@ -488,12 +492,12 @@ export default function HodDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-card rounded-2xl p-1.5 shadow-sm border border-border flex gap-1 w-full md:w-max">
+      <div className="bg-card rounded-2xl p-1.5 shadow-sm border border-border flex flex-wrap gap-1">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all ${
               activeTab === tab.id
                 ? 'bg-emerald-500 text-white shadow-md'
                 : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
@@ -1320,6 +1324,16 @@ export default function HodDashboard() {
             })()}
           </div>
         </div>
+      )}
+
+      {/* ========= STUDENT DUES OVERVIEW TAB ========= */}
+      {activeTab === 'studentdues' && profile?.department_id && (
+        <StudentDuesOverviewTab departmentId={profile.department_id} role="hod" />
+      )}
+
+      {/* ========= ATTENDANCE FINES TAB ========= */}
+      {activeTab === 'attendances' && profile?.department_id && (
+        <AttendanceFinesTab departmentId={profile.department_id} role="hod" />
       )}
 
     </div>
