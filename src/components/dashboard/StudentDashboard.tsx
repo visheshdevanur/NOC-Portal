@@ -161,7 +161,7 @@ export default function StudentDashboard() {
         student_id: user!.id,
         subject_id: subId,
         teacher_id: null,
-        attendance_pct: Math.floor(Math.random() * 30) + 70, // Mock attendance for demo
+        attendance_pct: null,
         status: 'pending',
         remarks: null
       }));
