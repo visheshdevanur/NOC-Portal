@@ -561,7 +561,7 @@ export const getAllStudentStatuses = async () => {
 export const getStaffAttendanceFines = async (departmentId: string) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+    .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
     .eq('status', 'rejected')
     .eq('profiles.department_id', departmentId);
   if (error) throw error;
