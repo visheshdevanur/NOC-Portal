@@ -9,7 +9,7 @@ import StudentDuesOverviewTab from './shared/StudentDuesOverviewTab';
 import AttendanceFinesTab from './shared/AttendanceFinesTab';
 
 import {
-  CheckCircle2, UserCog, Search, Users, Activity, X,
+  CheckCircle2, UserCog, Search, Users, Activity, X, Import,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
   GraduationCap, BookOpen, Eye, Clock, Banknote, FileWarning
 } from 'lucide-react';
@@ -95,6 +95,16 @@ export default function HodDashboard() {
   const [userCreating, setUserCreating] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
+
+  // Import Teachers state
+  const [importableTeachers, setImportableTeachers] = useState<any[]>([]);
+  const [loadingImportTeachers, setLoadingImportTeachers] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [selectedImportIds, setSelectedImportIds] = useState<Set<string>>(new Set());
+  const [importingTeachers, setImportingTeachers] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [importedTeachers, setImportedTeachers] = useState<any[]>([]);
 
   // Students state
   const [departmentStudents, setDepartmentStudents] = useState<UserProfile[]>([]);
@@ -185,8 +195,50 @@ export default function HodDashboard() {
       // Exclude FYC-managed teachers (created_by is set by FYC)
       const filtered = (data as UserProfile[]).filter(u => !(u as any).created_by);
       setDepartmentUsers(filtered);
+
+      const importedData = await import('../../lib/api').then(m => m.getImportedTeachersForDept(profile.department_id!));
+      setImportedTeachers(importedData);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
+  };
+
+  const fetchImportableTeachersList = async () => {
+    if (!profile?.department_id) return;
+    setLoadingImportTeachers(true);
+    setImportError(null);
+    try {
+      const data = await import('../../lib/api').then(m => m.getImportableTeachers(profile.department_id!));
+      setImportableTeachers(data);
+    } catch (err) { console.error(err); }
+    finally { setLoadingImportTeachers(false); }
+  };
+
+  const handleImportSelectedTeachers = async () => {
+    if (!profile?.department_id) return;
+    if (selectedImportIds.size === 0) { setImportError('Select at least one teacher'); return; }
+    setImportingTeachers(true);
+    try {
+      await import('../../lib/api').then(m => m.importTeachersToDept(profile.department_id!, Array.from(selectedImportIds), user!.id));
+      setImportSuccess('Teachers imported successfully');
+      setSelectedImportIds(new Set());
+      fetchUsers();
+      setShowImportModal(false);
+    } catch (err: any) {
+      setImportError(getFriendlyErrorMessage(err));
+    } finally {
+      setImportingTeachers(false);
+    }
+  };
+
+  const handleRemoveImport = async (teacherId: string) => {
+    if (!profile?.department_id) return;
+    if (!confirm('Are you sure you want to remove this imported teacher?')) return;
+    try {
+      await import('../../lib/api').then(m => m.removeImportedTeacher(profile.department_id!, teacherId));
+      fetchUsers();
+    } catch (err: any) {
+      alert(getFriendlyErrorMessage(err));
+    }
   };
 
   const fetchApprovedFines = async () => {
@@ -600,14 +652,116 @@ export default function HodDashboard() {
                 onChange={e => setSearchUsers(e.target.value)}
               />
             </div>
-            <button
-              onClick={() => setShowCreateUser(true)}
-              className="flex items-center gap-2 bg-emerald-500 text-white hover:bg-emerald-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm"
-            >
-              <UserPlus className="w-5 h-5" />
-              Add Staff / Teacher
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => { setShowImportModal(true); fetchImportableTeachersList(); }}
+                className="flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm"
+              >
+                <Import className="w-5 h-5" />
+                Import Teachers
+              </button>
+              <button
+                onClick={() => setShowCreateUser(true)}
+                className="flex items-center gap-2 bg-emerald-500 text-white hover:bg-emerald-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm"
+              >
+                <UserPlus className="w-5 h-5" />
+                Add Staff / Teacher
+              </button>
+            </div>
           </div>
+
+          {/* Import Teachers Modal */}
+          {showImportModal && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center z-50 p-4 overflow-y-auto">
+              <div className="bg-card rounded-3xl p-8 shadow-2xl border border-border w-full max-w-2xl mt-10 mb-10">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
+                    <Import className="w-5 h-5 text-blue-500" />
+                    Import Teachers from Other Departments
+                  </h3>
+                  <button onClick={() => { setShowImportModal(false); setSelectedImportIds(new Set()); }} className="p-2 rounded-xl hover:bg-secondary transition-colors">
+                    <X className="w-5 h-5 text-muted-foreground" />
+                  </button>
+                </div>
+                {importError && (
+                  <div className="p-4 mb-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
+                    <span><strong>Error:</strong> {importError}</span>
+                    <button onClick={() => setImportError(null)}><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+                {importSuccess && (
+                  <div className="p-4 mb-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 text-sm flex justify-between items-center">
+                    <span><strong>Success:</strong> {importSuccess}</span>
+                    <button onClick={() => setImportSuccess(null)}><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+
+                <div className="border border-border rounded-2xl overflow-hidden mt-4">
+                  {loadingImportTeachers ? (
+                    <div className="p-8 text-center text-muted-foreground animate-pulse">Loading teachers...</div>
+                  ) : importableTeachers.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground">No importable teachers found.</div>
+                  ) : (
+                    <>
+                      <div className="bg-secondary/50 px-4 py-3 border-b border-border flex items-center justify-between">
+                        <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-foreground">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 rounded border-border text-blue-500 focus:ring-blue-500"
+                            checked={selectedImportIds.size === importableTeachers.length && importableTeachers.length > 0}
+                            onChange={() => {
+                              if (selectedImportIds.size === importableTeachers.length) setSelectedImportIds(new Set());
+                              else setSelectedImportIds(new Set(importableTeachers.map(t => t.id)));
+                            }}
+                          />
+                          Select All ({importableTeachers.length} teachers)
+                        </label>
+                        <span className="text-xs text-muted-foreground">{selectedImportIds.size} selected</span>
+                      </div>
+                      <div className="max-h-[40vh] overflow-y-auto">
+                        {importableTeachers.map(teacher => {
+                          const isFYC = !!teacher.created_by;
+                          return (
+                            <label key={teacher.id} className="flex items-center gap-4 p-4 border-b border-border last:border-b-0 cursor-pointer hover:bg-secondary/30 transition-colors">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-border text-blue-500 focus:ring-blue-500"
+                                checked={selectedImportIds.has(teacher.id)}
+                                onChange={() => {
+                                  const next = new Set(selectedImportIds);
+                                  if (next.has(teacher.id)) next.delete(teacher.id);
+                                  else next.add(teacher.id);
+                                  setSelectedImportIds(next);
+                                }}
+                              />
+                              <div className="flex-1">
+                                <div className="font-bold text-foreground text-sm flex items-center gap-2">
+                                  {teacher.full_name}
+                                  {isFYC ? (
+                                    <span className="px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-600 text-[10px] uppercase">FYC Teacher</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full bg-secondary text-muted-foreground text-[10px] uppercase">{teacher.departments?.name || 'Unknown'}</span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-0.5">{teacher.email}</div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex gap-3 mt-8">
+                  <button onClick={() => setShowImportModal(false)} className="flex-1 py-3 px-4 rounded-xl border border-border font-medium hover:bg-secondary">Cancel</button>
+                  <button onClick={handleImportSelectedTeachers} disabled={importingTeachers || selectedImportIds.size === 0} className="flex-1 py-3 px-4 rounded-xl bg-blue-500 text-white font-bold hover:bg-blue-600 disabled:opacity-50">
+                    {importingTeachers ? 'Importing...' : `Import ${selectedImportIds.size} Teachers`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Create User Modal */}
           {showCreateUser && (
@@ -670,7 +824,7 @@ export default function HodDashboard() {
           <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
             {loadingUsers ? (
               <div className="p-8 text-center text-muted-foreground animate-pulse">Loading department users...</div>
-            ) : filteredUsers.length === 0 ? (
+            ) : filteredUsers.length === 0 && importedTeachers.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">No staff or teachers found in your department.</div>
             ) : (
               <div className="overflow-x-auto">
@@ -698,6 +852,31 @@ export default function HodDashboard() {
                         </td>
                       </tr>
                     ))}
+                    {importedTeachers.map((imp) => {
+                      const t = imp.profiles;
+                      const isVisible = t?.full_name?.toLowerCase().includes(searchUsers.toLowerCase()) || t?.role?.toLowerCase().includes(searchUsers.toLowerCase());
+                      if (!t || !isVisible) return null;
+                      return (
+                        <tr key={imp.teacher_id} className="hover:bg-blue-500/5 transition-colors bg-blue-500/5">
+                          <td className="p-4 font-medium text-foreground flex items-center gap-2">
+                            {t.full_name}
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 text-[10px] uppercase font-bold tracking-wider">
+                              Imported from {t.departments?.name || 'FYC'}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${roleColors[t.role] || 'bg-secondary text-foreground'}`}>
+                              {t.role}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right">
+                            <button onClick={() => handleRemoveImport(imp.teacher_id)} className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors" title="Remove imported teacher">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -207,18 +207,95 @@ export const assignTeacherToSubject = async (enrollmentId: string, teacherId: st
 };
 
 export const getAllFaculty = async (departmentId?: string) => {
-  let query = supabase
+  if (!departmentId) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, department_id')
+      .in('role', ['faculty', 'teacher']);
+    if (error) throw error;
+    return data;
+  }
+
+  // Fetch native teachers
+  const { data: nativeTeachers, error: nativeError } = await supabase
     .from('profiles')
     .select('id, full_name, department_id')
-    .in('role', ['faculty', 'teacher']);
-    
-  if (departmentId) {
-    query = query.eq('department_id', departmentId);
+    .in('role', ['faculty', 'teacher'])
+    .eq('department_id', departmentId);
+  if (nativeError) throw nativeError;
+
+  // Fetch imported teachers
+  const { data: importedData, error: importError } = await supabase
+    .from('imported_teachers')
+    .select('profiles!inner(id, full_name, department_id)')
+    .eq('department_id', departmentId);
+  if (importError && importError.code !== '42P01') {
+    // 42P01 means table doesn't exist, ignore if migration hasn't run
+    console.error(importError);
   }
+
+  const importedTeachers = (importedData || []).map((imp: any) => imp.profiles).filter(Boolean);
   
-  const { data, error } = await query;
+  // Combine and deduplicate
+  const allTeachers = [...(nativeTeachers || []), ...importedTeachers];
+  const uniqueTeachersMap = new Map();
+  allTeachers.forEach(t => uniqueTeachersMap.set(t.id, t));
+
+  return Array.from(uniqueTeachersMap.values());
+};
+
+export const getImportableTeachers = async (departmentId: string) => {
+  // Get currently imported IDs
+  const { data: imported, error: impErr } = await supabase
+    .from('imported_teachers')
+    .select('teacher_id')
+    .eq('department_id', departmentId);
+  if (impErr && impErr.code !== '42P01') throw impErr;
+  
+  const importedIds = (imported || []).map(i => i.teacher_id);
+  
+  // Fetch all teachers who are NOT in this department natively
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, role, email, created_by, department_id, departments!profiles_department_id_fkey(name)')
+    .in('role', ['teacher', 'faculty'])
+    .neq('department_id', departmentId)
+    .order('full_name');
+    
   if (error) throw error;
-  return data;
+  
+  return (data || []).filter(t => !importedIds.includes(t.id));
+};
+
+export const getImportedTeachersForDept = async (departmentId: string) => {
+  const { data, error } = await supabase
+    .from('imported_teachers')
+    .select('teacher_id, created_at, profiles!inner(id, full_name, email, role, departments!profiles_department_id_fkey(name))')
+    .eq('department_id', departmentId);
+  if (error && error.code === '42P01') return []; // Ignore if table not created
+  if (error) throw error;
+  return data || [];
+};
+
+export const importTeachersToDept = async (departmentId: string, teacherIds: string[], userId: string) => {
+  const records = teacherIds.map(id => ({
+    department_id: departmentId,
+    teacher_id: id,
+    created_by: userId
+  }));
+  const { error } = await supabase
+    .from('imported_teachers')
+    .insert(records);
+  if (error) throw error;
+};
+
+export const removeImportedTeacher = async (departmentId: string, teacherId: string) => {
+  const { error } = await supabase
+    .from('imported_teachers')
+    .delete()
+    .eq('department_id', departmentId)
+    .eq('teacher_id', teacherId);
+  if (error) throw error;
 };
 
 export const assignTeacherToSection = async (subjectId: string, section: string, teacherId: string, semesterId: string) => {
