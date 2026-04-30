@@ -105,6 +105,8 @@ export default function HodDashboard() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [importedTeachers, setImportedTeachers] = useState<any[]>([]);
+  const [importDeptFilter, setImportDeptFilter] = useState<string>('');
+  const [allDepartments, setAllDepartments] = useState<any[]>([]);
 
   // Students state
   const [departmentStudents, setDepartmentStudents] = useState<UserProfile[]>([]);
@@ -207,8 +209,13 @@ export default function HodDashboard() {
     setLoadingImportTeachers(true);
     setImportError(null);
     try {
-      const data = await import('../../lib/api').then(m => m.getImportableTeachers(profile.department_id!));
-      setImportableTeachers(data);
+      const [teacherData, deptData] = await Promise.all([
+        import('../../lib/api').then(m => m.getImportableTeachers(profile.department_id!)),
+        import('../../lib/api').then(m => m.getAllDepartments())
+      ]);
+      setImportableTeachers(teacherData);
+      // Exclude current department from dropdown
+      setAllDepartments((deptData || []).filter((d: any) => d.id !== profile.department_id));
     } catch (err) { console.error(err); }
     finally { setLoadingImportTeachers(false); }
   };
@@ -679,7 +686,7 @@ export default function HodDashboard() {
                     <Import className="w-5 h-5 text-blue-500" />
                     Import Teachers from Other Departments
                   </h3>
-                  <button onClick={() => { setShowImportModal(false); setSelectedImportIds(new Set()); }} className="p-2 rounded-xl hover:bg-secondary transition-colors">
+                  <button onClick={() => { setShowImportModal(false); setSelectedImportIds(new Set()); setImportDeptFilter(''); }} className="p-2 rounded-xl hover:bg-secondary transition-colors">
                     <X className="w-5 h-5 text-muted-foreground" />
                   </button>
                 </div>
@@ -696,62 +703,92 @@ export default function HodDashboard() {
                   </div>
                 )}
 
-                <div className="border border-border rounded-2xl overflow-hidden mt-4">
-                  {loadingImportTeachers ? (
-                    <div className="p-8 text-center text-muted-foreground animate-pulse">Loading teachers...</div>
-                  ) : importableTeachers.length === 0 ? (
-                    <div className="p-8 text-center text-muted-foreground">No importable teachers found.</div>
-                  ) : (
-                    <>
-                      <div className="bg-secondary/50 px-4 py-3 border-b border-border flex items-center justify-between">
-                        <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-foreground">
-                          <input
-                            type="checkbox"
-                            className="w-4 h-4 rounded border-border text-blue-500 focus:ring-blue-500"
-                            checked={selectedImportIds.size === importableTeachers.length && importableTeachers.length > 0}
-                            onChange={() => {
-                              if (selectedImportIds.size === importableTeachers.length) setSelectedImportIds(new Set());
-                              else setSelectedImportIds(new Set(importableTeachers.map(t => t.id)));
-                            }}
-                          />
-                          Select All ({importableTeachers.length} teachers)
-                        </label>
-                        <span className="text-xs text-muted-foreground">{selectedImportIds.size} selected</span>
-                      </div>
-                      <div className="max-h-[40vh] overflow-y-auto">
-                        {importableTeachers.map(teacher => {
-                          const isFYC = !!teacher.created_by;
-                          return (
-                            <label key={teacher.id} className="flex items-center gap-4 p-4 border-b border-border last:border-b-0 cursor-pointer hover:bg-secondary/30 transition-colors">
+                {/* Branch Dropdown */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Select Branch</label>
+                  <select
+                    className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={importDeptFilter}
+                    onChange={e => { setImportDeptFilter(e.target.value); setSelectedImportIds(new Set()); }}
+                  >
+                    <option value="">Choose a branch...</option>
+                    <option value="__fyc__">First Year Teachers</option>
+                    {allDepartments.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {importDeptFilter && (() => {
+                  const filtered = importableTeachers.filter(t => {
+                    if (importDeptFilter === '__fyc__') return !!t.created_by;
+                    return t.department_id === importDeptFilter;
+                  });
+                  return (
+                    <div className="border border-border rounded-2xl overflow-hidden mt-4">
+                      {loadingImportTeachers ? (
+                        <div className="p-8 text-center text-muted-foreground animate-pulse">Loading teachers...</div>
+                      ) : filtered.length === 0 ? (
+                        <div className="p-8 text-center text-muted-foreground">No teachers found in this branch.</div>
+                      ) : (
+                        <>
+                          <div className="bg-secondary/50 px-4 py-3 border-b border-border flex items-center justify-between">
+                            <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-foreground">
                               <input
                                 type="checkbox"
                                 className="w-4 h-4 rounded border-border text-blue-500 focus:ring-blue-500"
-                                checked={selectedImportIds.has(teacher.id)}
+                                checked={filtered.length > 0 && filtered.every(t => selectedImportIds.has(t.id))}
                                 onChange={() => {
+                                  const allSelected = filtered.every(t => selectedImportIds.has(t.id));
                                   const next = new Set(selectedImportIds);
-                                  if (next.has(teacher.id)) next.delete(teacher.id);
-                                  else next.add(teacher.id);
+                                  if (allSelected) {
+                                    filtered.forEach(t => next.delete(t.id));
+                                  } else {
+                                    filtered.forEach(t => next.add(t.id));
+                                  }
                                   setSelectedImportIds(next);
                                 }}
                               />
-                              <div className="flex-1">
-                                <div className="font-bold text-foreground text-sm flex items-center gap-2">
-                                  {teacher.full_name}
-                                  {isFYC ? (
-                                    <span className="px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-600 text-[10px] uppercase">FYC Teacher</span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded-full bg-secondary text-muted-foreground text-[10px] uppercase">{teacher.departments?.name || 'Unknown'}</span>
-                                  )}
-                                </div>
-                                <div className="text-xs text-muted-foreground mt-0.5">{teacher.email}</div>
-                              </div>
+                              Select All ({filtered.length} teachers)
                             </label>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
+                            <span className="text-xs text-muted-foreground">{selectedImportIds.size} selected</span>
+                          </div>
+                          <div className="max-h-[40vh] overflow-y-auto">
+                            {filtered.map(teacher => {
+                              const isFYC = !!teacher.created_by;
+                              return (
+                                <label key={teacher.id} className="flex items-center gap-4 p-4 border-b border-border last:border-b-0 cursor-pointer hover:bg-secondary/30 transition-colors">
+                                  <input
+                                    type="checkbox"
+                                    className="w-4 h-4 rounded border-border text-blue-500 focus:ring-blue-500"
+                                    checked={selectedImportIds.has(teacher.id)}
+                                    onChange={() => {
+                                      const next = new Set(selectedImportIds);
+                                      if (next.has(teacher.id)) next.delete(teacher.id);
+                                      else next.add(teacher.id);
+                                      setSelectedImportIds(next);
+                                    }}
+                                  />
+                                  <div className="flex-1">
+                                    <div className="font-bold text-foreground text-sm flex items-center gap-2">
+                                      {teacher.full_name}
+                                      {isFYC ? (
+                                        <span className="px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-600 text-[10px] uppercase">FYC Teacher</span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 rounded-full bg-secondary text-muted-foreground text-[10px] uppercase">{teacher.departments?.name || 'Unknown'}</span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-0.5">{teacher.email}</div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="flex gap-3 mt-8">
                   <button onClick={() => setShowImportModal(false)} className="flex-1 py-3 px-4 rounded-xl border border-border font-medium hover:bg-secondary">Cancel</button>
