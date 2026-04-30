@@ -1,7 +1,7 @@
 -- Create table for tracking imported teachers
 CREATE TABLE IF NOT EXISTS imported_teachers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  department_id TEXT NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+  department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
   teacher_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
