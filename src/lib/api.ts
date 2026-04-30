@@ -88,9 +88,17 @@ export const markFacultySubjectStatus = async (
   attendancePct: number, 
   remarks: string
 ) => {
+  const updatePayload: any = { status: status as any, attendance_pct: attendancePct, remarks };
+  
+  // If the faculty approves the subject, automatically wipe any assigned attendance fines
+  if (status === 'completed') {
+    updatePayload.attendance_fee = 0;
+    updatePayload.attendance_fee_verified = false;
+  }
+
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ status: status as any, attendance_pct: attendancePct, remarks } as any)
+    .update(updatePayload)
     .eq('id', enrollmentId)
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name)')
     .single();
