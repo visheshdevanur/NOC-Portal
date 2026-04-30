@@ -401,6 +401,12 @@ export default function FycDashboard() {
       return;
     }
 
+    if (newUser.role === 'clerk' && !newUser.department_id) {
+      setUserError('Department is required for Clerks.');
+      setUserCreating(false);
+      return;
+    }
+
     try {
       const { tempSupabase } = await import('../../lib/supabase');
 
@@ -1002,6 +1008,21 @@ export default function FycDashboard() {
                       <option value="teacher">Teacher</option>
                     </select>
                   </div>
+                  {newUser.role === 'clerk' && (
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">Department</label>
+                      <select
+                        className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        value={newUser.department_id}
+                        onChange={e => setNewUser({ ...newUser, department_id: e.target.value })}
+                      >
+                        <option value="">Select Department...</option>
+                        {departments.map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">Password</label>
                     <input type="password" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
