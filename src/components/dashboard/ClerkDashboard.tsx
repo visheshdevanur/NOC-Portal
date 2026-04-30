@@ -476,12 +476,6 @@ export default function ClerkDashboard() {
       // Clerk only handles 1st/2nd sem students — filter out higher sem students
       const sems = await getSemestersByDepartment(profile.department_id);
       const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
-      const filtered = (data as UserProfile[]).filter(u => {
-        if (u.role === 'student') {
-          return u.semester_id ? firstYearSemIds.has(u.semester_id) : true;
-        }
-        return true;
-      });
       // Fetch all FYC user IDs first
       const { data: fycUsers } = await supabase
         .from('profiles')
@@ -489,7 +483,18 @@ export default function ClerkDashboard() {
         .eq('role', 'fyc');
       const fycIds = new Set((fycUsers || []).map(f => f.id));
 
-      // Fetch teachers created by FYC users only
+      const filtered = (data as UserProfile[]).filter(u => {
+        if (u.role === 'student') {
+          return u.semester_id ? firstYearSemIds.has(u.semester_id) : true;
+        }
+        // For teachers/faculty: only keep if created by an FYC user
+        if (u.role === 'teacher' || u.role === 'faculty') {
+          return !!(u as any).created_by && fycIds.has((u as any).created_by);
+        }
+        return true;
+      });
+
+      // Also fetch FYC-created teachers that may have no department (created without dept)
       const { data: fycTeachers } = await supabase
         .from('profiles')
         .select('*, departments!profiles_department_id_fkey(name)')
@@ -500,7 +505,7 @@ export default function ClerkDashboard() {
       // Filter to only teachers created by FYC users
       const fycCreatedTeachers = (fycTeachers || []).filter(t => fycIds.has(t.created_by));
 
-      // Merge: native dept users + FYC-created teachers (deduplicated)
+      // Merge: native dept students + FYC teachers (deduplicated)
       const existingIds = new Set(filtered.map(u => u.id));
       const fycFiltered = fycCreatedTeachers.filter(t => !existingIds.has(t.id));
 
