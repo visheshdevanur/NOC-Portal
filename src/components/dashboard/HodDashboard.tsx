@@ -722,7 +722,11 @@ export default function HodDashboard() {
                 {importDeptFilter && (() => {
                   const filtered = importableTeachers.filter(t => {
                     if (importDeptFilter === '__fyc__') return !!t.created_by;
-                    return t.department_id === importDeptFilter;
+                    // Show teachers native to this dept, but exclude those imported INTO this dept from elsewhere
+                    if (t.department_id !== importDeptFilter) return false;
+                    // Also exclude teachers that are already imported into this dept by someone else
+                    if (t._importedIntoDepts && t._importedIntoDepts.includes(importDeptFilter)) return false;
+                    return true;
                   });
                   return (
                     <div className="border border-border rounded-2xl overflow-hidden mt-4">

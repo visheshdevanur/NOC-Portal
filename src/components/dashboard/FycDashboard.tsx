@@ -395,8 +395,8 @@ export default function FycDashboard() {
     setUserError(null);
     setUserSuccess(null);
 
-    if (!newUser.email || !newUser.password || !newUser.full_name || !newUser.department_id) {
-      setUserError('All fields including Department are required.');
+    if (!newUser.email || !newUser.password || !newUser.full_name) {
+      setUserError('Name, Email and Password are required.');
       setUserCreating(false);
       return;
     }
@@ -411,20 +411,22 @@ export default function FycDashboard() {
       if (authError) throw authError;
       if (!authData.user) throw new Error('User creation failed');
 
-      const { error: profileError } = await supabase.from('profiles').upsert({
+      const profileData: any = {
         id: authData.user.id,
         full_name: newUser.full_name,
         role: newUser.role as any,
-        department_id: newUser.department_id,
         created_by: user.id
-      });
+      };
+      // Only set department_id if provided (clerks may need one)
+      if (newUser.department_id) profileData.department_id = newUser.department_id;
+
+      const { error: profileError } = await supabase.from('profiles').upsert(profileData);
       if (profileError) throw profileError;
 
       await supabase.from('activity_logs').insert([{
         user_id: user?.id,
         user_role: 'fyc',
         user_name: user?.email,
-        department_id: newUser.department_id,
         action: 'User Created',
         details: `Created ${newUser.role} profile for ${newUser.full_name}`
       }]);
@@ -455,6 +457,27 @@ export default function FycDashboard() {
       }]);
 
       setUserSuccess(`"${userName}" deleted.`);
+      fetchUsers();
+    } catch (err: any) {
+      setUserError(getFriendlyErrorMessage(err));
+    }
+  };
+
+  const handleRemoveImportedTeacher = async (userId: string, userName: string) => {
+    if (!confirm(`Remove "${userName}" from your department? (This will NOT delete their account)`)) return;
+    try {
+      const { error } = await supabase.from('profiles').update({ created_by: null } as any).eq('id', userId);
+      if (error) throw error;
+      
+      await supabase.from('activity_logs').insert([{
+        user_id: user?.id,
+        user_role: 'fyc',
+        user_name: user?.email,
+        action: 'Removed Imported Teacher',
+        details: `Removed imported teacher ${userName} from FYC`
+      }]);
+
+      setUserSuccess(`"${userName}" removed from your department.`);
       fetchUsers();
     } catch (err: any) {
       setUserError(getFriendlyErrorMessage(err));
@@ -961,19 +984,6 @@ export default function FycDashboard() {
 
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">Department</label>
-                    <select
-                      className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
-                      value={newUser.department_id}
-                      onChange={e => setNewUser({ ...newUser, department_id: e.target.value })}
-                    >
-                      <option value="">Select Department...</option>
-                      {departments.map(d => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-foreground mb-1">Full Name</label>
                     <input type="text" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.full_name} onChange={e => setNewUser({ ...newUser, full_name: e.target.value })} />
                   </div>
@@ -1026,22 +1036,41 @@ export default function FycDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {filteredUsers.map((u) => (
-                      <tr key={u.id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="p-4 font-medium text-foreground">{u.full_name}</td>
-                        <td className="p-4 text-muted-foreground">{u.departments?.name || '—'}</td>
-                        <td className="p-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${roleColors[u.role] || 'bg-secondary text-foreground'}`}>
-                            {u.role}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right">
-                          <button onClick={() => handleDeleteUser(u.id, u.full_name)} className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors" title="Delete user">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredUsers.map((u) => {
+                      // If the teacher has a department_id, they were imported (not created by FYC from scratch)
+                      const isImported = (u.role === 'teacher' || u.role === 'faculty') && !!(u as any).department_id;
+                      return (
+                        <tr key={u.id} className={`hover:bg-secondary/20 transition-colors ${isImported ? 'bg-blue-500/5' : ''}`}>
+                          <td className="p-4 font-medium text-foreground">
+                            <div className="flex items-center gap-2">
+                              {u.full_name}
+                              {isImported && (
+                                <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 text-[10px] uppercase font-bold tracking-wider">
+                                  Imported from {u.departments?.name || 'Unknown'}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4 text-muted-foreground">{u.departments?.name || '—'}</td>
+                          <td className="p-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${roleColors[u.role] || 'bg-secondary text-foreground'}`}>
+                              {u.role}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right">
+                            {isImported ? (
+                              <button onClick={() => handleRemoveImportedTeacher(u.id, u.full_name)} className="p-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white transition-colors" title="Remove from dept">
+                                <X className="w-4 h-4" />
+                              </button>
+                            ) : (
+                              <button onClick={() => handleDeleteUser(u.id, u.full_name)} className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors" title="Delete user">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

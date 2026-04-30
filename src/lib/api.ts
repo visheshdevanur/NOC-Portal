@@ -245,14 +245,26 @@ export const getAllFaculty = async (departmentId?: string) => {
 };
 
 export const getImportableTeachers = async (departmentId: string) => {
-  // Get currently imported IDs
+  // Get teachers already imported into THIS department
   const { data: imported, error: impErr } = await supabase
     .from('imported_teachers')
     .select('teacher_id')
     .eq('department_id', departmentId);
   if (impErr && impErr.code !== '42P01') throw impErr;
   
-  const importedIds = (imported || []).map(i => i.teacher_id);
+  const importedIds = new Set((imported || []).map(i => i.teacher_id));
+
+  // Get ALL import records so we know which teachers are imported into which departments
+  const { data: allImports } = await supabase
+    .from('imported_teachers')
+    .select('teacher_id, department_id');
+  
+  // Build a set of teacher_ids imported into each department
+  const importedByDept: Record<string, Set<string>> = {};
+  for (const imp of (allImports || [])) {
+    if (!importedByDept[imp.department_id]) importedByDept[imp.department_id] = new Set();
+    importedByDept[imp.department_id].add(imp.teacher_id);
+  }
   
   // Fetch all teachers who are NOT in this department natively
   const { data, error } = await supabase
@@ -264,7 +276,14 @@ export const getImportableTeachers = async (departmentId: string) => {
     
   if (error) throw error;
   
-  return (data || []).filter(t => !importedIds.includes(t.id));
+  // Filter out teachers already imported into THIS department
+  // Also attach importedByDept info so frontend can filter per-branch
+  return (data || []).filter(t => !importedIds.has(t.id)).map(t => ({
+    ...t,
+    _importedIntoDepts: Object.entries(importedByDept)
+      .filter(([_, ids]) => ids.has(t.id))
+      .map(([deptId]) => deptId)
+  }));
 };
 
 export const getImportedTeachersForDept = async (departmentId: string) => {
