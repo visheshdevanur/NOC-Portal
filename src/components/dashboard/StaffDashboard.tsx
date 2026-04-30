@@ -291,17 +291,24 @@ export default function StaffDashboard() {
       // Fetch attendance fines for these students
       const { data: attendanceData, error: attErr } = await supabase
         .from('subject_enrollment')
-        .select('student_id, attendance_fee')
+        .select('student_id, attendance_fee, attendance_fee_verified')
         .in('student_id', studentIds);
       if (attErr) throw attErr;
 
       // Build maps
       const libMap = new Map((libDues || []).map((d: any) => [d.student_id, d]));
       const colMap = new Map((collegeDues || []).map((d: any) => [d.student_id, d]));
-      const attMap = new Map();
+      const attMapUnpaid = new Map();
+      const attMapPaid = new Map();
       (attendanceData || []).forEach((d: any) => {
-        const current = attMap.get(d.student_id) || 0;
-        attMap.set(d.student_id, current + (Number(d.attendance_fee) || 0));
+        const fee = Number(d.attendance_fee) || 0;
+        if (fee > 0) {
+          if (d.attendance_fee_verified) {
+            attMapPaid.set(d.student_id, (attMapPaid.get(d.student_id) || 0) + fee);
+          } else {
+            attMapUnpaid.set(d.student_id, (attMapUnpaid.get(d.student_id) || 0) + fee);
+          }
+        }
       });
 
       // Merge into combined records
@@ -309,7 +316,8 @@ export default function StaffDashboard() {
         ...s,
         library: libMap.get(s.id) || null,
         college: colMap.get(s.id) || null,
-        attendance_fine: attMap.get(s.id) || 0,
+        attendance_fine_unpaid: attMapUnpaid.get(s.id) || 0,
+        attendance_fine_paid: attMapPaid.get(s.id) || 0,
       }));
 
       setStudentDuesOverview(combined);
@@ -2269,7 +2277,7 @@ export default function StaffDashboard() {
                     <th className="p-4 font-semibold">Semester</th>
                     <th className="p-4 font-semibold text-center">Library Dues</th>
                     <th className="p-4 font-semibold text-center">College Fee Status</th>
-                    <th className="p-4 font-semibold">Department Dues (₹)</th>
+                    <th className="p-4 font-semibold">Attendance Fines (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -2291,7 +2299,8 @@ export default function StaffDashboard() {
                     filteredStudentDuesOverview.map((s, idx) => {
                       const hasLibDues = s.library?.has_dues;
                       const colStatus = s.college?.status || 'N/A';
-                      const attFine = Number(s.attendance_fine) || 0;
+                      const attFineUnpaid = Number(s.attendance_fine_unpaid) || 0;
+                      const attFinePaid = Number(s.attendance_fine_paid) || 0;
 
                       return (
                         <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
@@ -2324,8 +2333,14 @@ export default function StaffDashboard() {
                               <span className="text-xs text-muted-foreground">N/A</span>
                             )}
                           </td>
-                          <td className={`p-4 font-bold text-sm ${attFine > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
-                            {attFine > 0 ? `₹${attFine}` : '—'}
+                          <td className="p-4 font-bold text-sm">
+                            {attFineUnpaid > 0 ? (
+                              <span className="text-amber-600 dark:text-amber-400">₹{attFineUnpaid} (Pending)</span>
+                            ) : attFinePaid > 0 ? (
+                              <span className="text-emerald-600 dark:text-emerald-400">₹{attFinePaid} (Paid)</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </td>
                         </tr>
                       );
