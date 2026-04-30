@@ -402,6 +402,24 @@ export default function AccountsDashboard() {
                         </td>
                         <td className="p-5 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {d.status === 'completed' && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const { error } = await supabase.from('student_dues').update({ status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null } as any).eq('id', d.id);
+                                    if (error) throw error;
+                                    await logActivity('Set College Due', `Marked ${d.profiles?.full_name || 'student'} as having dues`);
+                                    setSuccess(`Set due for ${d.profiles?.full_name}`);
+                                    fetchDues();
+                                  } catch (err: any) {
+                                    setError('Failed to set due: ' + (err?.message || 'Unknown'));
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white text-xs font-bold rounded-lg transition-all"
+                              >
+                                Set Due
+                              </button>
+                            )}
                             {d.status === 'pending' && (
                                 <>
                                   {!(d.permitted_until && new Date(d.permitted_until) > new Date()) && (
@@ -587,6 +605,24 @@ export default function AccountsDashboard() {
                             </td>
                             <td className="p-5 text-right">
                               <div className="flex items-center justify-end gap-2">
+                                {d.status === 'completed' && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const { error } = await supabase.from('student_dues').update({ status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null } as any).eq('id', d.id);
+                                        if (error) throw error;
+                                        await logActivity('Set College Due', `Marked ${d.profiles?.full_name || 'student'} as having dues`);
+                                        setSuccess(`Set due for ${d.profiles?.full_name}`);
+                                        fetchDues();
+                                      } catch (err: any) {
+                                        setError('Failed to set due: ' + (err?.message || 'Unknown'));
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white text-xs font-bold rounded-lg transition-all"
+                                  >
+                                    Set Due
+                                  </button>
+                                )}
                                 {d.status === 'pending' && (
                                   <>
                                     {!(d.permitted_until && new Date(d.permitted_until) > new Date()) && (

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getLibraryDues, updateLibraryDue, bulkProcessLibraryDues, getAllDepartments, getSemestersByDepartment } from '../lib/api';
-import { BookOpen, UserCheck, AlertCircle, Search, Upload, Download, RefreshCw, Save, X, Building2, GraduationCap, CornerUpLeft, Users } from 'lucide-react';
+import { getLibraryDues, bulkProcessLibraryDues, getAllDepartments, getSemestersByDepartment, setLibraryDue, permitLibraryDue, clearLibraryDue } from '../lib/api';
+import { BookOpen, UserCheck, AlertCircle, Search, Upload, Download, RefreshCw, X, Building2, GraduationCap, CornerUpLeft, Users, ShieldCheck, ShieldOff, ShieldAlert } from 'lucide-react';
 import Papa from 'papaparse';
 import { getFriendlyErrorMessage } from '../lib/errorHandler';
 
@@ -12,12 +12,9 @@ export default function LibraryDashboard() {
   // CSV Upload States
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvProcessing, setCsvProcessing] = useState(false);
-  
-  // Editing Due State
-  const [editingDueId, setEditingDueId] = useState<string | null>(null);
-  const [editAmount, setEditAmount] = useState<number>(0);
-  const [clearingPaidAmounts, setClearingPaidAmounts] = useState<Record<string, number>>({});
-  const [editRemarks, setEditRemarks] = useState<string>('');
+
+  // Action loading
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Alerts
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -75,33 +72,42 @@ export default function LibraryDashboard() {
     }
   };
 
-  const handlePaymentOrClear = async (due: any, payment: number = 0) => {
+  const handleSetDue = async (due: any) => {
+    setActionLoading(due.id);
     try {
-      const fine = due.fine_amount || 0;
-      const previousPaid = due.paid_amount || 0;
-      const totalPaid = previousPaid + payment;
-      const remaining = Math.max(0, fine - totalPaid);
-      const hasDues = remaining > 0;
-      const remarks = hasDues ? (due.remarks || 'Partial payment received') : 'Cleared manually';
-
-      await updateLibraryDue(due.student_id, hasDues, fine, totalPaid, remarks);
-      setSuccessMsg(hasDues ? `Payment of ₹${payment} recorded. Remaining: ₹${remaining}` : `Cleared dues for ${due.profiles.full_name}`);
+      await setLibraryDue(due.student_id);
+      setSuccessMsg(`Set due for ${due.profiles?.full_name}`);
       fetchDues();
     } catch (err: any) {
       setErrorMsg(getFriendlyErrorMessage(err));
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  const handleSaveDue = async (due: any) => {
+  const handlePermit = async (due: any) => {
+    setActionLoading(due.id);
     try {
-      const hasDues = editAmount > 0;
-      const remarksToSave = hasDues && !editRemarks.trim() ? 'Library Fine Pending' : editRemarks;
-      await updateLibraryDue(due.student_id, hasDues, editAmount, due.paid_amount || 0, remarksToSave);
-      setSuccessMsg(`Updated dues for ${due.profiles.full_name}`);
-      setEditingDueId(null);
+      await permitLibraryDue(due.student_id);
+      setSuccessMsg(`Permitted clearance for ${due.profiles?.full_name}`);
       fetchDues();
     } catch (err: any) {
       setErrorMsg(getFriendlyErrorMessage(err));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleClearDue = async (due: any) => {
+    setActionLoading(due.id);
+    try {
+      await clearLibraryDue(due.student_id);
+      setSuccessMsg(`Cleared dues for ${due.profiles?.full_name}`);
+      fetchDues();
+    } catch (err: any) {
+      setErrorMsg(getFriendlyErrorMessage(err));
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -117,16 +123,21 @@ export default function LibraryDashboard() {
       complete: async (results) => {
         try {
           const rows = results.data as any[];
+          // Support both 'usn' and 'roll_number' column names
+          const usnCol = Object.keys(rows[0] || {}).find(k => k.toLowerCase() === 'usn' || k.toLowerCase() === 'roll_number');
+          if (!usnCol) {
+            throw new Error('No valid column found. Please ensure a "usn" column exists.');
+          }
           const notPaidRolls = rows
-            .filter(r => r.roll_number)
-            .map(r => String(r.roll_number).trim());
+            .filter(r => r[usnCol])
+            .map(r => String(r[usnCol]).trim());
 
           if (notPaidRolls.length === 0) {
-            throw new Error('No valid rows found. Please ensure "roll_number" column exists.');
+            throw new Error('No valid USNs found in the file.');
           }
 
           await bulkProcessLibraryDues(notPaidRolls);
-          setSuccessMsg(`Upload processed! ${notPaidRolls.length} students marked as not paid. All other students automatically cleared.`);
+          setSuccessMsg(`Upload processed! ${notPaidRolls.length} students marked as having dues. All others auto-cleared.`);
           setCsvFile(null);
           fetchDues();
         } catch (err: any) {
@@ -143,11 +154,11 @@ export default function LibraryDashboard() {
   };
 
   const downloadTemplate = () => {
-    const csvContent = "data:text/csv;charset=utf-8,roll_number\n4MH24CS001\n4MH24CS002";
+    const csvContent = "data:text/csv;charset=utf-8,usn\n4MH24CS001\n4MH24CS002";
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "Library_Dues_Not_Paid_Template.csv");
+    link.setAttribute("download", "Library_Dues_USN_Template.csv");
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -180,98 +191,99 @@ export default function LibraryDashboard() {
 
   const isGlobalSearch = searchTerm.trim().length >= 2;
 
+  // Get status info
+  const getStatus = (due: any) => {
+    if (!due.has_dues) return { label: 'Cleared', color: 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800/30 dark:text-emerald-400' };
+    if (due.permitted) return { label: 'Permitted', color: 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800/30 dark:text-amber-400' };
+    return { label: 'Blocked', color: 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/20 dark:border-red-800/30 dark:text-red-400' };
+  };
+
   // Render student row
-  const renderStudentRow = (due: any) => (
-    <tr key={due.id} className={`transition-colors py-2 ${editingDueId === due.id ? 'bg-indigo-50 dark:bg-indigo-900/10' : 'hover:bg-secondary/20'}`}>
-      <td className="p-4">
-        <div className="font-bold text-foreground text-[15px]">{due.profiles?.full_name}</div>
-        <div className="text-xs text-muted-foreground font-mono mt-0.5 tracking-wider">{due.profiles?.roll_number}</div>
-        {isGlobalSearch && (
-          <div className="text-xs text-muted-foreground mt-1">
-            {due.profiles?.departments?.name || '—'} · {due.profiles?.semesters?.name || '—'}
-          </div>
-        )}
-      </td>
-      <td className="p-4 text-center">
-        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${due.has_dues ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/20 dark:border-red-800/30 dark:text-red-400' : 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800/30 dark:text-emerald-400'}`}>
-          {due.has_dues ? 'Blocked' : 'Cleared'}
-        </span>
-      </td>
-      <td className="p-4">
-        {editingDueId === due.id ? (
-          <div className="space-y-2">
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">₹</span>
-              <input type="number" min="0" value={editAmount} onChange={e => setEditAmount(parseFloat(e.target.value) || 0)} className="w-full pl-7 pr-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:outline-none" />
+  const renderStudentRow = (due: any) => {
+    const status = getStatus(due);
+    const isLoading = actionLoading === due.id;
+    return (
+      <tr key={due.id} className="hover:bg-secondary/20 transition-colors">
+        <td className="p-4">
+          <div className="font-bold text-foreground text-[15px]">{due.profiles?.full_name}</div>
+          <div className="text-xs text-muted-foreground font-mono mt-0.5 tracking-wider">{due.profiles?.roll_number}</div>
+          {isGlobalSearch && (
+            <div className="text-xs text-muted-foreground mt-1">
+              {due.profiles?.departments?.name || '—'} · {due.profiles?.semesters?.name || '—'}
             </div>
-            <input type="text" placeholder="Reason (e.g. Lost Book)" value={editRemarks} onChange={e => setEditRemarks(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary focus:outline-none" />
-          </div>
-        ) : (
-          <div>
-            {(() => {
-              const fine = due.fine_amount || 0;
-              const paid = due.paid_amount || 0;
-              const rem = Math.max(0, fine - paid);
-              return (
-                <div className="flex flex-col gap-1">
-                  <div className="font-semibold text-foreground text-sm flex items-center">
-                    {fine > 0 ? `Total Fine: ₹${fine}` : '-'}
-                    {fine > 0 && due.has_dues && <AlertCircle className="w-4 h-4 ml-2 text-amber-500 inline-block" />}
-                  </div>
-                  {fine > 0 && (
-                    <>
-                      <div className="text-sm text-emerald-600 dark:text-emerald-400">Total Paid: ₹{paid}</div>
-                      <div className={`text-sm font-bold ${rem > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                        Remaining: ₹{rem}
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
-            {due.remarks && <div className="text-xs text-muted-foreground mt-0.5 italic">{due.remarks}</div>}
-          </div>
-        )}
-      </td>
-      <td className="p-4 text-right">
-        {editingDueId === due.id ? (
-          <div className="flex justify-end gap-2">
-            <button onClick={() => handleSaveDue(due)} className="p-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors" title="Save"><Save className="w-4 h-4" /></button>
-            <button onClick={() => setEditingDueId(null)} className="p-1.5 bg-secondary text-foreground rounded-lg hover:bg-border transition-colors" title="Cancel"><X className="w-4 h-4" /></button>
-          </div>
-        ) : (
-          <div className="flex justify-end items-center gap-3">
-            <button onClick={() => { setEditingDueId(due.id); setEditAmount(due.fine_amount || 0); setEditRemarks(due.remarks || ''); }} className="text-sm font-medium text-primary hover:text-primary/70 transition-colors hover:underline">Edit</button>
-            {due.has_dues && (() => {
-              const remaining = Math.max(0, (due.fine_amount || 0) - (due.paid_amount || 0));
-              return (
-                <div className="flex items-center gap-2">
-                  <div className="relative w-24">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs font-medium">Pay ₹</span>
-                    <input type="number" min="0" max={remaining} value={clearingPaidAmounts[due.id] !== undefined ? clearingPaidAmounts[due.id] : ''} onChange={e => setClearingPaidAmounts({...clearingPaidAmounts, [due.id]: parseFloat(e.target.value)})} placeholder={String(remaining)} className="w-full pl-11 pr-2 py-1.5 text-xs border border-border rounded-lg bg-background focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
-                  </div>
+          )}
+        </td>
+        <td className="p-4 text-center">
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${status.color}`}>
+            {status.label}
+          </span>
+        </td>
+        <td className="p-4 text-right">
+          <div className="flex justify-end items-center gap-2">
+            {isLoading ? (
+              <span className="text-xs text-muted-foreground animate-pulse">Processing...</span>
+            ) : (
+              <>
+                {/* If cleared → show Set Due */}
+                {!due.has_dues && (
                   <button
-                    onClick={() => {
-                      let payment = clearingPaidAmounts[due.id];
-                      if (payment === undefined || isNaN(payment)) payment = remaining;
-                      payment = Math.min(payment, remaining);
-                      if (payment > 0 || remaining === 0) {
-                        handlePaymentOrClear(due, payment);
-                        setClearingPaidAmounts(prev => { const next = {...prev}; delete next[due.id]; return next; });
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg shadow-sm hover:bg-emerald-600 transition-all font-bold text-xs active:scale-95 whitespace-nowrap"
+                    onClick={() => handleSetDue(due)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white text-xs font-bold rounded-xl transition-all"
+                    title="Set this student as having library dues"
                   >
-                    {(clearingPaidAmounts[due.id] !== undefined && clearingPaidAmounts[due.id] < remaining) ? "Add Payment" : "Clear No-Dues"}
+                    <ShieldOff className="w-3.5 h-3.5" />
+                    Set Due
                   </button>
-                </div>
-              );
-            })()}
+                )}
+                {/* If blocked → show Permit and Clear */}
+                {due.has_dues && !due.permitted && (
+                  <>
+                    <button
+                      onClick={() => handlePermit(due)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white text-xs font-bold rounded-xl transition-all"
+                      title="Permit clearance while dues are still pending"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                      Permit
+                    </button>
+                    <button
+                      onClick={() => handleClearDue(due)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-xs font-bold rounded-xl transition-all"
+                      title="Clear all library dues for this student"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      Clear Due
+                    </button>
+                  </>
+                )}
+                {/* If permitted → show Clear */}
+                {due.has_dues && due.permitted && (
+                  <>
+                    <button
+                      onClick={() => handleSetDue(due)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white text-xs font-bold rounded-xl transition-all"
+                      title="Revoke permit and block student"
+                    >
+                      <ShieldOff className="w-3.5 h-3.5" />
+                      Revoke
+                    </button>
+                    <button
+                      onClick={() => handleClearDue(due)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-xs font-bold rounded-xl transition-all"
+                      title="Clear all library dues for this student"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      Clear Due
+                    </button>
+                  </>
+                )}
+              </>
+            )}
           </div>
-        )}
-      </td>
-    </tr>
-  );
+        </td>
+      </tr>
+    );
+  };
 
   // Render the student table
   const renderStudentTable = (duesList: any[]) => (
@@ -279,15 +291,14 @@ export default function LibraryDashboard() {
       <table className="w-full text-left border-collapse">
         <thead>
           <tr className="bg-secondary/40 border-b border-border text-sm text-foreground">
-            <th className="p-4 font-semibold w-1/3">Student</th>
+            <th className="p-4 font-semibold w-2/5">Student</th>
             <th className="p-4 font-semibold text-center w-[120px]">Status</th>
-            <th className="p-4 font-semibold w-1/4">Remarks & Fines</th>
             <th className="p-4 font-semibold text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
           {duesList.length === 0 ? (
-            <tr><td colSpan={4} className="text-center p-12 text-muted-foreground">No students found.</td></tr>
+            <tr><td colSpan={3} className="text-center p-12 text-muted-foreground">No students found.</td></tr>
           ) : (
             duesList.map(renderStudentRow)
           )}
@@ -305,7 +316,7 @@ export default function LibraryDashboard() {
             <BookOpen className="w-8 h-8 text-primary p-1.5 bg-primary/10 rounded-xl" />
             Library Dues
           </h1>
-          <p className="text-muted-foreground mt-2">Manage student textbook returns and library fines.</p>
+          <p className="text-muted-foreground mt-2">Manage student library clearance status.</p>
         </div>
         <div className="relative w-full md:w-72 mt-4 md:mt-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -467,8 +478,8 @@ export default function LibraryDashboard() {
           <div className="space-y-6">
             <div className="bg-card border border-border rounded-3xl p-6 shadow-sm overflow-hidden relative">
               <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-full pointer-events-none"></div>
-              <h3 className="font-bold text-lg text-foreground mb-4">Upload Not-Paid List</h3>
-              <p className="text-sm text-muted-foreground mb-6">Upload a CSV with USNs of students who have NOT paid. All other students will be automatically cleared.</p>
+              <h3 className="font-bold text-lg text-foreground mb-4">Upload Due List</h3>
+              <p className="text-sm text-muted-foreground mb-6">Upload a CSV with USNs of students who have dues. All other students will be automatically cleared.</p>
               <input type="file" accept=".csv" className="hidden" id="csv-upload" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
               <label
                 htmlFor="csv-upload"
@@ -480,11 +491,11 @@ export default function LibraryDashboard() {
               </label>
               {csvFile && (
                 <button onClick={handleCsvUpload} disabled={csvProcessing} className="w-full mt-4 bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3 px-4 rounded-xl shadow-md disabled:opacity-50 transition-all active:scale-[0.98]">
-                  {csvProcessing ? 'Processing File...' : 'Upload Not-Paid List'}
+                  {csvProcessing ? 'Processing File...' : 'Upload Due List'}
                 </button>
               )}
               <button onClick={downloadTemplate} className="w-full mt-4 flex justify-center items-center gap-2 text-sm text-primary hover:underline font-medium">
-                <Download className="w-4 h-4" /> 📄 Download Not-Paid Template
+                <Download className="w-4 h-4" /> Download Template
               </button>
             </div>
           </div>

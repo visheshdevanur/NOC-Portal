@@ -1181,6 +1181,45 @@ export const updateLibraryDue = async (studentId: string, hasDues: boolean, fine
   return data;
 };
 
+/** Set a student as having library dues (blocked) */
+export const setLibraryDue = async (studentId: string) => {
+  const { data, error } = await supabase
+    .from('library_dues')
+    .update({ has_dues: true, permitted: false } as any)
+    .eq('student_id', studentId)
+    .select('*, profiles!library_dues_student_id_fkey(full_name)')
+    .single();
+  if (error) throw error;
+  logActivity('Set Library Due', `Blocked ${data?.profiles?.full_name || 'student'}`);
+  return data;
+};
+
+/** Permit a student — they still have dues but clearance proceeds */
+export const permitLibraryDue = async (studentId: string) => {
+  const { data, error } = await supabase
+    .from('library_dues')
+    .update({ permitted: true } as any)
+    .eq('student_id', studentId)
+    .select('*, profiles!library_dues_student_id_fkey(full_name)')
+    .single();
+  if (error) throw error;
+  logActivity('Permitted Library Due', `Permitted clearance for ${data?.profiles?.full_name || 'student'}`);
+  return data;
+};
+
+/** Clear a student's library dues completely */
+export const clearLibraryDue = async (studentId: string) => {
+  const { data, error } = await supabase
+    .from('library_dues')
+    .update({ has_dues: false, permitted: false, fine_amount: 0, paid_amount: 0, remarks: null } as any)
+    .eq('student_id', studentId)
+    .select('*, profiles!library_dues_student_id_fkey(full_name)')
+    .single();
+  if (error) throw error;
+  logActivity('Cleared Library Due', `Cleared dues for ${data?.profiles?.full_name || 'student'}`);
+  return data;
+};
+
 /** Bulk process library dues from CSV — only USNs of not-paid students. Everyone else is auto-cleared. */
 export const bulkProcessLibraryDues = async (notPaidRolls: string[]) => {
   const upperRolls = notPaidRolls.map(r => r.trim().toUpperCase());
@@ -1209,7 +1248,7 @@ export const bulkProcessLibraryDues = async (notPaidRolls: string[]) => {
       const chunk = notPaidIds.slice(i, i + 200);
       const { error } = await supabase
         .from('library_dues')
-        .update({ has_dues: true, remarks: 'Not paid — bulk upload' } as any)
+        .update({ has_dues: true, permitted: false, remarks: 'Not paid — bulk upload' } as any)
         .in('id', chunk);
       if (error) throw error;
     }
@@ -1221,7 +1260,7 @@ export const bulkProcessLibraryDues = async (notPaidRolls: string[]) => {
       const chunk = clearedIds.slice(i, i + 200);
       const { error } = await supabase
         .from('library_dues')
-        .update({ has_dues: false, fine_amount: 0, remarks: 'Cleared — not in upload list' } as any)
+        .update({ has_dues: false, permitted: false, fine_amount: 0, remarks: 'Cleared — not in upload list' } as any)
         .in('id', chunk);
       if (error) throw error;
     }
