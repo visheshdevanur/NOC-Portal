@@ -2,8 +2,17 @@
 -- Note: This deletes users from the auth.users table, which cascades and deletes
 -- their profiles, subject_enrollments, department_clearances, clearance_master, etc.
 
+-- First, fix the foreign key constraint on activity_logs to allow deletion
+ALTER TABLE public.activity_logs
+  DROP CONSTRAINT IF EXISTS activity_logs_user_id_fkey;
+  
+ALTER TABLE public.activity_logs
+  ADD CONSTRAINT activity_logs_user_id_fkey 
+  FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+-- Now delete the users (this cascades to profiles, clearances, etc.)
 DELETE FROM auth.users
 WHERE id IN (
   SELECT id FROM public.profiles 
-  WHERE role IN ('student', 'faculty', 'staff')
+  WHERE role IN ('student', 'teacher', 'faculty', 'staff')
 );
