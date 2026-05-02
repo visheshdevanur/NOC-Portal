@@ -1020,20 +1020,29 @@ export default function StaffDashboard() {
     setImportLoading(true);
     setSubjectError(null);
     try {
+      // Refresh current subjects to have the latest duplicate check
+      const currentData = await getSubjectsByDepartment(profile!.department_id!);
+      const currentCodes = new Set((currentData as Subject[]).map(s => s.subject_code.toUpperCase()));
+      
       const toImport = importSourceSubjects.filter(s => importSelectedSubjects.includes(s.id));
       let imported = 0;
       let skipped = 0;
       for (const sub of toImport) {
         // Check if subject_code already exists in this department
-        const exists = subjects.some(s => s.subject_code === sub.subject_code);
-        if (exists) { skipped++; continue; }
-        await createSubject({
-          subject_name: sub.subject_name,
-          subject_code: sub.subject_code,
-          department_id: profile!.department_id!,
-          semester_id: importTargetSemId
-        });
-        imported++;
+        if (currentCodes.has(sub.subject_code.toUpperCase())) { skipped++; continue; }
+        try {
+          await createSubject({
+            subject_name: sub.subject_name,
+            subject_code: sub.subject_code,
+            department_id: profile!.department_id!,
+            semester_id: importTargetSemId
+          });
+          currentCodes.add(sub.subject_code.toUpperCase());
+          imported++;
+        } catch (err: any) {
+          console.warn(`Failed to import ${sub.subject_code}:`, err.message);
+          skipped++;
+        }
       }
       setSubjectSuccess(`Imported ${imported} subjects${skipped > 0 ? `, skipped ${skipped} duplicates` : ''}.`);
       setShowImportSubjects(false);
