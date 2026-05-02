@@ -1010,10 +1010,14 @@ export default function ClerkDashboard() {
     try {
       const result = await assignTeacherToSection(selectedSubject, selectedSection, selectedTeacher, selectedSemesterForAssign);
       const teacherName = deptTeachers.find(t => t.id === selectedTeacher)?.full_name || 'Teacher';
-      setSectionSuccess(`Section "${selectedSection}" assigned to ${teacherName} for the selected subject. ${result?.length || 0} enrollments updated.`);
-      setSelectedSection('');
-      setSelectedSubject('');
-      setSelectedTeacher('');
+      if (!result || result.length === 0) {
+        setSectionError(`Cannot assign teacher: Section "${selectedSection}" currently has no students in the selected semester. Please assign students to this section first.`);
+      } else {
+        setSectionSuccess(`Section "${selectedSection}" assigned to ${teacherName} for the selected subject. ${result.length} student enrollments updated.`);
+        setSelectedSection('');
+        setSelectedSubject('');
+        setSelectedTeacher('');
+      }
     } catch (err: any) {
       setSectionError(getFriendlyErrorMessage(err));
     } finally {
@@ -1072,7 +1076,9 @@ export default function ClerkDashboard() {
       const { bulkAssignTeacherToSectionCSV } = await import('../../lib/api');
       const result = await bulkAssignTeacherToSectionCSV(profile.department_id, rows);
       
-      if (result.errors.length > 0) {
+      if (result.updated === 0 && result.errors.length === 0) {
+        setSectionError('No assignments were made. Ensure the sections have students assigned to them.');
+      } else if (result.errors.length > 0) {
         setSectionError(`Updated ${result.updated} sections. Errors: ${result.errors.slice(0, 3).join(' | ')}${result.errors.length > 3 ? '...' : ''}`);
       } else {
         setSectionSuccess(`Successfully assigned ${result.updated} sections from CSV!`);
