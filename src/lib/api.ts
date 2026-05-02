@@ -329,17 +329,26 @@ export const removeImportedTeacher = async (departmentId: string, teacherId: str
 };
 
 export const assignTeacherToSection = async (subjectId: string, section: string, teacherId: string, semesterId: string) => {
+  console.log('[assignTeacherToSection] Starting:', { subjectId, section, teacherId, semesterId });
+
+  // 1. Find students in this section + semester
   const { data: students, error: studentError } = await supabase
     .from('profiles')
     .select('id')
+    .eq('role', 'student')
     .eq('section', section)
     .eq('semester_id', semesterId);
     
-  if (studentError) throw studentError;
+  if (studentError) {
+    console.error('[assignTeacherToSection] Student query failed:', studentError);
+    throw studentError;
+  }
+  console.log('[assignTeacherToSection] Found students:', students?.length || 0);
   if (!students || students.length === 0) return [];
   
   const studentIds = students.map(s => s.id);
   
+  // 2. Check which students already have enrollment for this subject
   const { data: existing } = await supabase
     .from('subject_enrollment')
     .select('id, student_id')
@@ -347,21 +356,28 @@ export const assignTeacherToSection = async (subjectId: string, section: string,
     .in('student_id', studentIds);
     
   const existingSet = new Set(existing?.map((e: any) => e.student_id));
+  console.log('[assignTeacherToSection] Existing enrollments:', existingSet.size);
   
+  // 3. Insert new enrollment records for students not yet enrolled
   const newEnrollments = students
     .filter(s => !existingSet.has(s.id))
     .map(s => ({
        student_id: s.id,
        subject_id: subjectId,
        teacher_id: teacherId,
-       status: 'pending' as any
     }));
 
   if (newEnrollments.length > 0) {
+     console.log('[assignTeacherToSection] Inserting', newEnrollments.length, 'new enrollments');
      const { error: insertErr } = await supabase.from('subject_enrollment').insert(newEnrollments as any);
-     if (insertErr) throw insertErr;
+     if (insertErr) {
+       console.error('[assignTeacherToSection] INSERT FAILED:', insertErr);
+       throw new Error(`Failed to create enrollments: ${insertErr.message}. Code: ${insertErr.code}`);
+     }
+     console.log('[assignTeacherToSection] Insert succeeded');
   }
 
+  // 4. Update all matching enrollments with the teacher_id
   const { data, error } = await supabase
     .from('subject_enrollment')
     .update({ teacher_id: teacherId } as any)
@@ -369,7 +385,12 @@ export const assignTeacherToSection = async (subjectId: string, section: string,
     .in('student_id', studentIds)
     .select();
     
-  if (error) throw error;
+  if (error) {
+    console.error('[assignTeacherToSection] UPDATE FAILED:', error);
+    throw error;
+  }
+  console.log('[assignTeacherToSection] Final result:', data?.length || 0, 'enrollments');
+
   const { data: tProfile } = await supabase.from('profiles').select('full_name').eq('id', teacherId).single();
   const { data: sInfo } = await supabase.from('subjects').select('subject_name').eq('id', subjectId).single();
   logActivity('Assigned Teacher', `Assigned ${tProfile?.full_name || 'teacher'} to section ${section} for ${sInfo?.subject_name || 'subject'}`);
