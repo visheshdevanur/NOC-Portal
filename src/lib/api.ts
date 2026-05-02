@@ -1215,12 +1215,19 @@ export const applyMassFines = async (departmentId: string, isFirstYear: boolean)
       continue;
     }
 
-    const { error } = await supabase
+    const { data: updatedRow, error } = await supabase
       .from('subject_enrollment')
       .update({ attendance_fee: newFee, attendance_fee_verified: false } as any)
-      .eq('id', enrollment.id);
+      .eq('id', enrollment.id)
+      .select('id, attendance_fee')
+      .single();
     
-    if (!error) updated++;
+    if (!error && updatedRow && updatedRow.attendance_fee === newFee) {
+      updated++;
+    } else {
+      console.warn(`Failed to update enrollment ${enrollment.id}:`, error?.message || 'RLS blocked or no rows matched');
+      skipped++;
+    }
   }
 
   logActivity('Applied Mass Fines', `Auto-assigned fines to ${updated} students (${skipped} skipped) based on ${categories.length} categories.`);
