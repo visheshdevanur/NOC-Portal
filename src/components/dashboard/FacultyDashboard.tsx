@@ -410,7 +410,19 @@ export default function FacultyDashboard() {
   const handleAttendanceChange = (id: string, pctString: string) => {
     const pct = parseInt(pctString);
     if (isNaN(pct) && pctString !== '') return;
-    setStudents(prev => prev.map(s => s.id === id ? { ...s, attendance_pct: isNaN(pct) ? null : pct } : s));
+    const newPct = isNaN(pct) ? null : pct;
+    // Immediately update local status preview so the badge reflects the change
+    const previewStatus = (newPct !== null && newPct < 85) ? 'rejected' : (newPct !== null && newPct >= 85) ? 'completed' : undefined;
+    const previewRemarks = previewStatus === 'rejected' ? 'Low Attendance (<85%)' : previewStatus === 'completed' ? 'Cleared by Faculty' : undefined;
+    setStudents(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      const updated = { ...s, attendance_pct: newPct };
+      if (previewStatus) {
+        updated.status = previewStatus;
+        updated.remarks = previewRemarks || s.remarks;
+      }
+      return updated;
+    }));
   };
 
   const updateAttendance = async (id: string) => {
@@ -435,9 +447,14 @@ export default function FacultyDashboard() {
       }
 
       await markFacultySubjectStatus(id, status, pct, remarks);
-      setStudents(prev => prev.map(s => s.id === id ? { ...s, status, remarks } : s));
+      // Update local state immediately
+      setStudents(prev => prev.map(s => s.id === id ? { ...s, status, remarks, attendance_pct: pct } : s));
+      // Also re-fetch to ensure DB consistency
+      fetchData();
     } catch (err: any) {
       console.error("Attendance update error:", err);
+      // Revert by re-fetching from DB on error
+      fetchData();
     }
   };
 
@@ -633,6 +650,7 @@ export default function FacultyDashboard() {
                                     value={student.attendance_pct === null ? '' : student.attendance_pct}
                                     onChange={e => handleAttendanceChange(student.id, e.target.value)}
                                     onBlur={() => updateAttendance(student.id)}
+                                    onKeyDown={e => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); } }}
                                   />
                                   <span className="text-xs text-muted-foreground font-medium">Min 85%</span>
                                 </div>
