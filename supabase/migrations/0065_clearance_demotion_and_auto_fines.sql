@@ -62,7 +62,7 @@ BEGIN
     IF req.current_stage IN ('library_review', 'department_review', 'hod_review', 'cleared') THEN
       UPDATE clearance_requests 
       SET current_stage = 'faculty_review', 
-          status = CASE WHEN rejected_faculty > 0 THEN 'rejected' ELSE 'pending' END, 
+          status = (CASE WHEN rejected_faculty > 0 THEN 'rejected' ELSE 'pending' END)::clearance_status, 
           remarks = CASE WHEN rejected_faculty > 0 THEN 'Teacher flagged attendance shortfall' ELSE NULL END,
           updated_at = NOW()
       WHERE id = req.id;
