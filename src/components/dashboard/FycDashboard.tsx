@@ -87,7 +87,7 @@ export default function FycDashboard() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [searchUsers, setSearchUsers] = useState('');
   const [showCreateUser, setShowCreateUser] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'clerk', department_id: '' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'clerk', department_id: '', teacher_id: '' });
   const [userCreating, setUserCreating] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
@@ -407,6 +407,12 @@ export default function FycDashboard() {
       return;
     }
 
+    if (newUser.role === 'teacher' && !newUser.teacher_id) {
+      setUserError('Teacher ID is required for Teachers.');
+      setUserCreating(false);
+      return;
+    }
+
     try {
       const { tempSupabase } = await import('../../lib/supabase');
 
@@ -425,6 +431,7 @@ export default function FycDashboard() {
       };
       // Only set department_id if provided (clerks may need one)
       if (newUser.department_id) profileData.department_id = newUser.department_id;
+      if (newUser.role === 'teacher' && newUser.teacher_id) profileData.roll_number = newUser.teacher_id;
 
       const { error: profileError } = await supabase.from('profiles').upsert(profileData);
       if (profileError) throw profileError;
@@ -438,7 +445,7 @@ export default function FycDashboard() {
       }]);
 
       setUserSuccess(`${newUser.role === 'clerk' ? 'Clerk' : 'Teacher'} "${newUser.full_name}" created!`);
-      setNewUser({ email: '', password: '', full_name: '', role: 'clerk', department_id: '' });
+      setNewUser({ email: '', password: '', full_name: '', role: 'clerk', department_id: '', teacher_id: '' });
       setShowCreateUser(false);
       fetchUsers();
     } catch (err: any) {
@@ -1021,6 +1028,12 @@ export default function FycDashboard() {
                           <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
                       </select>
+                    </div>
+                  )}
+                  {newUser.role === 'teacher' && (
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">Teacher ID</label>
+                      <input type="text" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 uppercase" placeholder="e.g. FAC001" value={newUser.teacher_id} onChange={e => setNewUser({ ...newUser, teacher_id: e.target.value })} />
                     </div>
                   )}
                   <div>
