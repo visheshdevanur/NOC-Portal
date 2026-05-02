@@ -26,6 +26,7 @@ type UserProfile = {
   section: string | null;
   created_at: string;
   departments?: { name: string } | null;
+  semesters?: { name: string } | null;
 };
 
 type Subject = {
@@ -110,8 +111,9 @@ export default function AdminDashboard() {
   const [allUsersLoading, setAllUsersLoading] = useState(false);
   const [allUsersSearch, setAllUsersSearch] = useState('');
   const [allUsersRoleFilter, setAllUsersRoleFilter] = useState('all');
+  const [teacherCreatorRoles, setTeacherCreatorRoles] = useState<Record<string, string>>({});
   // Hierarchy state for All Users
-  const [selectedDeptUsers, setSelectedDeptUsers] = useState<string | null>(null); // 'unassigned' or dept id
+  const [expandedAllUsersSections, setExpandedAllUsersSections] = useState<Set<string>>(new Set(['global', 'first_year']));
 
   // Hall Ticket State
   const [studentStatuses, setStudentStatuses] = useState<StudentStatus[]>([]);
@@ -577,9 +579,21 @@ export default function AdminDashboard() {
   const fetchAllUsers = async () => {
     setAllUsersLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*, departments!profiles_department_id_fkey(name)').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('profiles').select('*, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)').order('created_at', { ascending: false });
       if (error) throw error;
       setAllUsers((data || []) as UserProfile[]);
+
+      // Fetch imported teachers mapping to know who created them
+      const { data: imported } = await supabase.from('imported_teachers').select('teacher_id, created_by');
+      if (imported && imported.length > 0) {
+        const creatorIds = [...new Set(imported.map(i => i.created_by).filter(Boolean))];
+        if (creatorIds.length > 0) {
+          const { data: creators } = await supabase.from('profiles').select('id, role').in('id', creatorIds);
+          const creatorRoleMap = Object.fromEntries((creators || []).map(c => [c.id, c.role]));
+          const tMap = Object.fromEntries(imported.map(i => [i.teacher_id, creatorRoleMap[i.created_by] || 'unknown']));
+          setTeacherCreatorRoles(tMap);
+        }
+      }
     } catch (err: any) { console.error(err); }
     finally { setAllUsersLoading(false); }
   };
@@ -827,6 +841,51 @@ export default function AdminDashboard() {
     { id: 'hallticket', label: 'Hall Tickets', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'logs', label: 'Activity Logs', icon: <Activity className="w-4 h-4" /> },
   ];
+
+  const renderUsersTable = (usersList: UserProfile[]) => {
+    if (usersList.length === 0) return <p className="text-sm text-muted-foreground italic p-3">No users found in this category.</p>;
+    return (
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <table className="w-full text-left border-collapse text-sm">
+          <thead>
+            <tr className="bg-secondary/50 text-foreground border-b border-border">
+              <th className="p-3 font-semibold">Name</th>
+              <th className="p-3 font-semibold">Role</th>
+              <th className="p-3 font-semibold">Section/Sem</th>
+              <th className="p-3 font-semibold">Joined</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {usersList.map(u => (
+              <tr key={u.id} className="hover:bg-secondary/20 transition-colors">
+                <td className="p-3 font-medium text-foreground">{u.full_name}</td>
+                <td className="p-3">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${roleColors[u.role] || 'bg-secondary text-foreground'}`}>
+                    {u.role}
+                  </span>
+                </td>
+                <td className="p-3 text-muted-foreground">{u.section || u.semesters?.name ? `${u.semesters?.name ? `Sem ${u.semesters.name} ` : ''}${u.section || ''}` : '—'}</td>
+                <td className="p-3 text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const renderUserGroup = (title: string, usersList: UserProfile[]) => {
+    if (usersList.length === 0 && allUsersSearch) return null; // hide empty groups when searching
+    return (
+      <div className="space-y-2">
+        <h4 className="font-semibold text-foreground flex items-center justify-between bg-secondary/20 p-2 rounded-lg">
+          {title}
+          <span className="bg-secondary px-2 py-0.5 rounded-md text-xs">{usersList.length}</span>
+        </h4>
+        {renderUsersTable(usersList)}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6 fade-in">
@@ -1521,98 +1580,101 @@ export default function AdminDashboard() {
       {activeTab === 'allusers' && (
         <div className="space-y-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-4 rounded-2xl shadow-sm border border-border">
-            <div className="flex items-center gap-3">
-               {selectedDeptUsers ? (
-                 <button onClick={() => setSelectedDeptUsers(null)} className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors font-medium">
-                   <CornerUpLeft className="w-5 h-5" /> Back to Departments
-                 </button>
-               ) : (
-                 <p className="text-foreground font-bold pl-2">Select a Department to View Users</p>
-               )}
-            </div>
-
-            {selectedDeptUsers && (
-              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-                <div className="relative flex-1 w-full md:w-64">
-                  <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <input type="text" placeholder="Search users..." className="pl-10 pr-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary w-full text-sm" value={allUsersSearch} onChange={e => setAllUsersSearch(e.target.value)} />
-                </div>
-                <select
-                  className="px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-sm font-medium"
-                  value={allUsersRoleFilter}
-                  onChange={e => setAllUsersRoleFilter(e.target.value)}
-                >
-                  <option value="all">All Roles</option>
-                  <option value="admin">Admin</option>
-                  <option value="principal">Principal</option>
-                  <option value="hod">HOD</option>
-                  <option value="coe">COE</option>
-                  <option value="accounts">Accounts</option>
-                  <option value="librarian">Librarian</option>
-                  <option value="fyc">FYC</option>
-                  <option value="staff">Staff</option>
-                  <option value="teacher">Teacher</option>
-                  <option value="faculty">Faculty</option>
-                  <option value="student">Student</option>
-                </select>
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <Eye className="w-6 h-6 text-primary" />
+              Users Overview
+            </h2>
+            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+              <div className="relative flex-1 w-full md:w-64">
+                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input type="text" placeholder="Search users..." className="pl-10 pr-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary w-full text-sm" value={allUsersSearch} onChange={e => setAllUsersSearch(e.target.value)} />
               </div>
-            )}
+            </div>
           </div>
 
-          {!selectedDeptUsers ? (
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <button onClick={() => setSelectedDeptUsers('unassigned')} className="bg-card p-6 rounded-3xl shadow-sm border border-border hover:border-amber-500/50 hover:shadow-md transition-all text-left flex flex-col items-start min-h-[160px] group relative overflow-hidden">
-                   <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-bl-full pointer-events-none"></div>
-                   <ShieldCheck className="w-8 h-8 text-amber-500 mb-4" />
-                   <h3 className="text-xl font-bold text-foreground group-hover:text-amber-500 transition-colors">Global Users</h3>
-                   <p className="text-muted-foreground mt-auto">{allUsers.filter(u => !u.department_id).length} unassigned users (Admins, etc)</p>
-                </button>
-                {departments.map((dept) => (
-                  <button key={dept.id} onClick={() => setSelectedDeptUsers(dept.id)} className="bg-card p-6 rounded-3xl shadow-sm border border-border hover:border-primary/50 hover:shadow-md transition-all text-left flex flex-col items-start min-h-[160px] group relative overflow-hidden">
-                     <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-full pointer-events-none"></div>
-                     <Building2 className="w-8 h-8 text-primary mb-4" />
-                     <h3 className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">{dept.name}</h3>
-                     <p className="text-muted-foreground mt-auto">{allUsers.filter(u => u.department_id === dept.id).length} users total</p>
-                  </button>
-                ))}
-             </div>
+          {allUsersLoading ? (
+            <div className="p-8 text-center text-muted-foreground animate-pulse bg-card rounded-3xl border border-border">Loading users hierarchy...</div>
           ) : (
-            <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-              {allUsersLoading ? (
-                <div className="p-8 text-center text-muted-foreground animate-pulse">Loading users...</div>
-              ) : filteredAllUsers.filter(u => selectedDeptUsers === 'unassigned' ? !u.department_id : u.department_id === selectedDeptUsers).length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">No users match the criteria.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
-                        <th className="p-4 font-semibold">Name</th>
-                        <th className="p-4 font-semibold">Role</th>
-                        <th className="p-4 font-semibold">Section</th>
-                        <th className="p-4 font-semibold">Joined</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filteredAllUsers.filter(u => selectedDeptUsers === 'unassigned' ? !u.department_id : u.department_id === selectedDeptUsers).map(u => (
-                        <tr key={u.id} className="hover:bg-secondary/20 transition-colors">
-                          <td className="p-4 font-medium text-foreground">{u.full_name}</td>
-                          <td className="p-4">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${roleColors[u.role] || 'bg-secondary text-foreground'}`}>
-                              {u.role}
-                            </span>
-                          </td>
-                          <td className="p-4 text-muted-foreground">{u.section || '—'}</td>
-                          <td className="p-4 text-muted-foreground text-sm">{new Date(u.created_at).toLocaleDateString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <div className="px-4 py-3 bg-secondary/30 border-t border-border text-sm text-muted-foreground">
-                Showing {filteredAllUsers.filter(u => selectedDeptUsers === 'unassigned' ? !u.department_id : u.department_id === selectedDeptUsers).length} users
+            <div className="space-y-4">
+              {/* GLOBAL USERS */}
+              <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+                <button onClick={() => { const next = new Set(expandedAllUsersSections); expandedAllUsersSections.has('global') ? next.delete('global') : next.add('global'); setExpandedAllUsersSections(next); }} className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors">
+                  <div className="flex items-center gap-3">
+                    {expandedAllUsersSections.has('global') ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                    <ShieldCheck className="w-6 h-6 text-amber-500" />
+                    <div>
+                      <h3 className="text-lg font-bold text-foreground">Global Users</h3>
+                      <p className="text-sm text-muted-foreground">Accounts, Librarian, Admin, COE, Principal</p>
+                    </div>
+                  </div>
+                </button>
+                {expandedAllUsersSections.has('global') && (
+                  <div className="border-t border-border p-4 bg-background/50">
+                     {renderUsersTable(filteredAllUsers.filter(u => ['admin', 'principal', 'coe', 'accounts', 'librarian'].includes(u.role) || (!u.department_id && u.role !== 'student')))}
+                  </div>
+                )}
               </div>
+
+              {/* Identify First Year Dept */}
+              {(() => {
+                const fyDeptId = departments.find(d => allUsers.some(u => u.department_id === d.id && u.role === 'student' && ['1', '2'].includes(u.semesters?.name || '')) || allUsers.some(u => u.department_id === d.id && u.role === 'fyc'))?.id;
+                
+                const fyDept = departments.find(d => d.id === fyDeptId);
+                
+                return fyDept ? (
+                  <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+                    <button onClick={() => { const next = new Set(expandedAllUsersSections); expandedAllUsersSections.has('fy') ? next.delete('fy') : next.add('fy'); setExpandedAllUsersSections(next); }} className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors">
+                      <div className="flex items-center gap-3">
+                        {expandedAllUsersSections.has('fy') ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                        <Building2 className="w-6 h-6 text-indigo-500" />
+                        <div>
+                          <h3 className="text-lg font-bold text-foreground">First Year Department ({fyDept.name})</h3>
+                          <p className="text-sm text-muted-foreground">FYC, Clerk, Sem 1 & 2 Students, Teachers</p>
+                        </div>
+                      </div>
+                    </button>
+                    {expandedAllUsersSections.has('fy') && (
+                      <div className="border-t border-border p-4 bg-background/50 space-y-4">
+                        {renderUserGroup("First Year Coordinator (FYC)", filteredAllUsers.filter(u => u.department_id === fyDept.id && u.role === 'fyc'))}
+                        {renderUserGroup("Clerks", filteredAllUsers.filter(u => u.department_id === fyDept.id && u.role === 'clerk'))}
+                        {renderUserGroup("Teachers (Created by FYC/Clerk)", filteredAllUsers.filter(u => u.department_id === fyDept.id && ['faculty', 'teacher'].includes(u.role) && ['fyc', 'clerk'].includes(teacherCreatorRoles[u.id] || '')))}
+                        {renderUserGroup("Other Teachers", filteredAllUsers.filter(u => u.department_id === fyDept.id && ['faculty', 'teacher'].includes(u.role) && !['fyc', 'clerk'].includes(teacherCreatorRoles[u.id] || '')))}
+                        {renderUserGroup("Students (Semesters 1 & 2)", filteredAllUsers.filter(u => u.department_id === fyDept.id && u.role === 'student' && ['1', '2'].includes(u.semesters?.name || '')))}
+                      </div>
+                    )}
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Other Departments */}
+              {departments.map(dept => {
+                 const isFyDept = allUsers.some(u => u.department_id === dept.id && u.role === 'student' && ['1', '2'].includes(u.semesters?.name || '')) || allUsers.some(u => u.department_id === dept.id && u.role === 'fyc');
+                 if (isFyDept) return null; // Already rendered
+
+                 return (
+                   <div key={dept.id} className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+                     <button onClick={() => { const next = new Set(expandedAllUsersSections); expandedAllUsersSections.has(dept.id) ? next.delete(dept.id) : next.add(dept.id); setExpandedAllUsersSections(next); }} className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors">
+                       <div className="flex items-center gap-3">
+                         {expandedAllUsersSections.has(dept.id) ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                         <Building2 className="w-6 h-6 text-primary" />
+                         <div>
+                           <h3 className="text-lg font-bold text-foreground">{dept.name}</h3>
+                           <p className="text-sm text-muted-foreground">HOD, Staff, Sem 3-8 Students, Teachers</p>
+                         </div>
+                       </div>
+                     </button>
+                     {expandedAllUsersSections.has(dept.id) && (
+                       <div className="border-t border-border p-4 bg-background/50 space-y-4">
+                         {renderUserGroup("HOD (Head of Department)", filteredAllUsers.filter(u => u.department_id === dept.id && u.role === 'hod'))}
+                         {renderUserGroup("Staff", filteredAllUsers.filter(u => u.department_id === dept.id && u.role === 'staff'))}
+                         {renderUserGroup("Teachers (Created by HOD/Staff)", filteredAllUsers.filter(u => u.department_id === dept.id && ['faculty', 'teacher'].includes(u.role) && ['hod', 'staff'].includes(teacherCreatorRoles[u.id] || '')))}
+                         {renderUserGroup("Other Teachers", filteredAllUsers.filter(u => u.department_id === dept.id && ['faculty', 'teacher'].includes(u.role) && !['hod', 'staff'].includes(teacherCreatorRoles[u.id] || '')))}
+                         {renderUserGroup("Students (Semesters 3 to 8)", filteredAllUsers.filter(u => u.department_id === dept.id && u.role === 'student' && !['1', '2'].includes(u.semesters?.name || '')))}
+                       </div>
+                     )}
+                   </div>
+                 );
+              })}
             </div>
           )}
         </div>
