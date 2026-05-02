@@ -519,23 +519,36 @@ export const getHodStaffApprovedFines = async (departmentId: string) => {
 };
 
 export const getHodTeacherAssignments = async (departmentId: string) => {
-  // Get all teachers/faculty in the department (exclude FYC-managed teachers)
-  const { data: teachers, error: tErr } = await supabase
+  // Get all teachers/faculty in the department (include ALL, not just created_by=null)
+  const { data: nativeTeachers, error: tErr } = await supabase
     .from('profiles')
     .select('id, full_name, role, section, email, created_at')
     .eq('department_id', departmentId)
     .in('role', ['teacher', 'faculty'])
-    .is('created_by', null)
     .order('full_name');
   if (tErr) throw tErr;
 
+  // Also get imported teachers for this department
+  const { data: importedData } = await supabase
+    .from('imported_teachers')
+    .select('teacher_id, profiles!inner(id, full_name, role, section, email, created_at)')
+    .eq('department_id', departmentId);
+
+  const importedTeachers = (importedData || []).map((imp: any) => imp.profiles).filter(Boolean);
+
+  // Combine and deduplicate
+  const allTeachers = [...(nativeTeachers || []), ...importedTeachers];
+  const uniqueMap = new Map();
+  allTeachers.forEach(t => uniqueMap.set(t.id, t));
+  const teachers = Array.from(uniqueMap.values());
+
   // Get subject enrollment data for these teachers
-  const teacherIds = (teachers || []).map(t => t.id);
+  const teacherIds = teachers.map(t => t.id);
   if (teacherIds.length === 0) return [];
 
   const { data: enrollments, error: eErr } = await supabase
     .from('subject_enrollment')
-    .select('teacher_id, subject_id, subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
+    .select('teacher_id, subject_id, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
     .in('teacher_id', teacherIds);
   if (eErr) throw eErr;
 
@@ -565,7 +578,7 @@ export const getHodTeacherAssignments = async (departmentId: string) => {
   }
 
   // Merge teachers with their assignments
-  return (teachers || []).map(teacher => ({
+  return teachers.map(teacher => ({
     ...teacher,
     assignments: assignmentMap[teacher.id]
       ? Object.values(assignmentMap[teacher.id].subjects).map(s => ({

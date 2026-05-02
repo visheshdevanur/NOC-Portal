@@ -284,7 +284,7 @@ export default function FycDashboard() {
 
       const { data: enrollments, error: eErr } = await supabase
         .from('subject_enrollment')
-        .select('teacher_id, subject_id, subjects!inner(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey!inner(section, semester_id)')
+        .select('teacher_id, subject_id, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
         .in('teacher_id', teacherIds);
       if (eErr) throw eErr;
 
