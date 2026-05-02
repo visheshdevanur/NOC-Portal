@@ -348,7 +348,12 @@ export default function StudentDashboard() {
   const isHodApproved = request?.current_stage === 'cleared';
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(e => e.status === 'completed'), [enrollments]);
   const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
+  const isLibraryPermitted = useMemo(() => libraryDue ? (libraryDue.has_dues && libraryDue.permitted) : false, [libraryDue]);
+  const libraryPass = allLibraryCleared || isLibraryPermitted;
+  
   const allDeptCleared = useMemo(() => deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed'), [deptClearances]);
+  const isDeptPermitted = useMemo(() => deptClearances.length > 0 && deptClearances.some(d => d.status === 'pending' && (d as any).permitted_until && new Date((d as any).permitted_until) > new Date()), [deptClearances]);
+  const deptPass = allDeptCleared || isDeptPermitted;
   
   const pendingAttendanceDues = useMemo(() => enrollments.filter(e => (e as any).attendance_fee > 0 && !(e as any).attendance_fee_verified), [enrollments]);
 
@@ -597,14 +602,14 @@ export default function StudentDashboard() {
           <div className="hidden md:block absolute top-[28px] left-[10%] right-[10%] h-[3px] bg-secondary -z-10 rounded-full">
             <div 
               className="h-full bg-primary rounded-full transition-all duration-1000 ease-in-out"
-              style={{ width: allFacultyCleared ? (allLibraryCleared ? (allDeptCleared ? (isHodApproved ? '100%' : '66%') : '33%') : '0%') : '0%' }}
+              style={{ width: allFacultyCleared ? (libraryPass ? (deptPass ? (isHodApproved ? '100%' : '66%') : '33%') : '0%') : '0%' }}
             ></div>
           </div>
 
           <Step title="Faculty" description="IA + Attendance" isComplete={allFacultyCleared} isActive={!allFacultyCleared} icon={<BookOpen className="w-6 h-6" />} />
-          <Step title="Library" description="Books & Fines" isComplete={allFacultyCleared && allLibraryCleared} isActive={allFacultyCleared && !allLibraryCleared} icon={<BookOpen className="w-6 h-6" />} />
-          <Step title="Accounts" description="College Fees" isComplete={allFacultyCleared && allLibraryCleared && allDeptCleared} isActive={allFacultyCleared && allLibraryCleared && !allDeptCleared} icon={<Building2 className="w-6 h-6" />} />
-          <Step title="HOD Approval" description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && allLibraryCleared && allDeptCleared && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
+          <Step title="Library" description="Books & Fines" isComplete={allFacultyCleared && allLibraryCleared} isPermitted={allFacultyCleared && isLibraryPermitted} isActive={allFacultyCleared && !libraryPass} icon={<BookOpen className="w-6 h-6" />} />
+          <Step title="Accounts" description="College Fees" isComplete={allFacultyCleared && libraryPass && allDeptCleared} isPermitted={allFacultyCleared && libraryPass && isDeptPermitted} isActive={allFacultyCleared && libraryPass && !deptPass} icon={<Building2 className="w-6 h-6" />} />
+          <Step title="HOD Approval" description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && libraryPass && deptPass && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
         </div>
       </div>
 
@@ -882,28 +887,36 @@ export default function StudentDashboard() {
           <div className="flex-1 space-y-4">
             {deptClearances.length === 0 ? (
                <p className="text-muted-foreground text-sm italic text-center py-8">No college dues recorded.</p>
-            ) : deptClearances.map((dept) => (
-              <div key={dept.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border border-border bg-secondary/30 hover:shadow-md transition-shadow">
+            ) : deptClearances.map((dept: any) => {
+              const isPermitActive = dept.status === 'pending' && dept.permitted_until && new Date(dept.permitted_until) > new Date();
+              return (
+              <div key={dept.id} className={`flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border ${isPermitActive ? 'border-amber-500/30 bg-amber-500/5' : 'border-border bg-secondary/30'} hover:shadow-md transition-shadow`}>
                 <div className="mb-3 sm:mb-0">
                   <h3 className="font-semibold text-foreground capitalize text-lg">Central College Dues</h3>
                   {dept.fine_amount && dept.fine_amount > 0 ? (
-                     <p className="text-sm text-destructive font-medium mt-1 bg-destructive/10 inline-block px-2 py-1 rounded-md">Pending Dues: ₹{dept.fine_amount}</p>
+                     <p className={`text-sm font-medium mt-1 inline-block px-2 py-1 rounded-md ${isPermitActive ? 'text-amber-600 bg-amber-500/10' : 'text-destructive bg-destructive/10'}`}>Pending Dues: ₹{dept.fine_amount}</p>
                   ) : (
                      <p className="text-sm text-muted-foreground mt-1">No outstanding dues</p>
                   )}
+                  {isPermitActive && (
+                    <p className="text-xs text-amber-600 font-bold mt-2 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" /> Permitted until {new Date(dept.permitted_until).toLocaleString()}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
-                   <div className="bg-background p-2 rounded-xl shadow-sm border border-border">
+                   <div className={`bg-background p-2 rounded-xl shadow-sm border ${isPermitActive ? 'border-amber-500/30' : 'border-border'}`}>
                     {dept.status === 'completed' && <CheckCircle2 className="w-6 h-6 text-emerald-500" />}
-                    {dept.status === 'pending' && <Clock className="w-6 h-6 text-amber-500" />}
+                    {dept.status === 'pending' && isPermitActive && <Clock className="w-6 h-6 text-amber-500" />}
+                    {dept.status === 'pending' && !isPermitActive && <Clock className="w-6 h-6 text-amber-500" />}
                     {dept.status === 'rejected' && <XCircle className="w-6 h-6 text-destructive" />}
                    </div>
-                   <span className={`text-sm font-medium ${dept.status === 'completed' ? "text-emerald-500" : "text-amber-500"}`}>
-                     {dept.status === 'completed' ? 'Cleared' : 'Pending'}
+                   <span className={`text-sm font-medium ${dept.status === 'completed' ? "text-emerald-500" : isPermitActive ? "text-amber-500" : "text-amber-500"}`}>
+                     {dept.status === 'completed' ? 'Cleared' : isPermitActive ? 'Permitted' : 'Pending'}
                    </span>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         </div>
         
@@ -933,11 +946,28 @@ export default function StudentDashboard() {
                    <span className="text-sm font-bold text-emerald-500">Cleared</span>
                  </div>
                </div>
+            ) : libraryDue && libraryDue.has_dues && libraryDue.permitted ? (
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 hover:shadow-md transition-shadow">
+                 <div className="mb-3 sm:mb-0">
+                   <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
+                   <p className="text-sm text-amber-600 font-medium mt-1 inline-block bg-amber-500/10 px-2 py-1 rounded-md">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
+                   {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
+                   <p className="text-xs text-amber-600 font-bold mt-2 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" /> Temporarily Permitted
+                   </p>
+                 </div>
+                 <div className="flex items-center gap-3">
+                   <div className="bg-background p-2 rounded-xl shadow-sm border border-amber-500/30">
+                    <Clock className="w-6 h-6 text-amber-500" />
+                   </div>
+                   <span className="text-sm font-bold text-amber-500">Permitted</span>
+                 </div>
+               </div>
             ) : libraryDue && libraryDue.has_dues ? (
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-destructive/20 bg-destructive/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
                    <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
-                   <p className="text-sm text-destructive font-medium mt-1 inline-block">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
+                   <p className="text-sm text-destructive font-medium mt-1 inline-block bg-destructive/10 px-2 py-1 rounded-md">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
                    {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
                  </div>
                  <div className="flex items-center gap-3">
@@ -1119,11 +1149,12 @@ export default function StudentDashboard() {
 }
 
 // Stepper Component — memoized to prevent unnecessary re-renders
-const Step = memo(function Step({ title, description, isComplete, isActive, icon }: any) {
+const Step = memo(function Step({ title, description, isComplete, isPermitted, isActive, icon }: any) {
   return (
     <div className="relative flex flex-col items-center">
       <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 relative z-10 ${
         isComplete ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30" : 
+        isPermitted ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" :
         isActive ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30 animate-pulse ring-4 ring-primary/20" : 
         "bg-card border-2 border-border text-muted-foreground"
       }`}>
@@ -1133,9 +1164,14 @@ const Step = memo(function Step({ title, description, isComplete, isActive, icon
              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
            </div>
         )}
+        {isPermitted && !isComplete && (
+           <div className="absolute -bottom-1 -right-1 bg-card rounded-full p-0.5 shadow-sm">
+             <Clock className="w-4 h-4 text-amber-500" />
+           </div>
+        )}
       </div>
       <div className="text-center bg-card md:bg-transparent px-2 md:px-0 z-10">
-        <h4 className={`font-bold text-base leading-tight ${isComplete ? "text-emerald-500" : isActive ? "text-foreground" : "text-muted-foreground"}`}>
+        <h4 className={`font-bold text-base leading-tight ${isComplete ? "text-emerald-500" : isPermitted ? "text-amber-500" : isActive ? "text-foreground" : "text-muted-foreground"}`}>
           {title}
         </h4>
         <p className="text-xs text-muted-foreground mt-1 font-medium tracking-wide">{description}</p>
