@@ -84,11 +84,6 @@ export default function FacultyDashboard() {
   useEffect(() => {
     if (user) {
       fetchData();
-      
-      const channel = supabase.channel('faculty-dashboard')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'subject_enrollment', filter: `teacher_id=eq.${user.id}` }, () => fetchData())
-        .subscribe();
-      return () => { supabase.removeChannel(channel); }
     }
   }, [user]);
 
@@ -449,8 +444,6 @@ export default function FacultyDashboard() {
       await markFacultySubjectStatus(id, status, pct, remarks);
       // Update local state immediately
       setStudents(prev => prev.map(s => s.id === id ? { ...s, status, remarks, attendance_pct: pct } : s));
-      // Also re-fetch to ensure DB consistency
-      fetchData();
     } catch (err: any) {
       console.error("Attendance update error:", err);
       // Revert by re-fetching from DB on error

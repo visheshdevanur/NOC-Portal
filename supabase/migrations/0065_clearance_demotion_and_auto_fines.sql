@@ -148,8 +148,8 @@ DECLARE
   matched_fine NUMERIC;
   pct INT;
 BEGIN
-  -- Only run when status changes TO 'rejected'
-  IF NEW.status = 'rejected' AND (OLD.status IS NULL OR OLD.status != 'rejected') THEN
+  -- Only run when status is 'rejected' and it either just changed, or attendance_pct changed
+  IF NEW.status = 'rejected' AND (OLD.status IS NULL OR OLD.status != 'rejected' OR NEW.attendance_pct IS DISTINCT FROM OLD.attendance_pct) THEN
     pct := COALESCE(NEW.attendance_pct, 0);
     
     -- Get the student's department_id
