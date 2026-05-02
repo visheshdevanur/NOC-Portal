@@ -600,8 +600,7 @@ export default function AdminDashboard() {
   const filteredAllUsers = allUsers.filter(u => {
     const matchesSearch = u.full_name?.toLowerCase().includes(allUsersSearch.toLowerCase()) ||
       u.role?.toLowerCase().includes(allUsersSearch.toLowerCase());
-    const matchesRole = allUsersRoleFilter === 'all' || u.role === allUsersRoleFilter;
-    return matchesSearch && matchesRole;
+    return matchesSearch;
   });
 
   // ==================== HALL TICKET STATUS ====================
