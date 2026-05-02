@@ -1613,42 +1613,30 @@ export default function AdminDashboard() {
                 )}
               </div>
 
-              {/* Identify First Year Dept */}
-              {(() => {
-                const fyDeptId = departments.find(d => allUsers.some(u => u.department_id === d.id && u.role === 'student' && ['1', '2'].includes(u.semesters?.name || '')) || allUsers.some(u => u.department_id === d.id && u.role === 'fyc'))?.id;
-                
-                const fyDept = departments.find(d => d.id === fyDeptId);
-                
-                return fyDept ? (
-                  <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
-                    <button onClick={() => { const next = new Set(expandedAllUsersSections); expandedAllUsersSections.has('fy') ? next.delete('fy') : next.add('fy'); setExpandedAllUsersSections(next); }} className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors">
-                      <div className="flex items-center gap-3">
-                        {expandedAllUsersSections.has('fy') ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
-                        <Building2 className="w-6 h-6 text-indigo-500" />
-                        <div>
-                          <h3 className="text-lg font-bold text-foreground">First Year Department ({fyDept.name})</h3>
-                          <p className="text-sm text-muted-foreground">FYC, Clerk, Sem 1 & 2 Students, Teachers</p>
-                        </div>
-                      </div>
-                    </button>
-                    {expandedAllUsersSections.has('fy') && (
-                      <div className="border-t border-border p-4 bg-background/50 space-y-4">
-                        {renderUserGroup("First Year Coordinator (FYC)", filteredAllUsers.filter(u => u.department_id === fyDept.id && u.role === 'fyc'))}
-                        {renderUserGroup("Clerks", filteredAllUsers.filter(u => u.department_id === fyDept.id && u.role === 'clerk'))}
-                        {renderUserGroup("Teachers (Created by FYC/Clerk)", filteredAllUsers.filter(u => u.department_id === fyDept.id && ['faculty', 'teacher'].includes(u.role) && ['fyc', 'clerk'].includes(teacherCreatorRoles[u.id] || '')))}
-                        {renderUserGroup("Other Teachers", filteredAllUsers.filter(u => u.department_id === fyDept.id && ['faculty', 'teacher'].includes(u.role) && !['fyc', 'clerk'].includes(teacherCreatorRoles[u.id] || '')))}
-                        {renderUserGroup("Students (Semesters 1 & 2)", filteredAllUsers.filter(u => u.department_id === fyDept.id && u.role === 'student' && ['1', '2'].includes(u.semesters?.name || '')))}
-                      </div>
-                    )}
+              {/* VIRTUAL First Year Dept */}
+              <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+                <button onClick={() => { const next = new Set(expandedAllUsersSections); expandedAllUsersSections.has('fy') ? next.delete('fy') : next.add('fy'); setExpandedAllUsersSections(next); }} className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors">
+                  <div className="flex items-center gap-3">
+                    {expandedAllUsersSections.has('fy') ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                    <Building2 className="w-6 h-6 text-indigo-500" />
+                    <div>
+                      <h3 className="text-lg font-bold text-foreground">First Year Department</h3>
+                      <p className="text-sm text-muted-foreground">FYC, Clerk, Sem 1 & 2 Students, Teachers</p>
+                    </div>
                   </div>
-                ) : null;
-              })()}
+                </button>
+                {expandedAllUsersSections.has('fy') && (
+                  <div className="border-t border-border p-4 bg-background/50 space-y-4">
+                    {renderUserGroup("First Year Coordinator (FYC)", filteredAllUsers.filter(u => u.role === 'fyc'))}
+                    {renderUserGroup("Clerks", filteredAllUsers.filter(u => u.role === 'clerk'))}
+                    {renderUserGroup("Teachers (Created by FYC/Clerk)", filteredAllUsers.filter(u => ['faculty', 'teacher'].includes(u.role) && ['fyc', 'clerk'].includes(teacherCreatorRoles[u.id] || '')))}
+                    {renderUserGroup("Students (Semesters 1 & 2)", filteredAllUsers.filter(u => u.role === 'student' && ['1', '2'].includes(u.semesters?.name || '')))}
+                  </div>
+                )}
+              </div>
 
               {/* Other Departments */}
               {departments.map(dept => {
-                 const isFyDept = allUsers.some(u => u.department_id === dept.id && u.role === 'student' && ['1', '2'].includes(u.semesters?.name || '')) || allUsers.some(u => u.department_id === dept.id && u.role === 'fyc');
-                 if (isFyDept) return null; // Already rendered
-
                  return (
                    <div key={dept.id} className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
                      <button onClick={() => { const next = new Set(expandedAllUsersSections); expandedAllUsersSections.has(dept.id) ? next.delete(dept.id) : next.add(dept.id); setExpandedAllUsersSections(next); }} className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors">
@@ -1666,7 +1654,7 @@ export default function AdminDashboard() {
                          {renderUserGroup("HOD (Head of Department)", filteredAllUsers.filter(u => u.department_id === dept.id && u.role === 'hod'))}
                          {renderUserGroup("Staff", filteredAllUsers.filter(u => u.department_id === dept.id && u.role === 'staff'))}
                          {renderUserGroup("Teachers (Created by HOD/Staff)", filteredAllUsers.filter(u => u.department_id === dept.id && ['faculty', 'teacher'].includes(u.role) && ['hod', 'staff'].includes(teacherCreatorRoles[u.id] || '')))}
-                         {renderUserGroup("Other Teachers", filteredAllUsers.filter(u => u.department_id === dept.id && ['faculty', 'teacher'].includes(u.role) && !['hod', 'staff'].includes(teacherCreatorRoles[u.id] || '')))}
+                         {renderUserGroup("Other Teachers", filteredAllUsers.filter(u => u.department_id === dept.id && ['faculty', 'teacher'].includes(u.role) && !['hod', 'staff', 'fyc', 'clerk'].includes(teacherCreatorRoles[u.id] || '')))}
                          {renderUserGroup("Students (Semesters 3 to 8)", filteredAllUsers.filter(u => u.department_id === dept.id && u.role === 'student' && !['1', '2'].includes(u.semesters?.name || '')))}
                        </div>
                      )}
