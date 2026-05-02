@@ -267,12 +267,23 @@ export const getImportableTeachers = async (departmentId: string) => {
   }
   
   // Fetch all teachers who are NOT in this department natively
-  const { data, error } = await supabase
+  // We need two queries: one for teachers in OTHER departments, one for teachers with NO department (FYC-created)
+  const { data: otherDeptTeachers, error } = await supabase
     .from('profiles')
     .select('id, full_name, role, email, created_by, department_id, departments!profiles_department_id_fkey(name)')
     .in('role', ['teacher', 'faculty'])
     .neq('department_id', departmentId)
     .order('full_name');
+
+  const { data: noDeptTeachers, error: noDeptErr } = await supabase
+    .from('profiles')
+    .select('id, full_name, role, email, created_by, department_id, departments!profiles_department_id_fkey(name)')
+    .in('role', ['teacher', 'faculty'])
+    .is('department_id', null)
+    .order('full_name');
+
+  if (noDeptErr) console.error(noDeptErr);
+  const data = [...(otherDeptTeachers || []), ...(noDeptTeachers || [])];
     
   if (error) throw error;
   
