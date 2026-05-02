@@ -110,7 +110,6 @@ export default function AdminDashboard() {
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [allUsersLoading, setAllUsersLoading] = useState(false);
   const [allUsersSearch, setAllUsersSearch] = useState('');
-  const [allUsersRoleFilter, setAllUsersRoleFilter] = useState('all');
   const [teacherCreatorRoles, setTeacherCreatorRoles] = useState<Record<string, string>>({});
   // Hierarchy state for All Users
   const [expandedAllUsersSections, setExpandedAllUsersSections] = useState<Set<string>>(new Set(['global', 'first_year']));
