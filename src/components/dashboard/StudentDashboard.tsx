@@ -369,7 +369,8 @@ export default function StudentDashboard() {
     const eligible = ids.length === 0 || ids.every(sid => bySubject[sid].present >= 2);
     return { allIAEligible: eligible };
   }, [iaRecords]);
-  const canDownloadHallTicket = isHodApproved && allIAEligible;
+  const allAttendanceFinesPaid = pendingAttendanceDues.length === 0;
+  const canDownloadHallTicket = isHodApproved && allFacultyCleared && allIAEligible && allAttendanceFinesPaid && libraryPass && deptPass;
 
   if (loading) return <div className="animate-pulse flex flex-col gap-6">
     <div className="h-48 bg-card rounded-2xl w-full"></div>
@@ -522,13 +523,21 @@ export default function StudentDashboard() {
             <p className={`text-sm ${canDownloadHallTicket ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
               {canDownloadHallTicket
                 ? 'Ready to view'
-                : !isHodApproved
-                  ? 'Requires Final Approval'
-                  : 'Blocked: Insufficient IA Attendance'}
+                : !allFacultyCleared
+                  ? 'Blocked: Faculty clearance incomplete'
+                  : !allAttendanceFinesPaid
+                    ? 'Blocked: Unpaid attendance fines'
+                    : !allIAEligible
+                      ? 'Blocked: Insufficient IA Attendance'
+                      : !libraryPass
+                        ? 'Blocked: Library dues pending'
+                        : !deptPass
+                          ? 'Blocked: Accounts dues pending'
+                          : 'Requires HOD Final Approval'}
             </p>
-            {isHodApproved && !allIAEligible && (
+            {!canDownloadHallTicket && (
               <p className="text-xs text-destructive mt-1 font-medium">
-                ⚠ You must attend at least 2 IAs in every subject to view your report.
+                ⚠ {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : 'Awaiting HOD final approval.'}
               </p>
             )}
           </div>

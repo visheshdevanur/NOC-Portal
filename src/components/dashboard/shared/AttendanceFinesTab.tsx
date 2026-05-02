@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Settings, Plus, Trash2, Search, AlertTriangle, X } from 'lucide-react';
+import { Settings, Plus, Trash2, Search, X } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { 
   getStaffAttendanceFines, 
   deleteAttendanceCategory, 
   createAttendanceCategory, 
   updateAttendanceCategory, 
-  applyMassFines, 
   clearStudentFine, 
   overrideAttendanceFine,
   isFirstYearSem
@@ -31,9 +30,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   const [catSaving, setCatSaving] = useState(false);
   const [catError, setCatError] = useState<string | null>(null);
   
-  const [massFineLoading, setMassFineLoading] = useState(false);
-  const [massFineResult, setMassFineResult] = useState<string | null>(null);
-  
+
   
   const [reduceFineId, setReduceFineId] = useState<string | null>(null);
   const [reduceFineAmount, setReduceFineAmount] = useState('');
@@ -121,22 +118,6 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     } catch (err) { console.error(err); }
   };
 
-  const handleApplyMassFines = async () => {
-    if (!confirm('This will evaluate all rejected enrollments and set fines based on the configured categories. Continue?')) return;
-    setMassFineLoading(true);
-    setMassFineResult(null);
-    try {
-      const isFirstYear = role === 'clerk' || role === 'fyc';
-      const result = await applyMassFines(departmentId || '', isFirstYear);
-      setMassFineResult(`Applied fines to ${result.updated} students. Skipped ${result.skipped} already configured students.`);
-      fetchAttendanceFines();
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || 'Failed to apply mass fines');
-    } finally {
-      setMassFineLoading(false);
-    }
-  };
 
   const handleReduceFine = async (enrollmentId: string) => {
     const amt = parseInt(reduceFineAmount);
@@ -286,20 +267,10 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           />
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {canManageCategories && (
-            <button
-              onClick={handleApplyMassFines}
-              disabled={massFineLoading || categories.length === 0}
-              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-3 rounded-xl font-bold transition-all shadow-sm disabled:opacity-50"
-            >
-              <AlertTriangle className="w-4 h-4" />
-              {massFineLoading ? 'Applying...' : 'Apply Mass Fines'}
-            </button>
-          )}
         </div>
       </div>
       
-      {massFineResult && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>✅ {massFineResult}</span><button onClick={() => setMassFineResult(null)}><X className="w-4 h-4" /></button></div>}
+
       
       {/* Students Table */}
       <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
