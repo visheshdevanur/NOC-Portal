@@ -547,49 +547,7 @@ export default function StudentDashboard() {
         </div>
       </div>
 
-      {/* Pending Attendance Dues Section */}
-      {pendingAttendanceDues.length > 0 && (
-        <div className="bg-card rounded-3xl p-8 shadow-sm border-2 border-amber-500/20">
-          <h2 className="text-xl font-bold text-foreground mb-6 flex items-center">
-            <AlertCircle className="w-5 h-5 mr-3 text-amber-500" />
-            Action Required: Pending Attendance Dues
-          </h2>
-          <div className="space-y-4">
-            {pendingAttendanceDues.map((due: any) => (
-              <div key={due.id} className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                  <h3 className="text-lg font-bold text-foreground">{due.subjects?.subject_name} ({due.subjects?.subject_code})</h3>
-                  <p className="text-sm text-muted-foreground mt-1">Reason: Attendance Shortage Fine</p>
-                  <p className="text-amber-600 dark:text-amber-400 font-bold mt-2">Fine Amount: ₹{due.attendance_fee}</p>
-                </div>
-                <button
-                  onClick={() => handleRazorpayPayment(due)}
-                  disabled={payingEnrollmentId === due.id || payingAll}
-                  className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all shadow-md w-full md:w-auto disabled:opacity-50"
-                >
-                  {payingEnrollmentId === due.id ? 'Initiating...' : 'Pay Now'}
-                </button>
-              </div>
-            ))}
-          </div>
-          {/* Total + Pay All */}
-          {pendingAttendanceDues.length > 1 && (
-            <div className="mt-6 pt-6 border-t-2 border-amber-500/20 flex flex-col md:flex-row justify-between items-center gap-4">
-              <div>
-                <p className="text-lg font-bold text-foreground">Total: <span className="text-amber-600">₹{pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)}</span></p>
-                <p className="text-sm text-muted-foreground">{pendingAttendanceDues.length} subjects with pending fines</p>
-              </div>
-              <button
-                onClick={handlePayAll}
-                disabled={payingAll || !!payingEnrollmentId}
-                className="px-8 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-md text-lg disabled:opacity-50"
-              >
-                {payingAll ? 'Initiating...' : `Pay All (₹${pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)})`}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+
 
       {/* Pipeline Stepper */}
       <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
