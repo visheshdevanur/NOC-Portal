@@ -94,17 +94,19 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
     }
   };
 
+  const uniqueSemesterNames = Array.from(new Set(semestersList.map(s => s.name))).sort();
+
   const filteredStudentDuesOverview = studentDuesOverview.filter(s =>
     s.full_name?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
     s.roll_number?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
     s.section?.toLowerCase().includes(studentDuesSearch.toLowerCase())
-  ).filter(s => csvSemFilter === 'all' || s.semester_id === csvSemFilter);
+  ).filter(s => csvSemFilter === 'all' || s.semesters?.name === csvSemFilter);
 
   const downloadCSV = () => {
     const dataToExport = filteredStudentDuesOverview;
     if (!dataToExport || dataToExport.length === 0) return;
     
-    const semName = csvSemFilter === 'all' ? 'all_semesters' : (semestersList.find(s => s.id === csvSemFilter)?.name || 'semester').replace(/\s+/g, '_');
+    const semName = csvSemFilter === 'all' ? 'all_semesters' : csvSemFilter.replace(/\s+/g, '_');
     
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Roll No,Student Name,Section,Semester,Library Dues,College Fee Status,Pending Attendance Fine,Paid Attendance Fine\n";
@@ -162,8 +164,8 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
             className="px-4 py-2.5 bg-background border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none w-full md:w-48"
           >
             <option value="all">All Semesters</option>
-            {semestersList.map(sem => (
-              <option key={sem.id} value={sem.id}>{sem.name}</option>
+            {uniqueSemesterNames.map(name => (
+              <option key={name} value={name}>{name}</option>
             ))}
           </select>
           <button
