@@ -22,7 +22,7 @@ CREATE POLICY "Staff/Clerk can create categories" ON attendance_fine_categories
     EXISTS (
       SELECT 1 FROM profiles
       WHERE id = auth.uid()
-        AND role IN ('staff', 'clerk', 'admin', 'fyc')
+        AND role IN ('staff', 'clerk', 'admin', 'fyc', 'hod')
         AND (department_id = attendance_fine_categories.department_id OR role IN ('admin', 'fyc'))
     )
   );
@@ -34,7 +34,7 @@ CREATE POLICY "Staff/Clerk can update categories" ON attendance_fine_categories
     EXISTS (
       SELECT 1 FROM profiles
       WHERE id = auth.uid()
-        AND role IN ('staff', 'clerk', 'admin', 'fyc')
+        AND role IN ('staff', 'clerk', 'admin', 'fyc', 'hod')
         AND (department_id = attendance_fine_categories.department_id OR role IN ('admin', 'fyc'))
     )
   );
@@ -46,7 +46,7 @@ CREATE POLICY "Staff/Clerk can delete categories" ON attendance_fine_categories
     EXISTS (
       SELECT 1 FROM profiles
       WHERE id = auth.uid()
-        AND role IN ('staff', 'clerk', 'admin', 'fyc')
+        AND role IN ('staff', 'clerk', 'admin', 'fyc', 'hod')
         AND (department_id = attendance_fine_categories.department_id OR role IN ('admin', 'fyc'))
     )
   );
