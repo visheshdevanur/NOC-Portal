@@ -1139,11 +1139,11 @@ export const getAttendanceCategories = async (departmentId: string) => {
 };
 
 /** Create a new attendance fine category */
-export const createAttendanceCategory = async (departmentId: string, label: string, minPct: number, maxPct: number, amount: number) => {
+export const createAttendanceCategory = async (departmentId: string, label: string, minPct: number, maxPct: number, amount: number, isFirstYear: boolean = false) => {
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from('attendance_fine_categories')
-    .insert([{ department_id: departmentId, label, min_pct: minPct, max_pct: maxPct, fine_amount: amount, created_by: user?.id }] as any)
+    .insert([{ department_id: departmentId, label, min_pct: minPct, max_pct: maxPct, fine_amount: amount, created_by: user?.id, is_first_year: isFirstYear }] as any)
     .select()
     .single();
   if (error) throw error;

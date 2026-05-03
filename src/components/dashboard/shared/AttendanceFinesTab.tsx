@@ -39,37 +39,55 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   
   const [clearFineLoading, setClearFineLoading] = useState<string | null>(null);
 
-  // FYC department selector state (FYC is global, needs to pick a dept for categories)
+  // FYC needs all departments to create categories globally
   const [allDepartments, setAllDepartments] = useState<any[]>([]);
-  const [selectedCatDeptId, setSelectedCatDeptId] = useState('');
 
-  // Effective department ID: use prop if provided, otherwise use FYC's selected dept
-  const effectiveDeptId = departmentId || selectedCatDeptId;
-
+  const isFycGlobal = role === 'fyc' && !departmentId;
   const canManageCategories = role === 'hod' || role === 'fyc';
 
-  // Load departments for FYC
+  // Load departments for FYC (needed for global category creation)
   useEffect(() => {
-    if (role === 'fyc' && !departmentId) {
+    if (isFycGlobal) {
       getAllDepartments().then(depts => {
         setAllDepartments(depts || []);
-        if (depts && depts.length > 0) setSelectedCatDeptId(depts[0].id);
       }).catch(console.error);
     }
   }, [role, departmentId]);
 
   useEffect(() => {
-    if (canManageCategories && effectiveDeptId) fetchAttendanceCategories();
+    if (canManageCategories) fetchAttendanceCategories();
     fetchAttendanceFines();
-  }, [effectiveDeptId, role]);
+  }, [departmentId, role, allDepartments]);
 
   const fetchAttendanceCategories = async () => {
-    if (!effectiveDeptId) return;
     setLoadingCategories(true);
     try {
-      const { data, error } = await supabase.from('attendance_fine_categories').select('*').eq('department_id', effectiveDeptId).order('min_pct');
-      if (error) throw error;
-      setCategories(data || []);
+      if (isFycGlobal) {
+        // FYC: fetch all first-year categories (RLS filters to is_first_year=true)
+        // Since identical categories exist in all depts, pick from the first dept to avoid duplicates
+        if (allDepartments.length > 0) {
+          const { data, error } = await supabase
+            .from('attendance_fine_categories')
+            .select('*')
+            .eq('department_id', allDepartments[0].id)
+            .eq('is_first_year', true)
+            .order('min_pct');
+          if (error) throw error;
+          setCategories(data || []);
+        } else {
+          setCategories([]);
+        }
+      } else if (departmentId) {
+        // HOD/Staff: fetch non-first-year categories for their department
+        const { data, error } = await supabase
+          .from('attendance_fine_categories')
+          .select('*')
+          .eq('department_id', departmentId)
+          .eq('is_first_year', false)
+          .order('min_pct');
+        if (error) throw error;
+        setCategories(data || []);
+      }
     } catch (err) { console.error(err); }
     finally { setLoadingCategories(false); }
   };
@@ -78,9 +96,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     setLoadingAttendances(true);
     try {
       let allData: any[] = [];
-      if (effectiveDeptId && role !== 'fyc') {
-        allData = await getStaffAttendanceFines(effectiveDeptId);
-      } else if (departmentId) {
+      if (departmentId) {
         allData = await getStaffAttendanceFines(departmentId);
       } else {
         // FYC: fetch all rejected enrollments across all departments
@@ -120,21 +136,22 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       if (editingCat) {
         await updateAttendanceCategory(editingCat.id, catForm.label, min, max, amt);
         // FYC: also update matching categories in other departments
-        if (role === 'fyc' && !departmentId) {
+        if (isFycGlobal) {
           const { data: matching } = await supabase
             .from('attendance_fine_categories')
-            .select('id, department_id')
+            .select('id')
             .eq('label', editingCat.label)
             .eq('min_pct', editingCat.min_pct)
             .eq('max_pct', editingCat.max_pct)
+            .eq('is_first_year', true)
             .neq('id', editingCat.id);
           for (const m of (matching || [])) {
             await updateAttendanceCategory(m.id, catForm.label, min, max, amt);
           }
         }
       } else {
-        if (role === 'fyc' && !departmentId) {
-          // FYC: create category in ALL departments at once
+        if (isFycGlobal) {
+          // FYC: create category in ALL departments with is_first_year=true
           if (allDepartments.length === 0) {
             setCatError('No departments loaded. Please try again.');
             setCatSaving(false);
@@ -143,20 +160,20 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           let created = 0;
           for (const dept of allDepartments) {
             try {
-              await createAttendanceCategory(dept.id, catForm.label, min, max, amt);
+              await createAttendanceCategory(dept.id, catForm.label, min, max, amt, true);
               created++;
             } catch (err: any) {
               console.warn(`Failed to create category for ${dept.name}:`, err.message);
             }
           }
           if (created === 0) throw new Error('Failed to create category in any department.');
+        } else if (departmentId) {
+          // HOD: create for their department only with is_first_year=false
+          await createAttendanceCategory(departmentId, catForm.label, min, max, amt, false);
         } else {
-          if (!effectiveDeptId) {
-            setCatError('Please select a department first.');
-            setCatSaving(false);
-            return;
-          }
-          await createAttendanceCategory(effectiveDeptId, catForm.label, min, max, amt);
+          setCatError('Department not available.');
+          setCatSaving(false);
+          return;
         }
       }
       setShowCatModal(false);
@@ -174,13 +191,14 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       await deleteAttendanceCategory(cat.id);
       
       // FYC: also delete matching categories in other departments
-      if (role === 'fyc' && !departmentId) {
+      if (isFycGlobal) {
         const { data: matching } = await supabase
           .from('attendance_fine_categories')
           .select('id')
           .eq('label', cat.label)
           .eq('min_pct', cat.min_pct)
-          .eq('max_pct', cat.max_pct);
+          .eq('max_pct', cat.max_pct)
+          .eq('is_first_year', true);
         for (const m of (matching || [])) {
           if (m.id !== cat.id) await deleteAttendanceCategory(m.id);
         }
@@ -224,10 +242,15 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
               <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                 <Settings className="w-5 h-5 text-amber-500" />
                 Attendance Fine Categories
+                {isFycGlobal && <span className="text-xs font-medium bg-violet-500/10 text-violet-600 px-2 py-0.5 rounded-full ml-2">Sem 1 & 2 · All Departments</span>}
+                {role === 'hod' && <span className="text-xs font-medium bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full ml-2">Sem 3–8 · Your Department</span>}
               </h2>
-              <p className="text-muted-foreground text-sm mt-1">Define attendance % ranges and their corresponding fine amounts.</p>
+              <p className="text-muted-foreground text-sm mt-1">
+                {isFycGlobal
+                  ? 'Define fine categories for all first-year students (Sem 1 & 2). These apply to every branch automatically.'
+                  : 'Define attendance % ranges and their corresponding fine amounts for your department (Sem 3–8).'}
+              </p>
             </div>
-          {/* FYC categories are global across all departments, no branch selector needed */}
             <button
               onClick={() => { setEditingCat(null); setCatForm({ label: '', minPct: '', maxPct: '', amount: '' }); setCatError(null); setShowCatModal(true); }}
               className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
