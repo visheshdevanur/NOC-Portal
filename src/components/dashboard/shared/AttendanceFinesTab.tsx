@@ -227,21 +227,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
               </h2>
               <p className="text-muted-foreground text-sm mt-1">Define attendance % ranges and their corresponding fine amounts.</p>
             </div>
-          {/* FYC Department Selector */}
-          {role === 'fyc' && !departmentId && (
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-medium text-foreground whitespace-nowrap">Branch:</label>
-              <select
-                className="px-4 py-2.5 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm font-medium min-w-[140px]"
-                value={selectedCatDeptId}
-                onChange={e => setSelectedCatDeptId(e.target.value)}
-              >
-                {allDepartments.map((dept: any) => (
-                  <option key={dept.id} value={dept.id}>{dept.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* FYC categories are global across all departments, no branch selector needed */}
             <button
               onClick={() => { setEditingCat(null); setCatForm({ label: '', minPct: '', maxPct: '', amount: '' }); setCatError(null); setShowCatModal(true); }}
               className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
