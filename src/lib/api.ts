@@ -419,10 +419,10 @@ export const bulkAssignTeacherToSectionCSV = async (
     return map;
   };
 
-  const getSubjects = async (deptId: string) => {
-    if (subCache.has(deptId)) return subCache.get(deptId)!;
-    const { data: subs } = await supabase.from('subjects').select('id, subject_code, semester_id').eq('department_id', deptId);
-    subCache.set(deptId, subs || []);
+  const getSubjects = async () => {
+    if (subCache.has('all')) return subCache.get('all')!;
+    const { data: subs } = await supabase.from('subjects').select('id, subject_code, semester_id');
+    subCache.set('all', subs || []);
     return subs || [];
   };
 
@@ -445,7 +445,7 @@ export const bulkAssignTeacherToSectionCSV = async (
       const semId = semMap.get(row.semester_name.toLowerCase());
       if (!semId) throw new Error(`Semester '${row.semester_name}' not found.`);
 
-      const subs = await getSubjects(rowDeptId);
+      const subs = await getSubjects();
       const sub = subs.find(s => s.subject_code.toLowerCase() === row.subject_code.toLowerCase() && s.semester_id === semId);
       if (!sub) throw new Error(`Subject '${row.subject_code}' not found in semester '${row.semester_name}'.`);
 
@@ -784,9 +784,12 @@ export const getStaffAttendanceFines = async (departmentId: string) => {
 };
 
 export const overrideAttendanceFine = async (enrollmentId: string, feeAmount: number = 0) => {
+  const newStatus = feeAmount === 0 ? 'completed' : 'rejected';
+  const remarks = feeAmount === 0 ? 'Approved by Staff (Fine Waived)' : 'Fine Reduced by Staff';
+  
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ status: 'completed', remarks: 'Approved by Staff after Fine', attendance_fee: feeAmount } as any)
+    .update({ status: newStatus as any, remarks, attendance_fee: feeAmount } as any)
     .eq('id', enrollmentId)
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name)')
     .single();
