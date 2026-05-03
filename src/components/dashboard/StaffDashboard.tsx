@@ -747,17 +747,7 @@ export default function StaffDashboard() {
     }
   };
 
-  const handleDeleteUser = async (userId: string, userName: string) => {
-    if (!confirm(`Are you sure you want to delete "${userName}"?`)) return;
-    try {
-      const { deleteUser } = await import('../../lib/api');
-      await deleteUser(userId);
-      setUserSuccess(`"${userName}" deleted.`);
-      fetchUsers();
-    } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
-    }
-  };
+
 
   const handleUpdateUser = async () => {
     if (!editingUser) return;
@@ -1842,7 +1832,6 @@ export default function StaffDashboard() {
                       <th className="p-4 font-semibold">Role</th>
                       <th className="p-4 font-semibold">Semester</th>
                       <th className="p-4 font-semibold">Section</th>
-                      <th className="p-4 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -1857,14 +1846,6 @@ export default function StaffDashboard() {
                         </td>
                         <td className="p-4 text-muted-foreground text-sm">{(u as any).semesters?.name || '—'}</td>
                         <td className="p-4 text-muted-foreground">{u.section || '—'}</td>
-                        <td className="p-4 text-right">
-                          <button onClick={() => setEditingUser(u)} className="p-2 mr-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white transition-colors" title="Edit user">
-                            <Settings className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => handleDeleteUser(u.id, u.full_name)} className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors" title="Delete user">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
                       </tr>
                     ))}
                   </tbody>
