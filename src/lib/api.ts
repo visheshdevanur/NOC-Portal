@@ -399,28 +399,54 @@ export const assignTeacherToSection = async (subjectId: string, section: string,
 
 export const bulkAssignTeacherToSectionCSV = async (
   departmentId: string,
-  rows: { semester_name: string; subject_code: string; section: string; teacher_id: string }[]
+  rows: { semester_name: string; subject_code: string; section: string; teacher_id: string; dept_name?: string }[]
 ) => {
   const result = { updated: 0, errors: [] as string[] };
   
-  // 1. Fetch semesters for the department
-  const { data: sems } = await supabase.from('semesters').select('id, name').eq('department_id', departmentId);
-  const semMap = new Map((sems || []).map(s => [s.name.toLowerCase(), s.id]));
+  // Fetch all departments for name-to-id mapping
+  const { data: allDepts } = await supabase.from('departments').select('id, name');
+  const deptNameMap = new Map((allDepts || []).map(d => [d.name.toLowerCase(), d.id]));
 
-  // 2. Fetch subjects for the department
-  const { data: subs } = await supabase.from('subjects').select('id, subject_code, semester_id').eq('department_id', departmentId);
-  
-  // 3. Fetch all teachers to map roll_number (teacher_id in CSV) to their profile ID
+  // Cache semesters and subjects per department to avoid re-fetching
+  const semCache = new Map<string, Map<string, string>>();
+  const subCache = new Map<string, any[]>();
+
+  const getSemMap = async (deptId: string) => {
+    if (semCache.has(deptId)) return semCache.get(deptId)!;
+    const { data: sems } = await supabase.from('semesters').select('id, name').eq('department_id', deptId);
+    const map = new Map((sems || []).map(s => [s.name.toLowerCase(), s.id]));
+    semCache.set(deptId, map);
+    return map;
+  };
+
+  const getSubjects = async (deptId: string) => {
+    if (subCache.has(deptId)) return subCache.get(deptId)!;
+    const { data: subs } = await supabase.from('subjects').select('id, subject_code, semester_id').eq('department_id', deptId);
+    subCache.set(deptId, subs || []);
+    return subs || [];
+  };
+
+  // Fetch all teachers to map roll_number (teacher_id in CSV) to their profile ID
   const { data: teachers } = await supabase.from('profiles').select('id, roll_number').in('role', ['teacher', 'faculty']);
   const teacherMap = new Map((teachers || []).map(t => [t.roll_number?.toLowerCase(), t.id]));
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     try {
+      // Resolve department: use dept_name from CSV if provided, otherwise fall back to departmentId
+      let rowDeptId = departmentId;
+      if (row.dept_name) {
+        const resolved = deptNameMap.get(row.dept_name.toLowerCase());
+        if (!resolved) throw new Error(`Department '${row.dept_name}' not found.`);
+        rowDeptId = resolved;
+      }
+
+      const semMap = await getSemMap(rowDeptId);
       const semId = semMap.get(row.semester_name.toLowerCase());
       if (!semId) throw new Error(`Semester '${row.semester_name}' not found.`);
 
-      const sub = (subs || []).find(s => s.subject_code.toLowerCase() === row.subject_code.toLowerCase() && s.semester_id === semId);
+      const subs = await getSubjects(rowDeptId);
+      const sub = subs.find(s => s.subject_code.toLowerCase() === row.subject_code.toLowerCase() && s.semester_id === semId);
       if (!sub) throw new Error(`Subject '${row.subject_code}' not found in semester '${row.semester_name}'.`);
 
       const tProfileId = teacherMap.get(row.teacher_id.toLowerCase());
@@ -434,7 +460,7 @@ export const bulkAssignTeacherToSectionCSV = async (
     }
   }
 
-  logActivity('Bulk Section Assignment', `Assigned ${result.updated} sections via CSV upload in department`);
+  logActivity('Bulk Section Assignment', `Assigned ${result.updated} sections via CSV upload`);
   return result;
 };
 

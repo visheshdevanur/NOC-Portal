@@ -1193,6 +1193,7 @@ export default function ClerkDashboard() {
       if (lines.length < 2) throw new Error('CSV is empty or missing data rows.');
       
       const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
+      const deptIdx = headers.findIndex(h => h.includes('dept'));
       const semIdx = headers.findIndex(h => h.includes('semester'));
       const subIdx = headers.findIndex(h => h.includes('subject'));
       const secIdx = headers.findIndex(h => h.includes('section'));
@@ -1207,6 +1208,7 @@ export default function ClerkDashboard() {
         const cols = lines[i].split(',').map(c => c.trim());
         if (cols[semIdx] && cols[subIdx] && cols[secIdx] && cols[tIdx]) {
           rows.push({
+            dept_name: deptIdx !== -1 ? cols[deptIdx] : undefined,
             semester_name: cols[semIdx],
             subject_code: cols[subIdx],
             section: cols[secIdx],
