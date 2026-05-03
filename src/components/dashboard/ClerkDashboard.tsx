@@ -4,7 +4,7 @@ import {
   getUsersByDeptAndRoles,
   getSubjectsByDepartment, createSubject, deleteSubject, getDepartmentSections,
   assignTeacherToSection, updateSubjectAPI, getDepartmentById, getStaffAttendanceFines, getSemestersByDepartment, updateUserAPI,
-  updateStudentPaidAmount
+  updateStudentPaidAmount, getAllDepartments
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 
@@ -56,6 +56,10 @@ export default function ClerkDashboard() {
   const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('users');
   const [deptName, setDeptName] = useState<string>('');
+
+  // Branch (Department) selector — clerk is global, not dept-scoped
+  const [allDepartments, setAllDepartments] = useState<any[]>([]);
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('');
 
   // Users State
   const [departmentUsers, setDepartmentUsers] = useState<UserProfile[]>([]);
@@ -140,21 +144,40 @@ export default function ClerkDashboard() {
   const [studentDuesSearch, setStudentDuesSearch] = useState('');
   const [csvSemFilter, setCsvSemFilter] = useState<string>('all');
 
+  // Fetch all departments on mount
   useEffect(() => {
-    if (profile?.department_id) {
-      fetchDeptName();
-      fetchData();
+    const loadDepts = async () => {
+      try {
+        const data = await getAllDepartments();
+        setAllDepartments(data || []);
+        // If clerk still has a legacy department_id, pre-select it
+        if (profile?.department_id) {
+          setSelectedDeptId(profile.department_id);
+        } else if (data && data.length > 0) {
+          setSelectedDeptId(data[0].id);
+        }
+      } catch (err) { console.error(err); }
+    };
+    loadDepts();
 
-      const channel = supabase.channel('clerk-dashboard')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-          if (activeTab === 'users') fetchUsers();
-        })
-        .subscribe();
-      return () => { supabase.removeChannel(channel); }
-    }
+    const channel = supabase.channel('clerk-dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+        if (activeTab === 'users') fetchUsers();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); }
   }, [profile]);
 
+  // Update dept name when branch changes
   useEffect(() => {
+    if (selectedDeptId) {
+      const dept = allDepartments.find(d => d.id === selectedDeptId);
+      setDeptName(dept?.name || selectedDeptId);
+    }
+  }, [selectedDeptId, allDepartments]);
+
+  useEffect(() => {
+    if (!selectedDeptId) return;
     if (activeTab === 'users' || activeTab === 'sections') { fetchUsers(); fetchSemesters(); }
     if (activeTab === 'sections') fetchSectionData();
     if (activeTab === 'subjects') fetchSubjects();
@@ -162,13 +185,13 @@ export default function ClerkDashboard() {
     if (activeTab === 'dues') fetchDues();
     if (activeTab === 'logs') fetchclerkLogs();
     if (activeTab === 'studentdues') { fetchStudentDuesOverview(); fetchSemesters(); }
-  }, [activeTab, profile?.department_id]);
+  }, [activeTab, selectedDeptId]);
 
   const fetchDues = async () => {
-    if (!profile?.department_id) return;
+    if (!selectedDeptId) return;
     setLoadingDues(true);
     try {
-      const data = await import('../../lib/api').then(m => m.getStaffStudentDues(profile.department_id!));
+      const data = await import('../../lib/api').then(m => m.getStaffStudentDues(selectedDeptId));
       // Clerk only handles 1st/2nd sem students
       const filtered = (data || []).filter((d: any) => {
         const semName = d.profiles?.semesters?.name || '';
@@ -200,17 +223,12 @@ export default function ClerkDashboard() {
     }
   };
 
-  const fetchDeptName = async () => {
-    if (!profile?.department_id) return;
-    try {
-      const dept = await getDepartmentById(profile.department_id);
-      setDeptName(dept?.name || profile.department_id);
-    } catch { setDeptName(profile.department_id); }
-  };
+  // fetchDeptName is now handled by the selectedDeptId useEffect above
+  const fetchDeptName = () => {};
 
   // ==================== ACTIVITY LOGS ======================
   const fetchclerkLogs = async () => {
-    if (!profile?.department_id || !profile?.id) return;
+    if (!selectedDeptId || !profile?.id) return;
     setLogsLoading(true);
     try {
       // Build list of creator IDs: the clerk itself + whoever created the clerk (FYC)
@@ -221,7 +239,7 @@ export default function ClerkDashboard() {
       const { data: validTeachers } = await supabase
         .from('profiles')
         .select('id')
-        .eq('department_id', profile.department_id)
+        .eq('department_id', selectedDeptId)
         .in('role', ['teacher', 'faculty'])
         .in('created_by', creatorIds);
 
@@ -237,7 +255,7 @@ export default function ClerkDashboard() {
       const { data, error } = await supabase
         .from('activity_logs')
         .select('*')
-        .eq('department_id', profile.department_id)
+        .eq('department_id', selectedDeptId)
         .in('user_id', validTeacherIds)
         .order('created_at', { ascending: false })
         .limit(300);
@@ -256,14 +274,14 @@ export default function ClerkDashboard() {
 
   // ==================== STUDENT DUES OVERVIEW (READ-ONLY) ======================
   const fetchStudentDuesOverview = async () => {
-    if (!profile?.department_id) return;
+    if (!selectedDeptId) return;
     setStudentDuesLoading(true);
     try {
       // Fetch students in department
       const { data: allStudents, error: studErr } = await supabase
         .from('profiles')
         .select('id, full_name, roll_number, section, semester_id, semesters(name)')
-        .eq('department_id', profile.department_id)
+        .eq('department_id', selectedDeptId)
         .eq('role', 'student')
         .order('full_name');
       if (studErr) throw studErr;
@@ -336,10 +354,10 @@ export default function ClerkDashboard() {
 
   // ==================== ATTENDANCES ======================
   const fetchAttendances = async () => {
-    if (!profile?.department_id) return;
+    if (!selectedDeptId) return;
     setLoadingAttendances(true);
     try {
-      const data = await getStaffAttendanceFines(profile.department_id);
+      const data = await getStaffAttendanceFines(selectedDeptId);
       // Clerk only handles 1st/2nd sem students
       const filtered = (data || []).filter((item: any) => {
         const semName = item.profiles?.semesters?.name || '';
@@ -361,7 +379,7 @@ export default function ClerkDashboard() {
 
   const handleAttendanceDueCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !profile?.department_id) return;
+    if (!file || !selectedDeptId) return;
     setAttCsvUploading(true);
     setAttCsvError(null);
     setAttCsvSuccess(null);
@@ -396,7 +414,7 @@ export default function ClerkDashboard() {
       if (rows.length === 0) throw new Error('No valid rows found to process.');
       
       const { bulkSetAttendanceDuesCSV } = await import('../../lib/api');
-      const result = await bulkSetAttendanceDuesCSV(profile.department_id, rows);
+      const result = await bulkSetAttendanceDuesCSV(selectedDeptId, rows);
       
       if (result.errors.length > 0) {
         setAttCsvError(`Updated ${result.updated}/${rows.length}. Errors: ${result.errors.slice(0, 3).join(' | ')}${result.errors.length > 3 ? '...' : ''}`);
@@ -413,11 +431,11 @@ export default function ClerkDashboard() {
   };
 
   const fetchCategories = async () => {
-    if (!profile?.department_id) return;
+    if (!selectedDeptId) return;
     setLoadingCategories(true);
     try {
       const { getAttendanceCategories } = await import('../../lib/api');
-      const data = await getAttendanceCategories(profile.department_id);
+      const data = await getAttendanceCategories(selectedDeptId);
       setCategories(data);
     } catch (err) { console.error(err); }
     finally { setLoadingCategories(false); }
@@ -439,7 +457,7 @@ export default function ClerkDashboard() {
         await updateAttendanceCategory(editingCat.id, label, minPct, maxPct, amount);
       } else {
         const { createAttendanceCategory } = await import('../../lib/api');
-        await createAttendanceCategory(profile?.department_id || '', label, minPct, maxPct, amount);
+        await createAttendanceCategory(selectedDeptId || '', label, minPct, maxPct, amount);
       }
       setShowCatModal(false);
       setEditingCat(null);
@@ -469,12 +487,12 @@ export default function ClerkDashboard() {
 
   // ==================== USERS ======================
   const fetchUsers = async () => {
-    if (!profile?.department_id) return;
+    if (!selectedDeptId) return;
     setLoadingUsers(true);
     try {
-      const data = await getUsersByDeptAndRoles(profile.department_id, ['teacher', 'faculty', 'student']);
+      const data = await getUsersByDeptAndRoles(selectedDeptId, ['teacher', 'faculty', 'student']);
       // Clerk only handles 1st/2nd sem students — filter out higher sem students
-      const sems = await getSemestersByDepartment(profile.department_id);
+      const sems = await getSemestersByDepartment(selectedDeptId);
       const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
       // Fetch all FYC user IDs first
       const { data: fycUsers } = await supabase
@@ -515,9 +533,9 @@ export default function ClerkDashboard() {
   };
 
   const downloadTemplate = () => {
-    const csvContent = "name,roll_number,email,password,role,section,semester\n" +
-      "John Doe,1AB23CS001,john@college.edu,SecurePass123,student,A,1\n" +
-      "Jane Smith,TCH101,jane.smith@college.edu,TeacherPass123,teacher,,";
+    const csvContent = "name,roll_number,email,password,role,section,semester,branch\n" +
+      "John Doe,1AB23CS001,john@college.edu,SecurePass123,student,A,1,CSE\n" +
+      "Jane Smith,TCH101,jane.smith@college.edu,TeacherPass123,teacher,,,";
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -527,7 +545,7 @@ export default function ClerkDashboard() {
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !profile?.department_id) return;
+    if (!file || !selectedDeptId) return;
     
     setUploadingCSV(true);
     setUserError(null);
@@ -553,15 +571,16 @@ export default function ClerkDashboard() {
       const colRoll = resolveCol('roll_number', 'roll_no', 'usn');
       const colSection = resolveCol('section');
       const colSemester = resolveCol('semester_id', 'semester');
+      const colBranch = resolveCol('branch', 'department');
 
       // email, password, and name are required
       for (const req of [colEmail, colPassword, colName]) {
-        if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}. Expected columns: name, roll_number, email, password, role, section, semester`);
+        if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}. Expected columns: name, roll_number, email, password, role, section, semester, branch`);
       }
 
       const { tempSupabase } = await import('../../lib/supabase');
       
-      const fetchedSemesters = await import('../../lib/api').then(m => m.getSemestersByDepartment(profile.department_id!));
+      const { data: fetchedSemesters } = await supabase.from('semesters').select('*');
 
       let successCount = 0;
       let errorCount = 0;
@@ -591,6 +610,19 @@ export default function ClerkDashboard() {
         const roll = getVal(colRoll);
         const section = getVal(colSection);
         const semNameOrId = getVal(colSemester);
+        const branchName = getVal(colBranch);
+        
+        let targetDeptId = selectedDeptId;
+        if (branchName) {
+          const matchedDept = allDepartments.find(d => d.name.toLowerCase() === branchName.toLowerCase() || d.id === branchName);
+          if (matchedDept) {
+            targetDeptId = matchedDept.id;
+          } else {
+            errorCount++;
+            errorDetails.push(`Row ${i + 1} (${email}): Branch "${branchName}" not found.`);
+            continue;
+          }
+        }
         
         let existingProfile = null;
         
@@ -608,7 +640,7 @@ export default function ClerkDashboard() {
         let profileData: any = {
           full_name,
           role,
-          department_id: profile.department_id,
+          department_id: role === 'student' ? targetDeptId : null,
           created_by: profile.created_by || profile.id,
         };
 
@@ -617,7 +649,10 @@ export default function ClerkDashboard() {
           if (roll) profileData.roll_number = roll;
           
           if (semNameOrId) {
-            const matchedSem = fetchedSemesters.find(s => s.name.toLowerCase() === semNameOrId.toLowerCase() || s.id === semNameOrId);
+            const matchedSem = (fetchedSemesters || []).find(s => 
+              (s.name.toLowerCase() === semNameOrId.toLowerCase() || s.id === semNameOrId) && 
+              s.department_id === targetDeptId
+            );
             if (matchedSem) {
               // Clerk can only create 1st/2nd sem students
               if (!isFirstYearSem(matchedSem.name)) {
@@ -690,7 +725,7 @@ export default function ClerkDashboard() {
   };
 
   const handleCreateUser = async () => {
-    if (!profile?.department_id) return;
+    if (!selectedDeptId) return;
     setUserCreating(true);
     setUserError(null);
     setUserSuccess(null);
@@ -732,7 +767,7 @@ export default function ClerkDashboard() {
         id: authData.user.id,
         full_name: newUser.full_name,
         role: newUser.role,
-        department_id: profile.department_id,
+        department_id: newUser.role === 'student' ? selectedDeptId : null,
         created_by: profile.created_by || profile.id,
       };
       if (newUser.role === 'student') {
@@ -816,7 +851,7 @@ export default function ClerkDashboard() {
 
   const handleSubjectFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !profile?.department_id) return;
+    if (!file || !selectedDeptId) return;
     
     setUploadingSubjectCSV(true);
     setSubjectError(null);
@@ -845,7 +880,7 @@ export default function ClerkDashboard() {
       }
 
       // Fetch fresh semesters directly to ensure accuracy
-      const fetchedSemesters = await import('../../lib/api').then(m => m.getSemestersByDepartment(profile.department_id!));
+      const fetchedSemesters = await import('../../lib/api').then(m => m.getSemestersByDepartment(selectedDeptId));
       
       let successCount = 0;
       let errorCount = 0;
@@ -887,7 +922,7 @@ export default function ClerkDashboard() {
           subject_code,
           subject_name,
           semester_id: sem.id,
-          department_id: profile.department_id,
+          department_id: selectedDeptId,
         };
 
         const { error } = await supabase.from('subjects').insert(subjectData);
@@ -915,10 +950,10 @@ export default function ClerkDashboard() {
 
   // ==================== SUBJECTS ======================
   const fetchSubjects = async () => {
-    if (!profile?.department_id) return;
+    if (!selectedDeptId) return;
     setLoadingSubjects(true);
     try {
-      const data = await getSubjectsByDepartment(profile.department_id);
+      const data = await getSubjectsByDepartment(selectedDeptId);
       // Clerk only sees 1st/2nd semester subjects
       const filtered = (data as Subject[]).filter(s => {
         const semName = (s as any).semesters?.name;
@@ -945,7 +980,7 @@ export default function ClerkDashboard() {
       await createSubject({
         subject_name: newSubject.subject_name,
         subject_code: newSubject.subject_code.toUpperCase(),
-        department_id: profile!.department_id!,
+        department_id: selectedDeptId,
         semester_id: newSubject.semester_id
       });
       setSubjectSuccess(`Subject "${newSubject.subject_name}" created!`);
@@ -992,9 +1027,9 @@ export default function ClerkDashboard() {
 
   // ==================== SEMESTERS ======================
   const fetchSemesters = async () => {
-    if (!profile?.department_id) return;
+    if (!selectedDeptId) return;
     try {
-      const data = await getSemestersByDepartment(profile.department_id);
+      const data = await getSemestersByDepartment(selectedDeptId);
       const filtered = (data as Semester[]).filter(s => isFirstYearSem(s.name));
       setSemestersList(filtered);
     } catch (err) { console.error(err); }
@@ -1002,12 +1037,12 @@ export default function ClerkDashboard() {
 
   // ==================== SECTION ASSIGN ======================
   const fetchSectionData = async () => {
-    if (!profile?.department_id) return;
+    if (!selectedDeptId) return;
     try {
       const [secs, subs, allTeachers] = await Promise.all([
-        getDepartmentSections(profile.department_id),
-        getSubjectsByDepartment(profile.department_id),
-        getUsersByDeptAndRoles(profile.department_id, ['teacher', 'faculty']),
+        getDepartmentSections(selectedDeptId),
+        getSubjectsByDepartment(selectedDeptId),
+        getUsersByDeptAndRoles(selectedDeptId, ['teacher', 'faculty']),
       ]);
       setSections(secs);
       setDeptSubjects(subs as Subject[]);
@@ -1055,7 +1090,7 @@ export default function ClerkDashboard() {
 
   const handleSectionAssignCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !profile?.department_id) return;
+    if (!file || !selectedDeptId) return;
     setSectionCsvUploading(true);
     setSectionError(null);
     setSectionSuccess(null);
@@ -1091,7 +1126,7 @@ export default function ClerkDashboard() {
       if (rows.length === 0) throw new Error('No valid rows found to process.');
       
       const { bulkAssignTeacherToSectionCSV } = await import('../../lib/api');
-      const result = await bulkAssignTeacherToSectionCSV(profile.department_id, rows);
+      const result = await bulkAssignTeacherToSectionCSV(selectedDeptId, rows);
       
       if (result.updated === 0 && result.errors.length === 0) {
         setSectionError('No assignments were made. Ensure the sections have students assigned to them.');
@@ -1145,9 +1180,21 @@ export default function ClerkDashboard() {
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
               <GraduationCap className="w-8 h-8 mr-3 text-amber-500" />
-              {profile?.full_name} — {deptName}
+              {profile?.full_name} — Clerk
             </h1>
-            <p className="text-muted-foreground">Manage users, subjects, and teacher assignments.</p>
+            <p className="text-muted-foreground">Manage first-year students, subjects, and teacher assignments.</p>
+          </div>
+          <div className="flex items-center gap-3 bg-secondary/50 p-2 rounded-2xl border border-border/50">
+            <label className="text-sm font-bold text-muted-foreground ml-2">Branch:</label>
+            <select 
+              className="bg-background border border-border rounded-xl px-4 py-2 text-foreground font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+              value={selectedDeptId}
+              onChange={(e) => setSelectedDeptId(e.target.value)}
+            >
+              {allDepartments.map(dept => (
+                <option key={dept.id} value={dept.id}>{dept.name}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
