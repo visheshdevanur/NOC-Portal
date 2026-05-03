@@ -8,7 +8,8 @@ import {
   updateAttendanceCategory, 
   clearStudentFine, 
   overrideAttendanceFine,
-  isFirstYearSem
+  isFirstYearSem,
+  getAllDepartments
 } from '../../../lib/api';
 
 interface AttendanceFinesTabProps {
@@ -38,17 +39,35 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   
   const [clearFineLoading, setClearFineLoading] = useState<string | null>(null);
 
+  // FYC department selector state (FYC is global, needs to pick a dept for categories)
+  const [allDepartments, setAllDepartments] = useState<any[]>([]);
+  const [selectedCatDeptId, setSelectedCatDeptId] = useState('');
+
+  // Effective department ID: use prop if provided, otherwise use FYC's selected dept
+  const effectiveDeptId = departmentId || selectedCatDeptId;
+
   const canManageCategories = role === 'hod' || role === 'fyc';
 
+  // Load departments for FYC
   useEffect(() => {
-    if (canManageCategories && departmentId) fetchAttendanceCategories();
+    if (role === 'fyc' && !departmentId) {
+      getAllDepartments().then(depts => {
+        setAllDepartments(depts || []);
+        if (depts && depts.length > 0) setSelectedCatDeptId(depts[0].id);
+      }).catch(console.error);
+    }
+  }, [role, departmentId]);
+
+  useEffect(() => {
+    if (canManageCategories && effectiveDeptId) fetchAttendanceCategories();
     fetchAttendanceFines();
-  }, [departmentId, role]);
+  }, [effectiveDeptId, role]);
 
   const fetchAttendanceCategories = async () => {
+    if (!effectiveDeptId) return;
     setLoadingCategories(true);
     try {
-      const { data, error } = await supabase.from('attendance_fine_categories').select('*').eq('department_id', departmentId).order('min_pct');
+      const { data, error } = await supabase.from('attendance_fine_categories').select('*').eq('department_id', effectiveDeptId).order('min_pct');
       if (error) throw error;
       setCategories(data || []);
     } catch (err) { console.error(err); }
@@ -59,7 +78,9 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     setLoadingAttendances(true);
     try {
       let allData: any[] = [];
-      if (departmentId) {
+      if (effectiveDeptId && role !== 'fyc') {
+        allData = await getStaffAttendanceFines(effectiveDeptId);
+      } else if (departmentId) {
         allData = await getStaffAttendanceFines(departmentId);
       } else {
         // FYC: fetch all rejected enrollments across all departments
@@ -99,7 +120,12 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       if (editingCat) {
         await updateAttendanceCategory(editingCat.id, catForm.label, min, max, amt);
       } else {
-        await createAttendanceCategory(departmentId || '', catForm.label, min, max, amt);
+        if (!effectiveDeptId) {
+          setCatError('Please select a department first.');
+          setCatSaving(false);
+          return;
+        }
+        await createAttendanceCategory(effectiveDeptId, catForm.label, min, max, amt);
       }
       setShowCatModal(false);
       fetchAttendanceCategories();
@@ -156,6 +182,21 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
               </h2>
               <p className="text-muted-foreground text-sm mt-1">Define attendance % ranges and their corresponding fine amounts.</p>
             </div>
+          {/* FYC Department Selector */}
+          {role === 'fyc' && !departmentId && (
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-foreground whitespace-nowrap">Branch:</label>
+              <select
+                className="px-4 py-2.5 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm font-medium min-w-[140px]"
+                value={selectedCatDeptId}
+                onChange={e => setSelectedCatDeptId(e.target.value)}
+              >
+                {allDepartments.map((dept: any) => (
+                  <option key={dept.id} value={dept.id}>{dept.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
             <button
               onClick={() => { setEditingCat(null); setCatForm({ label: '', minPct: '', maxPct: '', amount: '' }); setCatError(null); setShowCatModal(true); }}
               className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
