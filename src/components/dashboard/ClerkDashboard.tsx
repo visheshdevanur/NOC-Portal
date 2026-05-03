@@ -89,6 +89,15 @@ export default function ClerkDashboard() {
   const [subjectSuccess, setSubjectSuccess] = useState<string | null>(null);
   const [uploadingSubjectCSV, setUploadingSubjectCSV] = useState(false);
 
+  // Import Subjects State
+  const [showImportSubjects, setShowImportSubjects] = useState(false);
+  const [importSourceDeptId, setImportSourceDeptId] = useState('');
+  const [importSourceSubjects, setImportSourceSubjects] = useState<Subject[]>([]);
+  const [importSelectedSubjects, setImportSelectedSubjects] = useState<string[]>([]);
+  const [importTargetSemId, setImportTargetSemId] = useState('');
+  const [importFetchingSubjects, setImportFetchingSubjects] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+
   // Semesters State
   const [semestersList, setSemestersList] = useState<Semester[]>([]);
 
@@ -1012,6 +1021,87 @@ export default function ClerkDashboard() {
     }
   };
 
+  // ==================== IMPORT SUBJECTS (FIRST YEAR ONLY) ======================
+  const handleOpenImportSubjects = async () => {
+    setShowImportSubjects(true);
+    setImportSourceDeptId('');
+    setImportSourceSubjects([]);
+    setImportSelectedSubjects([]);
+    setImportTargetSemId('');
+    setSubjectError(null);
+    await fetchSemesters();
+  };
+
+  const handleImportSourceDeptChange = async (deptId: string) => {
+    setImportSourceDeptId(deptId);
+    setImportSourceSubjects([]);
+    setImportSelectedSubjects([]);
+    if (!deptId) return;
+    setImportFetchingSubjects(true);
+    try {
+      const data = await getSubjectsByDepartment(deptId);
+      // Only show Sem 1 & 2 subjects (first year)
+      const filtered = (data as Subject[]).filter(s => {
+        const semName = (s as any).semesters?.name;
+        if (!semName) return false;
+        return isFirstYearSem(semName);
+      });
+      // If target semester is selected, filter to that semester only
+      if (importTargetSemId) {
+        const targetSem = semestersList.find(s => s.id === importTargetSemId);
+        if (targetSem) {
+          const targetName = targetSem.name;
+          setImportSourceSubjects(filtered.filter(s => (s as any).semesters?.name === targetName));
+          setImportFetchingSubjects(false);
+          return;
+        }
+      }
+      setImportSourceSubjects(filtered);
+    } catch (err) { console.error(err); }
+    finally { setImportFetchingSubjects(false); }
+  };
+
+  const handleImportSubjects = async () => {
+    if (importSelectedSubjects.length === 0 || !importTargetSemId) {
+      setSubjectError('Please select a target semester and at least one subject to import.');
+      return;
+    }
+    setImportLoading(true);
+    setSubjectError(null);
+    try {
+      // Refresh current subjects to have the latest duplicate check
+      const currentData = await getSubjectsByDepartment(selectedDeptId);
+      const currentCodes = new Set((currentData as Subject[]).map(s => s.subject_code.toUpperCase()));
+
+      const toImport = importSourceSubjects.filter(s => importSelectedSubjects.includes(s.id));
+      let imported = 0;
+      let skipped = 0;
+      for (const sub of toImport) {
+        if (currentCodes.has(sub.subject_code.toUpperCase())) { skipped++; continue; }
+        try {
+          await createSubject({
+            subject_name: sub.subject_name,
+            subject_code: sub.subject_code,
+            department_id: selectedDeptId,
+            semester_id: importTargetSemId
+          });
+          currentCodes.add(sub.subject_code.toUpperCase());
+          imported++;
+        } catch (err: any) {
+          console.warn(`Failed to import ${sub.subject_code}:`, err.message);
+          skipped++;
+        }
+      }
+      setSubjectSuccess(`Imported ${imported} subjects${skipped > 0 ? `, skipped ${skipped} duplicates` : ''}.`);
+      setShowImportSubjects(false);
+      fetchSubjects();
+    } catch (err: any) {
+      setSubjectError(err.message || 'Failed to import subjects');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   // ==================== SEMESTERS ======================
   const fetchSemesters = async () => {
     if (!selectedDeptId) return;
@@ -1729,6 +1819,11 @@ export default function ClerkDashboard() {
                 <input type="file" accept=".csv" className="hidden" onChange={handleSubjectFileUpload} disabled={uploadingSubjectCSV} />
               </label>
 
+              <button onClick={handleOpenImportSubjects} className="flex items-center gap-2 bg-violet-500 text-white hover:bg-violet-600 px-4 py-3 rounded-xl font-bold transition-all shadow-sm">
+                <Download className="w-5 h-5" />
+                <span className="hidden sm:inline">Import from Branch</span>
+              </button>
+
               <button onClick={() => { fetchSemesters(); setShowCreateSubject(true); }} className="flex items-center gap-2 bg-amber-500 text-white hover:bg-amber-600 px-5 py-3 rounded-xl font-bold transition-all shadow-sm">
                 <Plus className="w-5 h-5" />
                 Add Subject
@@ -1817,6 +1912,101 @@ export default function ClerkDashboard() {
                   <button onClick={() => setEditingSubject(null)} className="flex-1 py-3 px-4 rounded-xl border border-border text-foreground font-medium hover:bg-secondary transition-all">Cancel</button>
                   <button onClick={handleUpdateSubject} disabled={subjectCreating} className="flex-1 py-3 px-4 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600 disabled:opacity-50 transition-all">
                     {subjectCreating ? 'Saving...' : 'Update Subject'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Import Subjects Modal */}
+          {showImportSubjects && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-card rounded-3xl p-8 shadow-2xl border border-border w-full max-w-lg max-h-[90vh] flex flex-col">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
+                    <Download className="w-5 h-5 text-violet-500" />
+                    Import Subjects from Another Branch
+                  </h3>
+                  <button onClick={() => setShowImportSubjects(false)} className="p-2 rounded-xl hover:bg-secondary transition-colors">
+                    <X className="w-5 h-5 text-muted-foreground" />
+                  </button>
+                </div>
+                {subjectError && (
+                  <div className="p-4 mb-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
+                    <span><strong>Error:</strong> {subjectError}</span>
+                    <button onClick={() => setSubjectError(null)}><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+                <div className="space-y-4">
+                  {/* Target Semester */}
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Import Into Semester</label>
+                    <select className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={importTargetSemId} onChange={e => { setImportTargetSemId(e.target.value); if (importSourceDeptId) handleImportSourceDeptChange(importSourceDeptId); }}>
+                      <option value="">Select Semester</option>
+                      {semestersList.map(sem => (
+                        <option key={sem.id} value={sem.id}>Semester {sem.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Source Department */}
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">From Branch</label>
+                    <select className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={importSourceDeptId} onChange={e => handleImportSourceDeptChange(e.target.value)}>
+                      <option value="">Select Branch</option>
+                      {allDepartments.filter((d: any) => d.id !== selectedDeptId).map((dept: any) => (
+                        <option key={dept.id} value={dept.id}>{dept.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Subjects List */}
+                  {importFetchingSubjects ? (
+                    <div className="p-4 text-center text-muted-foreground animate-pulse text-sm">Loading subjects...</div>
+                  ) : importSourceSubjects.length > 0 ? (
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-foreground">Select Subjects to Import</label>
+                        <button onClick={() => {
+                          if (importSelectedSubjects.length === importSourceSubjects.length) setImportSelectedSubjects([]);
+                          else setImportSelectedSubjects(importSourceSubjects.map(s => s.id));
+                        }} className="text-xs text-violet-600 font-medium hover:underline">
+                          {importSelectedSubjects.length === importSourceSubjects.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+                      <div className="bg-background rounded-xl border border-border p-3 space-y-2 max-h-56 overflow-y-auto">
+                        {importSourceSubjects.map(sub => {
+                          const alreadyExists = subjects.some(s => s.subject_code === sub.subject_code);
+                          return (
+                            <label key={sub.id} className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${alreadyExists ? 'opacity-50 cursor-not-allowed' : 'hover:bg-secondary cursor-pointer'}`}>
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-border text-violet-500 focus:ring-violet-500"
+                                checked={importSelectedSubjects.includes(sub.id)}
+                                disabled={alreadyExists}
+                                onChange={(e) => {
+                                  if (e.target.checked) setImportSelectedSubjects([...importSelectedSubjects, sub.id]);
+                                  else setImportSelectedSubjects(importSelectedSubjects.filter(id => id !== sub.id));
+                                }}
+                              />
+                              <div className="flex-1">
+                                <span className="font-bold text-sm text-violet-600">{sub.subject_code}</span>
+                                <span className="text-sm text-foreground ml-2">{sub.subject_name}</span>
+                                {(sub as any).semesters?.name && <span className="text-xs text-muted-foreground ml-2">(Sem {(sub as any).semesters.name})</span>}
+                              </div>
+                              {alreadyExists && <span className="text-xs text-amber-600 font-medium bg-amber-500/10 px-2 py-0.5 rounded-full">Already exists</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">{importSelectedSubjects.length} selected · Duplicates will be skipped</p>
+                    </div>
+                  ) : importSourceDeptId ? (
+                    <div className="p-4 text-center text-muted-foreground text-sm border-2 border-dashed border-border rounded-xl">No first-year subjects found in this branch.</div>
+                  ) : null}
+                </div>
+                <div className="flex gap-3 mt-8">
+                  <button onClick={() => setShowImportSubjects(false)} className="flex-1 py-3 px-4 rounded-xl border border-border text-foreground font-medium hover:bg-secondary transition-all">Cancel</button>
+                  <button onClick={handleImportSubjects} disabled={importLoading || importSelectedSubjects.length === 0 || !importTargetSemId} className="flex-1 py-3 px-4 rounded-xl bg-violet-500 text-white font-bold hover:bg-violet-600 disabled:opacity-50 transition-all">
+                    {importLoading ? 'Importing...' : `Import ${importSelectedSubjects.length} Subject${importSelectedSubjects.length !== 1 ? 's' : ''}`}
                   </button>
                 </div>
               </div>
