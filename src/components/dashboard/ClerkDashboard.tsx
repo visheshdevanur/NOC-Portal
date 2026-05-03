@@ -1036,15 +1036,30 @@ export default function ClerkDashboard() {
   const fetchSectionData = async () => {
     if (!selectedDeptId) return;
     try {
-      const [secs, subs, allTeachers] = await Promise.all([
+      const [secs, subs] = await Promise.all([
         getDepartmentSections(selectedDeptId),
         getSubjectsByDepartment(selectedDeptId),
-        getUsersByDeptAndRoles(selectedDeptId, ['teacher', 'faculty']),
       ]);
       setSections(secs);
       setDeptSubjects(subs as Subject[]);
-      // Clerk can only assign FYC-created/imported teachers
-      setDeptTeachers((allTeachers || []).filter((t: any) => !!t.created_by));
+      
+      // Fetch all FYC user IDs
+      const { data: fycUsers } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'fyc');
+      const fycIds = new Set((fycUsers || []).map(f => f.id));
+
+      // Fetch all FYC-created teachers globally
+      const { data: fycTeachers } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('role', ['teacher', 'faculty'])
+        .not('created_by', 'is', null)
+        .order('full_name');
+
+      const validTeachers = (fycTeachers || []).filter(t => fycIds.has(t.created_by));
+      setDeptTeachers(validTeachers);
     } catch (err) { console.error(err); }
   };
 
@@ -1435,17 +1450,7 @@ export default function ClerkDashboard() {
       {/* ========= USERS TAB ========= */}
       {activeTab === 'users' && (
         <div className="space-y-6">
-          {/* Step Badge */}
-          <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <span className="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded-full whitespace-nowrap">Step 2</span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">Clerk adds students & teachers</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Manual entry · or · Bulk CSV upload</p>
-            </div>
-            <span className="ml-auto px-3 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium rounded-lg border border-emerald-500/20 cursor-default" title="CSV columns: name, roll_number, email, password, role, section, semester">
-              CSV: name, roll_number, email, password, role, section, semester
-            </span>
-          </div>
+
           {userError && (
             <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
               <span><strong>Error:</strong> {userError}</span>
@@ -1708,17 +1713,7 @@ export default function ClerkDashboard() {
       {/* ========= SUBJECTS TAB ========= */}
       {activeTab === 'subjects' && (
         <div className="space-y-6">
-          {/* Step Badge */}
-          <div className="bg-green-500/5 border border-green-500/20 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <span className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded-full whitespace-nowrap">Step 3</span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">Clerk adds subjects</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Manual entry · or · Bulk CSV upload</p>
-            </div>
-            <span className="ml-auto px-3 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium rounded-lg border border-emerald-500/20 cursor-default" title="CSV columns: branch, semester, subject_name, subject_code">
-              CSV: branch, semester, subject_name, subject_code
-            </span>
-          </div>
+
           {subjectSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
               <span>✓ {subjectSuccess}</span>
@@ -1914,17 +1909,7 @@ export default function ClerkDashboard() {
       {/* ========= SECTION ASSIGNMENT TAB ========= */}
       {activeTab === 'sections' && (
         <div className="space-y-6">
-          {/* Step Badge */}
-          <div className="bg-purple-500/5 border border-purple-500/20 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <span className="px-3 py-1 bg-purple-600 text-white text-xs font-bold rounded-full whitespace-nowrap">Step 4</span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">Clerk assigns sections to teachers</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Manual entry · or · Bulk CSV upload — used for both attendance &amp; IA marks entry</p>
-            </div>
-            <span className="ml-auto px-3 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium rounded-lg border border-emerald-500/20 cursor-default" title="CSV columns: dept, semester, section, subject_code, teacher_id">
-              CSV: dept, semester, section, subject_code, teacher_id
-            </span>
-          </div>
+
           {sectionError && (
             <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
               <span><strong>Error:</strong> {sectionError}</span>
