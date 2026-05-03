@@ -3,7 +3,7 @@ import { useAuth } from '../../lib/useAuth';
 import {
   getUsersByDeptAndRoles,
   getSubjectsByDepartment, createSubject, deleteSubject, getDepartmentSections,
-  assignTeacherToSection, updateSubjectAPI, getDepartmentById, getStaffAttendanceFines, getSemestersByDepartment, updateUserAPI,
+  assignTeacherToSection, updateSubjectAPI, getStaffAttendanceFines, getSemestersByDepartment, updateUserAPI,
   updateStudentPaidAmount, getAllDepartments
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
@@ -224,7 +224,6 @@ export default function ClerkDashboard() {
   };
 
   // fetchDeptName is now handled by the selectedDeptId useEffect above
-  const fetchDeptName = () => {};
 
   // ==================== ACTIVITY LOGS ======================
   const fetchclerkLogs = async () => {
@@ -348,9 +347,7 @@ export default function ClerkDashboard() {
     s.section?.toLowerCase().includes(studentDuesSearch.toLowerCase())
   );
 
-  const fetchData = async () => {
-    // Legacy Dues fetch disabled
-  };
+
 
   // ==================== ATTENDANCES ======================
   const fetchAttendances = async () => {
@@ -641,7 +638,7 @@ export default function ClerkDashboard() {
           full_name,
           role,
           department_id: role === 'student' ? targetDeptId : null,
-          created_by: profile.created_by || profile.id,
+          created_by: profile?.created_by || profile?.id,
         };
 
         if (role === 'student') {
@@ -768,7 +765,7 @@ export default function ClerkDashboard() {
         full_name: newUser.full_name,
         role: newUser.role,
         department_id: newUser.role === 'student' ? selectedDeptId : null,
-        created_by: profile.created_by || profile.id,
+        created_by: profile?.created_by || profile?.id,
       };
       if (newUser.role === 'student') {
         if (newUser.section) profileData.section = newUser.section.toUpperCase();
