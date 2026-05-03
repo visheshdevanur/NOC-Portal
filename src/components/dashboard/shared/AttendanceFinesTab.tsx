@@ -119,13 +119,45 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     try {
       if (editingCat) {
         await updateAttendanceCategory(editingCat.id, catForm.label, min, max, amt);
-      } else {
-        if (!effectiveDeptId) {
-          setCatError('Please select a department first.');
-          setCatSaving(false);
-          return;
+        // FYC: also update matching categories in other departments
+        if (role === 'fyc' && !departmentId) {
+          const { data: matching } = await supabase
+            .from('attendance_fine_categories')
+            .select('id, department_id')
+            .eq('label', editingCat.label)
+            .eq('min_pct', editingCat.min_pct)
+            .eq('max_pct', editingCat.max_pct)
+            .neq('id', editingCat.id);
+          for (const m of (matching || [])) {
+            await updateAttendanceCategory(m.id, catForm.label, min, max, amt);
+          }
         }
-        await createAttendanceCategory(effectiveDeptId, catForm.label, min, max, amt);
+      } else {
+        if (role === 'fyc' && !departmentId) {
+          // FYC: create category in ALL departments at once
+          if (allDepartments.length === 0) {
+            setCatError('No departments loaded. Please try again.');
+            setCatSaving(false);
+            return;
+          }
+          let created = 0;
+          for (const dept of allDepartments) {
+            try {
+              await createAttendanceCategory(dept.id, catForm.label, min, max, amt);
+              created++;
+            } catch (err: any) {
+              console.warn(`Failed to create category for ${dept.name}:`, err.message);
+            }
+          }
+          if (created === 0) throw new Error('Failed to create category in any department.');
+        } else {
+          if (!effectiveDeptId) {
+            setCatError('Please select a department first.');
+            setCatSaving(false);
+            return;
+          }
+          await createAttendanceCategory(effectiveDeptId, catForm.label, min, max, amt);
+        }
       }
       setShowCatModal(false);
       fetchAttendanceCategories();
@@ -136,10 +168,23 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     }
   };
 
-  const handleDeleteCategory = async (id: string) => {
+  const handleDeleteCategory = async (cat: any) => {
     if (!confirm('Are you sure you want to delete this category?')) return;
     try {
-      await deleteAttendanceCategory(id);
+      await deleteAttendanceCategory(cat.id);
+      
+      // FYC: also delete matching categories in other departments
+      if (role === 'fyc' && !departmentId) {
+        const { data: matching } = await supabase
+          .from('attendance_fine_categories')
+          .select('id')
+          .eq('label', cat.label)
+          .eq('min_pct', cat.min_pct)
+          .eq('max_pct', cat.max_pct);
+        for (const m of (matching || [])) {
+          if (m.id !== cat.id) await deleteAttendanceCategory(m.id);
+        }
+      }
       fetchAttendanceCategories();
     } catch (err) { console.error(err); }
   };
@@ -240,7 +285,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                           <Settings className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDeleteCategory(cat.id)}
+                          onClick={() => handleDeleteCategory(cat)}
                           className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors"
                           title="Delete"
                         >
