@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
-import { approveHodRequest, getAllDepartments, getFycStaffActivityLogs } from '../../lib/api';
+import { approveHodRequest, getAllDepartments, getFycStaffActivityLogs, isFirstYearSem } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import StudentDuesOverviewTab from './shared/StudentDuesOverviewTab';
 import AttendanceFinesTab from './shared/AttendanceFinesTab';
@@ -61,16 +61,7 @@ type TeacherWithAssignments = {
 
 type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs' | 'studentdues' | 'attendances';
 
-const isFirstYearSem = (name: string) => {
-  if (!name) return false;
-  const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return n.includes('sem1') || n.includes('sem2') || 
-         n.includes('1stsem') || n.includes('2ndsem') ||
-         n.includes('semester1') || n.includes('semester2') ||
-         n === '1' || n === '2' || 
-         n.endsWith('1stsemester') || n.endsWith('2ndsemester') ||
-         /\b1\b/.test(name) || /\b2\b/.test(name);
-};
+
 
 export default function FycDashboard() {
   const { user } = useAuth();
