@@ -1,0 +1,45 @@
+/* Super Admin Portal — Dual Theme Tokens */
+
+/* ─── Dark Mode ─── */
+.sa-dark {
+  --sa-bg: #09090b;
+  --sa-bg-card: rgba(255,255,255,0.03);
+  --sa-bg-elevated: rgba(255,255,255,0.05);
+  --sa-bg-hover: rgba(255,255,255,0.07);
+  --sa-bg-input: rgba(255,255,255,0.04);
+  --sa-border: rgba(255,255,255,0.06);
+  --sa-border-hover: rgba(255,255,255,0.12);
+  --sa-text: #fafafa;
+  --sa-text-secondary: rgba(255,255,255,0.5);
+  --sa-text-muted: rgba(255,255,255,0.25);
+  --sa-accent: #7c3aed;
+  --sa-accent-hover: #6d28d9;
+  --sa-accent-glow: rgba(124,58,237,0.15);
+  --sa-success: #34d399;
+  --sa-danger: #f87171;
+  --sa-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  --sa-shadow-lg: 0 20px 60px -12px rgba(0,0,0,0.6);
+  --sa-modal-overlay: rgba(0,0,0,0.7);
+}
+
+/* ─── Light Mode ─── */
+.sa-light {
+  --sa-bg: #f8f9fc;
+  --sa-bg-card: #ffffff;
+  --sa-bg-elevated: #f1f3f9;
+  --sa-bg-hover: #e8ebf4;
+  --sa-bg-input: #f4f5f9;
+  --sa-border: #e2e5f0;
+  --sa-border-hover: #c8cde0;
+  --sa-text: #0f172a;
+  --sa-text-secondary: #475569;
+  --sa-text-muted: #94a3b8;
+  --sa-accent: #6d28d9;
+  --sa-accent-hover: #5b21b6;
+  --sa-accent-glow: rgba(109,40,217,0.08);
+  --sa-success: #059669;
+  --sa-danger: #dc2626;
+  --sa-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --sa-shadow-lg: 0 20px 60px -12px rgba(0,0,0,0.12);
+  --sa-modal-overlay: rgba(15,23,42,0.4);
+}

@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
 import { getPlatformStats, getAllTenants, type Tenant, type TenantStats, getTenantUserCount } from '../../lib/superAdminApi';
 import { logoutSuperAdmin } from '../../lib/superAdminAuth';
-import { Shield, Building2, Users, FileCheck, Plus, Eye, LogOut, Search, ChevronRight, Zap, TrendingUp } from 'lucide-react';
+import { useSATheme } from './SuperAdminApp';
+import { Shield, Building2, Users, FileCheck, Plus, Eye, LogOut, Search, ChevronRight, Zap, Sun, Moon } from 'lucide-react';
 import CreateTenantModal from './CreateTenantModal';
 import TenantDetailModal from './TenantDetailModal';
+import './superadmin.css';
+
+const s = (obj: Record<string, any>) => obj as React.CSSProperties;
 
 export default function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
+  const { theme, toggle } = useSATheme();
   const [stats, setStats] = useState<TenantStats | null>(null);
   const [tenants, setTenants] = useState<(Tenant & { userCount?: number })[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,186 +21,130 @@ export default function SuperAdminDashboard({ onLogout }: { onLogout: () => void
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [s, t] = await Promise.all([getPlatformStats(), getAllTenants()]);
-      setStats(s);
-      // Fetch user counts in parallel
-      const enriched = await Promise.all(
-        t.map(async (tenant) => {
-          const userCount = await getTenantUserCount(tenant.id).catch(() => 0);
-          return { ...tenant, userCount };
-        })
-      );
+      const [st, t] = await Promise.all([getPlatformStats(), getAllTenants()]);
+      setStats(st);
+      const enriched = await Promise.all(t.map(async (tn) => ({ ...tn, userCount: await getTenantUserCount(tn.id).catch(() => 0) })));
       setTenants(enriched);
-    } catch (err) {
-      console.error('Failed to fetch platform data:', err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
 
-  const handleLogout = () => {
-    logoutSuperAdmin();
-    onLogout();
-  };
-
-  const filtered = tenants.filter(t =>
-    t.name.toLowerCase().includes(search.toLowerCase()) ||
-    t.slug.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleLogout = () => { logoutSuperAdmin(); onLogout(); };
+  const filtered = tenants.filter(t => t.name.toLowerCase().includes(search.toLowerCase()) || t.slug.toLowerCase().includes(search.toLowerCase()));
 
   const statCards = [
-    { label: 'Total Tenants', value: stats?.totalTenants || 0, icon: Building2, color: 'violet', gradient: 'from-violet-600 to-purple-600' },
-    { label: 'Active Tenants', value: stats?.activeTenants || 0, icon: Zap, color: 'emerald', gradient: 'from-emerald-600 to-teal-600' },
-    { label: 'Total Users', value: stats?.totalUsers || 0, icon: Users, color: 'blue', gradient: 'from-blue-600 to-cyan-600' },
-    { label: 'Total Clearances', value: stats?.totalClearances || 0, icon: FileCheck, color: 'amber', gradient: 'from-amber-500 to-orange-500' },
+    { label: 'Total Tenants', value: stats?.totalTenants || 0, icon: Building2, color: '#7c3aed' },
+    { label: 'Active', value: stats?.activeTenants || 0, icon: Zap, color: '#059669' },
+    { label: 'Total Users', value: stats?.totalUsers || 0, icon: Users, color: '#3b82f6' },
+    { label: 'Clearances', value: stats?.totalClearances || 0, icon: FileCheck, color: '#f59e0b' },
   ];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
-      {/* Top Nav */}
-      <nav className="border-b border-white/[0.06] bg-white/[0.02] backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg">
-              <Shield className="w-5 h-5 text-white" />
+    <div style={s({ background: 'var(--sa-bg)', minHeight: '100vh', color: 'var(--sa-text)', fontFamily: 'Inter, Manrope, system-ui, sans-serif' })}>
+      {/* Nav */}
+      <nav style={s({ borderBottom: '1px solid var(--sa-border)', background: 'var(--sa-bg-card)', backdropFilter: 'blur(12px)', position: 'sticky', top: 0, zIndex: 50 })}>
+        <div style={s({ maxWidth: 1200, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 60 })}>
+          <div style={s({ display: 'flex', alignItems: 'center', gap: 10 })}>
+            <div style={s({ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg, #7c3aed, #3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center' })}>
+              <Shield size={17} color="white" />
             </div>
             <div>
-              <span className="font-bold text-base text-white tracking-tight block leading-tight">NOC Developer Portal</span>
-              <span className="text-[10px] text-white/30 uppercase tracking-widest font-semibold">Super Admin</span>
+              <div style={s({ fontWeight: 700, fontSize: 14, color: 'var(--sa-text)', lineHeight: 1.2 })}>NOC Developer Portal</div>
+              <div style={s({ fontSize: 10, color: 'var(--sa-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' })}>Super Admin</div>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 text-white/50 transition-all text-sm font-medium"
-          >
-            <LogOut className="w-4 h-4" />
-            Sign Out
-          </button>
+          <div style={s({ display: 'flex', alignItems: 'center', gap: 8 })}>
+            <button onClick={toggle} style={s({ width: 36, height: 36, borderRadius: 10, background: 'var(--sa-bg-elevated)', border: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--sa-text-secondary)', transition: 'all 0.2s' })}>
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+            <button onClick={handleLogout} style={s({ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, background: 'var(--sa-bg-elevated)', border: '1px solid var(--sa-border)', cursor: 'pointer', color: 'var(--sa-text-secondary)', fontSize: 13, fontWeight: 500, transition: 'all 0.2s' })}>
+              <LogOut size={14} /> Sign Out
+            </button>
+          </div>
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      <div style={s({ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' })}>
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div style={s({ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 28, flexWrap: 'wrap', gap: 16 })}>
           <div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
-              Platform Overview
-            </h1>
-            <p className="text-white/40 mt-1">Manage all tenants, users, and clearances across the NOC platform.</p>
+            <h1 style={s({ fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: 'var(--sa-text)' })}>Platform Overview</h1>
+            <p style={s({ fontSize: 14, color: 'var(--sa-text-muted)', margin: '4px 0 0', fontWeight: 400 })}>Manage tenants and monitor the platform</p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-violet-600 to-blue-600 text-white font-bold rounded-xl shadow-[0_8px_24px_-4px_rgba(124,58,237,0.4)] hover:shadow-[0_12px_32px_-4px_rgba(124,58,237,0.6)] active:scale-[0.98] transition-all text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Create New Tenant
+          <button onClick={() => setShowCreateModal(true)} style={s({ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: 'linear-gradient(135deg, #7c3aed, #3b82f6)', color: 'white', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', boxShadow: '0 4px 12px -2px rgba(124,58,237,0.35)', transition: 'all 0.2s' })}>
+            <Plus size={15} /> New Tenant
           </button>
         </div>
 
-        {/* Stats Grid */}
-        {loading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {[1,2,3,4].map(i => <div key={i} className="h-32 bg-white/[0.02] rounded-2xl animate-pulse border border-white/[0.04]" />)}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {statCards.map((card) => (
-              <div key={card.label} className="relative bg-white/[0.02] border border-white/[0.06] rounded-2xl p-6 overflow-hidden group hover:border-white/[0.12] transition-all">
-                <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${card.gradient} opacity-[0.06] rounded-full blur-2xl -translate-y-6 translate-x-6 group-hover:opacity-[0.12] transition-opacity`} />
-                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${card.gradient} flex items-center justify-center shadow-lg mb-3`}>
-                  <card.icon className="w-5 h-5 text-white" />
+        {/* Stats */}
+        <div style={s({ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 28 })}>
+          {statCards.map(card => (
+            <div key={card.label} style={s({ background: 'var(--sa-bg-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: '20px 18px', boxShadow: 'var(--sa-shadow)', transition: 'all 0.2s' })}>
+              <div style={s({ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 })}>
+                <div style={s({ width: 32, height: 32, borderRadius: 8, background: card.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center' })}>
+                  <card.icon size={16} color={card.color} />
                 </div>
-                <p className="text-2xl font-extrabold text-white">{card.value.toLocaleString()}</p>
-                <p className="text-xs text-white/30 font-semibold uppercase tracking-wider mt-1">{card.label}</p>
+                <span style={s({ fontSize: 12, fontWeight: 600, color: 'var(--sa-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' })}>{card.label}</span>
               </div>
-            ))}
-          </div>
-        )}
+              <p style={s({ fontSize: 28, fontWeight: 800, margin: 0, color: 'var(--sa-text)', letterSpacing: '-0.02em' })}>{loading ? '—' : card.value.toLocaleString()}</p>
+            </div>
+          ))}
+        </div>
 
-        {/* Tenants Table */}
-        <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden">
-          <div className="p-6 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-violet-400" />
-              Registered Tenants
-            </h2>
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-white/20" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search tenants..."
-                className="pl-9 pr-4 py-2 bg-white/[0.04] border border-white/[0.08] rounded-xl text-sm text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-violet-500/40 w-64 transition-all"
-              />
+        {/* Tenants */}
+        <div style={s({ background: 'var(--sa-bg-card)', border: '1px solid var(--sa-border)', borderRadius: 14, overflow: 'hidden', boxShadow: 'var(--sa-shadow)' })}>
+          <div style={s({ padding: '16px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' })}>
+            <h2 style={s({ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--sa-text)' })}>Registered Tenants</h2>
+            <div style={s({ position: 'relative' })}>
+              <Search size={14} style={s({ position: 'absolute', left: 10, top: 9, color: 'var(--sa-text-muted)' })} />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+                style={s({ paddingLeft: 30, paddingRight: 14, paddingTop: 8, paddingBottom: 8, background: 'var(--sa-bg-input)', border: '1px solid var(--sa-border)', borderRadius: 8, fontSize: 13, color: 'var(--sa-text)', outline: 'none', width: 200, transition: 'border-color 0.2s', boxSizing: 'border-box' })} />
             </div>
           </div>
 
           {loading ? (
-            <div className="p-8 space-y-3">
-              {[1,2,3].map(i => <div key={i} className="h-16 bg-white/[0.02] rounded-xl animate-pulse" />)}
-            </div>
+            <div style={s({ padding: 40, textAlign: 'center', color: 'var(--sa-text-muted)', fontSize: 13 })}>Loading tenants...</div>
           ) : filtered.length === 0 ? (
-            <div className="p-12 text-center">
-              <Building2 className="w-12 h-12 text-white/10 mx-auto mb-3" />
-              <p className="text-white/30 font-medium">No tenants found</p>
+            <div style={s({ padding: 60, textAlign: 'center' })}>
+              <Building2 size={36} style={s({ color: 'var(--sa-text-muted)', opacity: 0.3, marginBottom: 8, display: 'inline-block' })} />
+              <p style={s({ color: 'var(--sa-text-muted)', fontSize: 13, margin: 0 })}>No tenants found</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
+            <div style={s({ overflowX: 'auto' })}>
+              <table style={s({ width: '100%', borderCollapse: 'collapse' })}>
                 <thead>
-                  <tr className="text-xs text-white/30 uppercase tracking-wider border-b border-white/[0.04]">
-                    <th className="px-6 py-3 font-semibold">Institution</th>
-                    <th className="px-6 py-3 font-semibold">Slug</th>
-                    <th className="px-6 py-3 font-semibold text-center">Plan</th>
-                    <th className="px-6 py-3 font-semibold text-center">Users</th>
-                    <th className="px-6 py-3 font-semibold text-center">Status</th>
-                    <th className="px-6 py-3 font-semibold text-center">Created</th>
-                    <th className="px-6 py-3 font-semibold text-right">Actions</th>
+                  <tr>
+                    {['Institution', 'Slug', 'Plan', 'Users', 'Status', 'Created', ''].map(h => (
+                      <th key={h} style={s({ padding: '10px 18px', fontSize: 11, fontWeight: 600, color: 'var(--sa-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: h === '' ? 'right' : 'left', borderBottom: '1px solid var(--sa-border)' })}>{h}</th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/[0.04]">
-                  {filtered.map(tenant => (
-                    <tr key={tenant.id} className="hover:bg-white/[0.02] transition-colors group">
-                      <td className="px-6 py-4">
-                        <p className="font-semibold text-white text-sm">{tenant.name}</p>
-                        <p className="text-xs text-white/30">{tenant.admin_email}</p>
+                <tbody>
+                  {filtered.map(t => (
+                    <tr key={t.id} style={s({ borderBottom: '1px solid var(--sa-border)', transition: 'background 0.15s', cursor: 'pointer' })} onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-bg-hover)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')} onClick={() => setSelectedTenant(t)}>
+                      <td style={s({ padding: '14px 18px' })}>
+                        <div style={s({ fontWeight: 600, fontSize: 13, color: 'var(--sa-text)' })}>{t.name}</div>
+                        <div style={s({ fontSize: 11, color: 'var(--sa-text-muted)', marginTop: 2 })}>{t.admin_email}</div>
                       </td>
-                      <td className="px-6 py-4">
-                        <code className="text-xs bg-white/[0.04] px-2 py-1 rounded-lg text-violet-300 font-mono">{tenant.slug}</code>
+                      <td style={s({ padding: '14px 18px' })}>
+                        <code style={s({ fontSize: 12, background: 'var(--sa-bg-elevated)', padding: '3px 8px', borderRadius: 6, color: '#7c3aed', fontFamily: 'monospace' })}>{t.slug}</code>
                       </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wide ${
-                          tenant.plan === 'premium' ? 'bg-amber-500/10 text-amber-400' :
-                          tenant.plan === 'standard' ? 'bg-blue-500/10 text-blue-400' :
-                          'bg-white/[0.04] text-white/40'
-                        }`}>
-                          {tenant.plan}
+                      <td style={s({ padding: '14px 18px' })}>
+                        <span style={s({ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', padding: '3px 8px', borderRadius: 6, background: t.plan === 'premium' ? '#f59e0b18' : t.plan === 'standard' ? '#3b82f618' : 'var(--sa-bg-elevated)', color: t.plan === 'premium' ? '#f59e0b' : t.plan === 'standard' ? '#3b82f6' : 'var(--sa-text-muted)' })}>{t.plan}</span>
+                      </td>
+                      <td style={s({ padding: '14px 18px', fontSize: 13, fontWeight: 600, color: 'var(--sa-text-secondary)' })}>{t.userCount ?? '—'}</td>
+                      <td style={s({ padding: '14px 18px' })}>
+                        <span style={s({ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: t.status === 'active' ? '#05966918' : '#dc262618', color: t.status === 'active' ? 'var(--sa-success)' : 'var(--sa-danger)' })}>
+                          <span style={s({ width: 5, height: 5, borderRadius: '50%', background: t.status === 'active' ? 'var(--sa-success)' : 'var(--sa-danger)' })} />
+                          {t.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-center text-sm text-white/60 font-medium">
-                        {tenant.userCount ?? '—'}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold ${
-                          tenant.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${tenant.status === 'active' ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                          {tenant.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center text-xs text-white/30">
-                        {new Date(tenant.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => setSelectedTenant(tenant)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:bg-violet-500/10 hover:border-violet-500/30 text-white/50 hover:text-violet-300 transition-all text-xs font-medium"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          View
-                          <ChevronRight className="w-3 h-3" />
+                      <td style={s({ padding: '14px 18px', fontSize: 12, color: 'var(--sa-text-muted)' })}>{new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                      <td style={s({ padding: '14px 18px', textAlign: 'right' })}>
+                        <button onClick={e => { e.stopPropagation(); setSelectedTenant(t); }} style={s({ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 10px', borderRadius: 8, background: 'var(--sa-bg-elevated)', border: '1px solid var(--sa-border)', cursor: 'pointer', color: 'var(--sa-text-secondary)', fontSize: 12, fontWeight: 500, transition: 'all 0.2s' })}>
+                          <Eye size={13} /> View <ChevronRight size={12} />
                         </button>
                       </td>
                     </tr>
@@ -207,19 +156,8 @@ export default function SuperAdminDashboard({ onLogout }: { onLogout: () => void
         </div>
       </div>
 
-      {/* Modals */}
-      {showCreateModal && (
-        <CreateTenantModal
-          onClose={() => setShowCreateModal(false)}
-          onCreated={() => { setShowCreateModal(false); fetchData(); }}
-        />
-      )}
-      {selectedTenant && (
-        <TenantDetailModal
-          tenant={selectedTenant}
-          onClose={() => { setSelectedTenant(null); fetchData(); }}
-        />
-      )}
+      {showCreateModal && <CreateTenantModal onClose={() => setShowCreateModal(false)} onCreated={() => { setShowCreateModal(false); fetchData(); }} />}
+      {selectedTenant && <TenantDetailModal tenant={selectedTenant} onClose={() => { setSelectedTenant(null); fetchData(); }} />}
     </div>
   );
 }
