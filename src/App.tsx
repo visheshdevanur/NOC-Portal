@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import { useAuth } from './lib/useAuth';
 import Login from './pages/Login';
 import UpdatePassword from './pages/UpdatePassword';
@@ -7,6 +8,8 @@ import Layout from './components/layout/Layout';
 import Logs from './pages/Logs';
 import LibraryDashboard from './pages/LibraryDashboard';
 import { ThemeProvider } from './components/ThemeProvider';
+
+const SuperAdminApp = lazy(() => import('./pages/superadmin/SuperAdminApp'));
 
 function App() {
   const { user, profile, loading } = useAuth();
@@ -53,6 +56,12 @@ function App() {
     <ThemeProvider remoteTheme={profile?.theme} userId={user?.id} storageKey={`noc-theme-${user ? user.id : 'guest'}`}>
       <BrowserRouter>
         <Routes>
+          {/* Super Admin Portal — independent of NOC auth */}
+          <Route path="/superadmin/*" element={
+            <Suspense fallback={<div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>}>
+              <SuperAdminApp />
+            </Suspense>
+          } />
           <Route 
             path="/login" 
             element={!user ? <Login /> : <Navigate to={isPasswordResetPending ? "/update-password" : "/"} />} 
