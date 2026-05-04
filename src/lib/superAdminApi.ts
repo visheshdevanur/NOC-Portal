@@ -87,6 +87,26 @@ export async function provisionTenant(params: {
   plan: string;
   maxUsers: number;
 }): Promise<{ tenantId: string; userId: string }> {
+  // Pre-validation: check admin email uniqueness
+  const { data: existingEmail } = await supabaseAdmin
+    .from('tenants')
+    .select('name')
+    .eq('admin_email', params.adminEmail)
+    .maybeSingle();
+  if (existingEmail) {
+    throw new Error(`This email is already assigned as an admin to "${existingEmail.name}".`);
+  }
+
+  // Pre-validation: check slug uniqueness
+  const { data: existingSlug } = await supabaseAdmin
+    .from('tenants')
+    .select('name')
+    .eq('slug', params.slug)
+    .maybeSingle();
+  if (existingSlug) {
+    throw new Error(`The slug "${params.slug}" is already taken by "${existingSlug.name}".`);
+  }
+
   // 1. Create the tenant row
   const { data: tenant, error: tenantErr } = await supabaseAdmin
     .from('tenants')
