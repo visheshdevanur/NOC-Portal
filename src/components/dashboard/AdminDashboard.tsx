@@ -834,7 +834,7 @@ export default function AdminDashboard() {
     { id: 'academic', label: 'Academic', icon: <ArrowUpCircle className="w-4 h-4" /> },
     { id: 'departments', label: 'Departments', icon: <Building2 className="w-4 h-4" /> },
     { id: 'hods', label: 'Core Staff', icon: <UserPlus className="w-4 h-4" /> },
-    { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-4 h-4" /> },
+    { id: 'subjects', label: 'Subjects / Semester', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'allusers', label: 'All Users', icon: <Eye className="w-4 h-4" /> },
     { id: 'hallticket', label: 'Hall Tickets', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'logs', label: 'Activity Logs', icon: <Activity className="w-4 h-4" /> },

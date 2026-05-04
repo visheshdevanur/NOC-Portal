@@ -537,46 +537,101 @@ export default function FacultyDashboard() {
             <div className="p-8 text-center text-muted-foreground">No students assigned to your subjects yet.</div>
           ) : (
             <div className="flex flex-col">
-              {/* Semester Tabs */}
-              <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/10 scrollbar-hide">
-                {allSemesters.length === 0 ? (
-                  <span className="text-sm font-medium text-muted-foreground px-4 py-2">No active semesters</span>
-                ) : allSemesters.map(sem => (
-                  <button
-                    key={sem.id}
-                    onClick={() => {
-                      setSelectedSemester(sem.id);
-                      setSelectedSection(null);
-                    }}
-                    className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
-                      selectedSemester === sem.id
-                        ? 'bg-amber-500 text-white shadow-md scale-100'
-                        : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-                    }`}
-                  >
-                    {sem.name}
-                  </button>
-                ))}
-              </div>
+              {/* Determine if first-year teacher (only Sem 1 & 2) */}
+              {(() => {
+                const semNames = allSemesters.map(s => s.name?.trim());
+                const isFirstYear = semNames.length > 0 && semNames.every(n => n === '1' || n === '2');
 
-              {/* Section Tabs */}
-              {selectedSemester && (
-                <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/30 scrollbar-hide">
-                  {allSections.map(section => (
-                    <button
-                      key={section}
-                      onClick={() => setSelectedSection(section)}
-                      className={`px-6 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-200 ${
-                        selectedSection === section
-                          ? 'bg-primary text-primary-foreground shadow-sm scale-100'
-                          : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-                      }`}
-                    >
-                      Section {section}
-                    </button>
-                  ))}
-                </div>
-              )}
+                if (isFirstYear) {
+                  // First Year: Section-first view with semester label
+                  // Build section+sem combos
+                  const sectionSemCombos: { section: string; semId: string; semName: string; label: string }[] = [];
+                  const seen = new Set<string>();
+                  students.forEach(s => {
+                    const sec = s.profiles?.section || 'Unassigned';
+                    const semId = s.profiles?.semester_id || '';
+                    const semName = s.profiles?.semesters?.name || '';
+                    const key = `${sec}_${semId}`;
+                    if (!seen.has(key) && semId) {
+                      seen.add(key);
+                      sectionSemCombos.push({ section: sec, semId, semName, label: `Section ${sec} (Sem ${semName})` });
+                    }
+                  });
+                  sectionSemCombos.sort((a, b) => a.section.localeCompare(b.section) || a.semName.localeCompare(b.semName));
+
+                  // Use selectedSection to store the combo key
+                  const activeCombo = sectionSemCombos.find(c => c.section === selectedSection && c.semId === selectedSemester)
+                    || sectionSemCombos[0];
+
+                  return (
+                    <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/10 scrollbar-hide">
+                      {sectionSemCombos.map(combo => {
+                        const isActive = combo.section === (activeCombo?.section) && combo.semId === (activeCombo?.semId)
+                          && selectedSection === combo.section && selectedSemester === combo.semId;
+                        return (
+                          <button
+                            key={`${combo.section}_${combo.semId}`}
+                            onClick={() => { setSelectedSemester(combo.semId); setSelectedSection(combo.section); }}
+                            className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
+                              isActive
+                                ? 'bg-amber-500 text-white shadow-md'
+                                : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
+                            }`}
+                          >
+                            {combo.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+
+                // Sem 3+: Keep existing Semester → Section hierarchy
+                return (
+                  <>
+                    {/* Semester Tabs */}
+                    <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/10 scrollbar-hide">
+                      {allSemesters.length === 0 ? (
+                        <span className="text-sm font-medium text-muted-foreground px-4 py-2">No active semesters</span>
+                      ) : allSemesters.map(sem => (
+                        <button
+                          key={sem.id}
+                          onClick={() => {
+                            setSelectedSemester(sem.id);
+                            setSelectedSection(null);
+                          }}
+                          className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
+                            selectedSemester === sem.id
+                              ? 'bg-amber-500 text-white shadow-md scale-100'
+                              : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
+                          }`}
+                        >
+                          {sem.name}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Section Tabs */}
+                    {selectedSemester && (
+                      <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/30 scrollbar-hide">
+                        {allSections.map(section => (
+                          <button
+                            key={section}
+                            onClick={() => setSelectedSection(section)}
+                            className={`px-6 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-200 ${
+                              selectedSection === section
+                                ? 'bg-primary text-primary-foreground shadow-sm scale-100'
+                                : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
+                            }`}
+                          >
+                            Section {section}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* CSV Actions Bar for Clearance */}
               <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-secondary/5">
