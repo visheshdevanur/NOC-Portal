@@ -13,8 +13,8 @@ type SubjectEnrollment = {
   remarks: string | null;
   created_at: string;
   updated_at: string;
-  subjects: { subject_name: string; subject_code: string };
-  profiles: { full_name: string; roll_number?: string | null; section?: string | null; semester_id?: string | null; semesters?: { name: string } | null } | null;
+  subjects: { subject_name: string; subject_code: string; department_id?: string; departments?: { name: string } | null };
+  profiles: { full_name: string; roll_number?: string | null; section?: string | null; semester_id?: string | null; department_id?: string | null; semesters?: { name: string } | null; departments?: { name: string } | null } | null;
 };
 
 type TeacherSubject = {
@@ -22,7 +22,9 @@ type TeacherSubject = {
   subject_name: string;
   subject_code: string;
   semester_id: string;
+  department_id?: string;
   semesters: { name: string } | null;
+  departments: { name: string } | null;
 };
 
 type StudentRecord = {
@@ -51,6 +53,7 @@ export default function FacultyDashboard() {
   const [students, setStudents] = useState<SubjectEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [csvUploadMsg, setCsvUploadMsg] = useState<string | null>(null);
@@ -458,18 +461,35 @@ export default function FacultyDashboard() {
   });
   const iaNumbers = Object.keys(iasByNumber).map(Number).sort((a, b) => a - b);
 
-  // Clearance tab filters
-  const semestersMap = new Map();
+  // Clearance tab filters — Hierarchical: Department → Semester → Section
+  const deptMap = new Map<string, string>();
   students.forEach(s => {
-      const id = s.profiles?.semester_id;
-      const name = s.profiles?.semesters?.name || 'Unassigned Semester';
-      if (id && !semestersMap.has(id)) semestersMap.set(id, { id, name });
+    const deptName = s.subjects?.departments?.name || s.profiles?.departments?.name || 'Unassigned';
+    if (!deptMap.has(deptName)) deptMap.set(deptName, deptName);
   });
-  const allSemesters = Array.from(semestersMap.values());
+  const allDepartments = Array.from(deptMap.keys()).sort();
+
+  const activeDept = selectedDepartment || (allDepartments.length > 0 ? allDepartments[0] : null);
+
+  const studentsInDept = activeDept
+    ? students.filter(s => (s.subjects?.departments?.name || s.profiles?.departments?.name || 'Unassigned') === activeDept)
+    : students;
+
+  const semestersMap = new Map();
+  studentsInDept.forEach(s => {
+    const id = s.profiles?.semester_id;
+    const name = s.profiles?.semesters?.name || 'Unassigned Semester';
+    if (id && !semestersMap.has(id)) semestersMap.set(id, { id, name });
+  });
+  const allSemesters = Array.from(semestersMap.values()).sort((a: any, b: any) => {
+    const na = parseInt(a.name) || 99;
+    const nb = parseInt(b.name) || 99;
+    return na - nb;
+  });
 
   const studentsInSemester = selectedSemester 
-    ? students.filter(s => s.profiles?.semester_id === selectedSemester)
-    : students;
+    ? studentsInDept.filter(s => s.profiles?.semester_id === selectedSemester)
+    : studentsInDept;
 
   const allSections = Array.from(new Set(studentsInSemester.map(s => s.profiles?.section || 'Unassigned'))).sort();
 
@@ -537,101 +557,71 @@ export default function FacultyDashboard() {
             <div className="p-8 text-center text-muted-foreground">No students assigned to your subjects yet.</div>
           ) : (
             <div className="flex flex-col">
-              {/* Determine if first-year teacher (only Sem 1 & 2) */}
-              {(() => {
-                const semNames = allSemesters.map(s => s.name?.trim());
-                const isFirstYear = semNames.length > 0 && semNames.every(n => n === '1' || n === '2');
+              {/* Department Tabs */}
+              <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/10 scrollbar-hide">
+                {allDepartments.length === 0 ? (
+                  <span className="text-sm font-medium text-muted-foreground px-4 py-2">No departments</span>
+                ) : allDepartments.map(dept => (
+                  <button
+                    key={dept}
+                    onClick={() => {
+                      setSelectedDepartment(dept);
+                      setSelectedSemester(null);
+                      setSelectedSection(null);
+                    }}
+                    className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
+                      activeDept === dept
+                        ? 'bg-indigo-500 text-white shadow-md'
+                        : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
+                    }`}
+                  >
+                    {dept}
+                  </button>
+                ))}
+              </div>
 
-                if (isFirstYear) {
-                  // First Year: Section-first view with semester label
-                  // Build section+sem combos
-                  const sectionSemCombos: { section: string; semId: string; semName: string; label: string }[] = [];
-                  const seen = new Set<string>();
-                  students.forEach(s => {
-                    const sec = s.profiles?.section || 'Unassigned';
-                    const semId = s.profiles?.semester_id || '';
-                    const semName = s.profiles?.semesters?.name || '';
-                    const key = `${sec}_${semId}`;
-                    if (!seen.has(key) && semId) {
-                      seen.add(key);
-                      sectionSemCombos.push({ section: sec, semId, semName, label: `Section ${sec} (Sem ${semName})` });
-                    }
-                  });
-                  sectionSemCombos.sort((a, b) => a.section.localeCompare(b.section) || a.semName.localeCompare(b.semName));
+              {/* Semester Tabs */}
+              {activeDept && (
+                <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/20 scrollbar-hide">
+                  {allSemesters.length === 0 ? (
+                    <span className="text-sm font-medium text-muted-foreground px-4 py-2">No semesters in this department</span>
+                  ) : allSemesters.map((sem: any) => (
+                    <button
+                      key={sem.id}
+                      onClick={() => {
+                        setSelectedSemester(sem.id);
+                        setSelectedSection(null);
+                      }}
+                      className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
+                        selectedSemester === sem.id
+                          ? 'bg-amber-500 text-white shadow-md'
+                          : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
+                      }`}
+                    >
+                      Sem {sem.name}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-                  // Use selectedSection to store the combo key
-                  const activeCombo = sectionSemCombos.find(c => c.section === selectedSection && c.semId === selectedSemester)
-                    || sectionSemCombos[0];
-
-                  return (
-                    <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/10 scrollbar-hide">
-                      {sectionSemCombos.map(combo => {
-                        const isActive = combo.section === (activeCombo?.section) && combo.semId === (activeCombo?.semId)
-                          && selectedSection === combo.section && selectedSemester === combo.semId;
-                        return (
-                          <button
-                            key={`${combo.section}_${combo.semId}`}
-                            onClick={() => { setSelectedSemester(combo.semId); setSelectedSection(combo.section); }}
-                            className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
-                              isActive
-                                ? 'bg-amber-500 text-white shadow-md'
-                                : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-                            }`}
-                          >
-                            {combo.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                }
-
-                // Sem 3+: Keep existing Semester → Section hierarchy
-                return (
-                  <>
-                    {/* Semester Tabs */}
-                    <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/10 scrollbar-hide">
-                      {allSemesters.length === 0 ? (
-                        <span className="text-sm font-medium text-muted-foreground px-4 py-2">No active semesters</span>
-                      ) : allSemesters.map(sem => (
-                        <button
-                          key={sem.id}
-                          onClick={() => {
-                            setSelectedSemester(sem.id);
-                            setSelectedSection(null);
-                          }}
-                          className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
-                            selectedSemester === sem.id
-                              ? 'bg-amber-500 text-white shadow-md scale-100'
-                              : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-                          }`}
-                        >
-                          {sem.name}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Section Tabs */}
-                    {selectedSemester && (
-                      <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/30 scrollbar-hide">
-                        {allSections.map(section => (
-                          <button
-                            key={section}
-                            onClick={() => setSelectedSection(section)}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-200 ${
-                              selectedSection === section
-                                ? 'bg-primary text-primary-foreground shadow-sm scale-100'
-                                : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-                            }`}
-                          >
-                            Section {section}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
+              {/* Section Tabs */}
+              {selectedSemester && allSections.length > 0 && (
+                <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/30 scrollbar-hide">
+                  {allSections.map(section => (
+                    <button
+                      key={section}
+                      onClick={() => setSelectedSection(section)}
+                      className={`px-6 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-200 ${
+                        selectedSection === section
+                          ? 'bg-primary text-primary-foreground shadow-sm'
+                          : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
+                      }`}
+                    >
+                      Section {section}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* CSV Actions Bar for Clearance */}
               <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-secondary/5">
@@ -729,7 +719,7 @@ export default function FacultyDashboard() {
       {/* ======================== MANAGE IAs TAB ======================== */}
       {activeTab === 'manage-ia' && (
         <div className="space-y-6">
-          {/* Subject Selector */}
+          {/* Subject Selector — Hierarchical: Department → Semester → Subject */}
           <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
             <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-primary" />
@@ -737,25 +727,57 @@ export default function FacultyDashboard() {
             </h2>
             {teacherSubjects.length === 0 ? (
               <p className="text-muted-foreground text-sm">No subjects assigned to you yet.</p>
-            ) : (
-              <div className="flex flex-wrap gap-3">
-                {teacherSubjects.map(sub => (
-                  <button
-                    key={sub.id}
-                    onClick={() => setSelectedSubjectId(sub.id)}
-                    className={`px-5 py-3 rounded-2xl font-medium transition-all duration-200 border ${
-                      selectedSubjectId === sub.id
-                        ? 'bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20 scale-[1.02]'
-                        : 'bg-secondary/50 text-foreground border-border hover:bg-secondary hover:shadow-md'
-                    }`}
-                  >
-                    <div className="text-sm font-bold">{sub.subject_code}</div>
-                    <div className="text-xs opacity-80">{sub.subject_name}</div>
-                    {sub.semesters && <div className="text-[10px] opacity-60 mt-1">{sub.semesters.name}</div>}
-                  </button>
-                ))}
-              </div>
-            )}
+            ) : (() => {
+              // Group subjects by department → semester
+              const grouped: Record<string, Record<string, TeacherSubject[]>> = {};
+              teacherSubjects.forEach(sub => {
+                const dept = sub.departments?.name || 'Unassigned';
+                const sem = sub.semesters?.name ? `Sem ${sub.semesters.name}` : 'Unassigned Semester';
+                if (!grouped[dept]) grouped[dept] = {};
+                if (!grouped[dept][sem]) grouped[dept][sem] = [];
+                grouped[dept][sem].push(sub);
+              });
+
+              return (
+                <div className="space-y-5">
+                  {Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([dept, sems]) => (
+                    <div key={dept}>
+                      <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                        {dept}
+                      </h3>
+                      <div className="space-y-3 pl-4">
+                        {Object.entries(sems).sort(([a], [b]) => {
+                          const na = parseInt(a.replace('Sem ', '')) || 99;
+                          const nb = parseInt(b.replace('Sem ', '')) || 99;
+                          return na - nb;
+                        }).map(([sem, subs]) => (
+                          <div key={sem}>
+                            <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-2">{sem}</p>
+                            <div className="flex flex-wrap gap-2 pl-3">
+                              {subs.map(sub => (
+                                <button
+                                  key={sub.id}
+                                  onClick={() => setSelectedSubjectId(sub.id)}
+                                  className={`px-4 py-2.5 rounded-xl font-medium transition-all duration-200 border text-left ${
+                                    selectedSubjectId === sub.id
+                                      ? 'bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20 scale-[1.02]'
+                                      : 'bg-secondary/50 text-foreground border-border hover:bg-secondary hover:shadow-md'
+                                  }`}
+                                >
+                                  <div className="text-sm font-bold">{sub.subject_code}</div>
+                                  <div className="text-xs opacity-80">{sub.subject_name}</div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* IA Management Area */}

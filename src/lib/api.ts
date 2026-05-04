@@ -83,7 +83,7 @@ export const getStudentDues = async (studentId: string) => {
 export const getFacultyPendingStudents = async (facultyId: string) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, semester_id, roll_number, semesters(name)), subjects(*)')
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, semester_id, roll_number, department_id, semesters(name), departments!profiles_department_id_fkey(name)), subjects(*, departments!subjects_department_id_fkey(name))')
     .eq('teacher_id', facultyId);
   if (error) throw error;
   return data;
@@ -870,7 +870,7 @@ export const promoteStudents = async (sourceSemesterId: string, targetSemesterId
 export const getTeacherSubjectsList = async (teacherId: string) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .select('subject_id, subjects!subject_enrollment_subject_id_fkey(id, subject_name, subject_code, semester_id, semesters(name))')
+    .select('subject_id, subjects!subject_enrollment_subject_id_fkey(id, subject_name, subject_code, semester_id, department_id, semesters(name), departments!subjects_department_id_fkey(name))')
     .eq('teacher_id', teacherId);
   if (error) throw error;
 
