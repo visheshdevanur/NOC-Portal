@@ -524,7 +524,7 @@ export const adminUpdateUserCredentials = async (userId: string, email: string, 
 export const getHodPendingRequests = async (departmentId: string) => {
   const { data, error } = await supabase
     .from('clearance_requests')
-    .select('*, profiles!inner(full_name, department_id)')
+    .select('*, profiles!inner(full_name, department_id, semesters(name))')
     .eq('current_stage', 'hod_review')
     .eq('profiles.department_id', departmentId);
   if (error) throw error;

@@ -6,7 +6,8 @@ import {
   getStudentDues, 
   submitClearanceRequest,
   getStudentIAAttendance,
-  getStudentLibraryDues
+  getStudentLibraryDues,
+  isFirstYearSem
 } from '../../lib/api';
 import { CheckCircle2, Clock, XCircle, AlertCircle, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap, Eye, User, Hash, Layers, MapPin } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -345,6 +346,7 @@ export default function StudentDashboard() {
     };
   }, [showReportModal]);
 
+  const isFirstYear = useMemo(() => isFirstYearSem(semesterName), [semesterName]);
   const isHodApproved = request?.current_stage === 'cleared';
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(e => e.status === 'completed'), [enrollments]);
   const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
@@ -533,11 +535,11 @@ export default function StudentDashboard() {
                         ? 'Blocked: Library dues pending'
                         : !deptPass
                           ? 'Blocked: Accounts dues pending'
-                          : 'Requires HOD Final Approval'}
+                          : `Requires ${isFirstYear ? 'FYC' : 'HOD'} Final Approval`}
             </p>
             {!canDownloadHallTicket && (
               <p className="text-xs text-destructive mt-1 font-medium">
-                ⚠ {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : 'Awaiting HOD final approval.'}
+                ⚠ {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : `Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval.`}
               </p>
             )}
           </div>
@@ -576,7 +578,7 @@ export default function StudentDashboard() {
           <Step title="Faculty" description="IA + Attendance" isComplete={allFacultyCleared} isActive={!allFacultyCleared} icon={<BookOpen className="w-6 h-6" />} />
           <Step title="Library" description="Books & Fines" isComplete={allFacultyCleared && allLibraryCleared} isPermitted={allFacultyCleared && isLibraryPermitted} isActive={allFacultyCleared && !libraryPass} icon={<BookOpen className="w-6 h-6" />} />
           <Step title="Accounts" description="College Fees" isComplete={allFacultyCleared && libraryPass && allDeptCleared} isPermitted={allFacultyCleared && libraryPass && isDeptPermitted} isActive={allFacultyCleared && libraryPass && !deptPass} icon={<Building2 className="w-6 h-6" />} />
-          <Step title="HOD Approval" description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && libraryPass && deptPass && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
+          <Step title={isFirstYear ? "FYC Approval" : "HOD Approval"} description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && libraryPass && deptPass && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
         </div>
       </div>
 
