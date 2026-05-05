@@ -199,3 +199,121 @@ export async function getGlobalActivityLogs(limit = 50) {
   }
   return data || [];
 }
+
+// ─── Platform Error Logs ───────────────────────────────────────────────────────
+
+export type PlatformErrorSeverity = 'CRITICAL' | 'WARNING' | 'INFO';
+
+export type PlatformError = {
+  id: string;
+  tenant_id: string | null;
+  tenant_name: string | null;
+  dashboard_name: string;
+  nav_path: string | null;
+  error_code: string;
+  severity: PlatformErrorSeverity;
+  error_detail: string;
+  triggered_by_role: string | null;
+  triggered_by_email: string | null;
+  created_at: string;
+};
+
+export type ErrorFilters = {
+  tenant_id?: string;
+  dashboard_name?: string;
+  severity?: PlatformErrorSeverity;
+  role?: string;
+  error_code?: string;
+  date_from?: string;  // ISO string
+  date_to?: string;    // ISO string
+  limit?: number;
+};
+
+export type ErrorStats = {
+  critical: number;
+  warning: number;
+  info: number;
+  total: number;
+};
+
+/**
+ * Fetch platform error logs with optional filters.
+ * Uses the service_role client — only callable from the SuperAdmin portal.
+ */
+export async function getPlatformErrors(filters: ErrorFilters = {}): Promise<PlatformError[]> {
+  let query = supabaseAdmin
+    .from('platform_error_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(filters.limit ?? 200);
+
+  if (filters.tenant_id)     query = query.eq('tenant_id', filters.tenant_id);
+  if (filters.dashboard_name) query = query.eq('dashboard_name', filters.dashboard_name);
+  if (filters.severity)      query = query.eq('severity', filters.severity);
+  if (filters.role)          query = query.eq('triggered_by_role', filters.role);
+  if (filters.error_code)    query = query.ilike('error_code', `%${filters.error_code}%`);
+  if (filters.date_from)     query = query.gte('created_at', filters.date_from);
+  if (filters.date_to)       query = query.lte('created_at', filters.date_to);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []) as PlatformError[];
+}
+
+/**
+ * Get counts by severity for the portal header badge.
+ */
+export async function getErrorStats(): Promise<ErrorStats> {
+  const { data, error } = await supabaseAdmin
+    .from('platform_error_logs')
+    .select('severity');
+  if (error) throw error;
+
+  const counts = { critical: 0, warning: 0, info: 0, total: 0 };
+  (data || []).forEach((row: { severity: string }) => {
+    counts.total++;
+    if (row.severity === 'CRITICAL') counts.critical++;
+    else if (row.severity === 'WARNING') counts.warning++;
+    else if (row.severity === 'INFO') counts.info++;
+  });
+  return counts;
+}
+
+/**
+ * Write an error log entry via the `log-error` Edge Function.
+ * This is the ONLY way the frontend should write error logs —
+ * never using the service key directly for writes.
+ *
+ * Callers: validation error handlers in ClerkDashboard, HodDashboard, etc.
+ * (wired in the next phase — available here for future use)
+ */
+export async function logPlatformError(payload: {
+  tenant_id?: string;
+  tenant_name?: string;
+  dashboard_name: string;
+  nav_path?: string;
+  error_code: string;
+  severity?: PlatformErrorSeverity;
+  error_detail: string;
+  triggered_by_role?: string;
+  triggered_by_email?: string;
+}): Promise<void> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+  const anonKey     = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+  // Call the Edge Function using the anon key — the function itself uses service_role internally
+  const res = await fetch(`${supabaseUrl}/functions/v1/log-error`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': anonKey,
+      'Authorization': `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    // Silently fail — never let error logging crash the user's flow
+    console.warn('[logPlatformError] Edge Function call failed:', await res.text().catch(() => ''));
+  }
+}
