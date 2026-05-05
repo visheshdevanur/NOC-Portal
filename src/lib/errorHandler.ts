@@ -34,7 +34,7 @@ export const logAndFormatError = async (
     nav_path?: string;
     error_code?: string;
     severity?: PlatformErrorSeverity;
-    profile?: { id?: string; email?: string; role?: string; tenant_id?: string | null };
+    profile?: { id?: string; email?: string; role?: string; tenant_id?: string | null } | null;
     action?: string; // Short descriptor for logging
   }
 ): Promise<string> => {
