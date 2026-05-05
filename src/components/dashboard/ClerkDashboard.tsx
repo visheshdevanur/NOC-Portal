@@ -12,7 +12,7 @@ import {
   X, Search, BookOpen, Users, UserPlus,
   Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download, Upload
 } from 'lucide-react';
-import { getFriendlyErrorMessage } from '../../lib/errorHandler';
+import { getFriendlyErrorMessage, logAndFormatError } from '../../lib/errorHandler';
 
 type UserProfile = {
   id: string;
@@ -218,7 +218,7 @@ export default function ClerkDashboard() {
       await import('../../lib/api').then(m => m.markStudentDues(dueId, 'completed', due?.fine_amount || 0));
       fetchDues();
     } catch (err: any) {
-      alert("Failed to approve due: " + getFriendlyErrorMessage(err));
+      alert("Failed to approve due: " + await logAndFormatError(err, { dashboard_name: 'Clerk Dashboard', action: 'APPROVE_DUE', profile }));
     }
   };
 
@@ -228,7 +228,7 @@ export default function ClerkDashboard() {
       // Update local state
       setDepartmentDues(prev => prev.map(d => d.id === dueId ? { ...d, paid_amount: paidAmount } : d));
     } catch (err: any) {
-      alert('Failed to update paid amount: ' + getFriendlyErrorMessage(err));
+      alert('Failed to update paid amount: ' + await logAndFormatError(err, { dashboard_name: 'Clerk Dashboard', action: 'UPDATE_PAID_AMOUNT', profile }));
     }
   };
 
@@ -429,7 +429,7 @@ export default function ClerkDashboard() {
       }
       fetchAttendances();
     } catch (err: any) {
-      setAttCsvError(getFriendlyErrorMessage(err));
+      setAttCsvError(await logAndFormatError(err, { dashboard_name: 'Clerk Dashboard', action: 'CSV_ATTENDANCE_UPLOAD', profile }));
     } finally {
       setAttCsvUploading(false);
       e.target.value = '';
@@ -470,7 +470,7 @@ export default function ClerkDashboard() {
       setCatForm({ label: '', minPct: '', maxPct: '', amount: '' });
       fetchCategories();
     } catch (err: any) {
-      setCatError(getFriendlyErrorMessage(err));
+      setCatError(await logAndFormatError(err, { dashboard_name: 'Clerk Dashboard', action: 'SAVE_CATEGORY', profile }));
     } finally {
       setCatSaving(false);
     }
@@ -487,7 +487,7 @@ export default function ClerkDashboard() {
       setReduceFineAmount('');
       fetchAttendances();
     } catch (err: any) {
-      alert('Failed: ' + getFriendlyErrorMessage(err));
+      alert('Failed: ' + await logAndFormatError(err, { dashboard_name: 'Clerk Dashboard', action: 'REDUCE_FINE', profile }));
     } finally { setReduceFineLoading(false); }
   };
 
@@ -722,7 +722,7 @@ export default function ClerkDashboard() {
       }
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'Clerk Dashboard', action: 'CSV_USER_UPLOAD', profile }));
     } finally {
       setUploadingCSV(false);
       // reset file input
@@ -793,7 +793,7 @@ export default function ClerkDashboard() {
       setShowCreateUser(false);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'Clerk Dashboard', action: 'CREATE_USER', profile }));
     } finally {
       setUserCreating(false);
     }
