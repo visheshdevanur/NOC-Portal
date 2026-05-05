@@ -1,3 +1,5 @@
+import { logPlatformError, type PlatformErrorSeverity } from './superAdminApi';
+
 export const getFriendlyErrorMessage = (err: any): string => {
   if (!err) return 'An unknown error occurred.';
   const msg = typeof err === 'string' ? err : (err.message || err.error_description || JSON.stringify(err));
@@ -16,6 +18,53 @@ export const getFriendlyErrorMessage = (err: any): string => {
   if (lowerMsg.includes('invalid input syntax for type uuid')) return 'Invalid ID format provided.';
   if (lowerMsg.includes('jwt')) return 'Your session has expired. Please log in again.';
   if (lowerMsg.includes('violates foreign key constraint')) return 'This operation cannot be completed because it references records that do not exist.';
+  if (lowerMsg.includes('failed to fetch')) return 'Network connection lost. Please check your internet connection and try again.';
   
   return msg;
+};
+
+/**
+ * Enhanced error logger that formats the error for the user while silently 
+ * logging the raw details to the SuperAdmin Developer Portal.
+ */
+export const logAndFormatError = async (
+  err: any,
+  context: {
+    dashboard_name: string;
+    nav_path?: string;
+    error_code?: string;
+    severity?: PlatformErrorSeverity;
+    profile?: { id?: string; email?: string; role?: string; tenant_id?: string | null };
+    action?: string; // Short descriptor for logging
+  }
+): Promise<string> => {
+  const friendlyMsg = getFriendlyErrorMessage(err);
+  const rawError = typeof err === 'string' ? err : (err.message || err.error_description || JSON.stringify(err));
+
+  // Determine severity - network issues or token issues might just be warnings
+  let severity = context.severity || 'CRITICAL';
+  if (rawError.toLowerCase().includes('failed to fetch') || rawError.toLowerCase().includes('jwt')) {
+    severity = 'WARNING';
+  }
+
+  // Generate an error code if none provided
+  const errorCode = context.error_code || `ERR_${context.action?.replace(/\s+/g, '_').toUpperCase() || 'UNKNOWN'}`;
+
+  // Log to platform
+  try {
+    await logPlatformError({
+      tenant_id: context.profile?.tenant_id || undefined,
+      dashboard_name: context.dashboard_name,
+      nav_path: context.nav_path,
+      error_code: errorCode,
+      severity,
+      error_detail: `[${context.action || 'Action'}] ${rawError}`,
+      triggered_by_role: context.profile?.role,
+      triggered_by_email: context.profile?.email || context.profile?.id,
+    });
+  } catch (logErr) {
+    console.warn('Failed to log platform error:', logErr);
+  }
+
+  return friendlyMsg;
 };
