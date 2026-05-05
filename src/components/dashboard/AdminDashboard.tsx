@@ -6,7 +6,7 @@ import {
   Plus, Trash2, Search, UserPlus, X, Building2,
   Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft, ArrowUpCircle
 } from 'lucide-react';
-import { getFriendlyErrorMessage } from '../../lib/errorHandler';
+import { logAndFormatError } from '../../lib/errorHandler';
 
 type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'hallticket' | 'logs' | 'academic';
 
@@ -304,7 +304,7 @@ export default function AdminDashboard() {
       fetchUsers();
       fetchAnalytics();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally {
       setUserCreating(false);
     }
@@ -318,7 +318,7 @@ export default function AdminDashboard() {
       setUserSuccess(`"${userName}" deleted.`);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     }
   };
 
@@ -348,7 +348,7 @@ export default function AdminDashboard() {
       setEditingUser(null);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally {
       setUserCreating(false);
     }
@@ -411,7 +411,7 @@ export default function AdminDashboard() {
       setNewSemesterName('');
       setShowCreateSemester(false);
     } catch (err: any) {
-      setSemesterError(getFriendlyErrorMessage(err));
+      setSemesterError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally {
       setSemesterCreating(false);
     }
@@ -445,7 +445,7 @@ export default function AdminDashboard() {
       setShowCreateSubject(false);
       fetchSubjects();
     } catch (err: any) {
-      setSubjectError(getFriendlyErrorMessage(err));
+      setSubjectError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally {
       setSubjectCreating(false);
     }
@@ -474,7 +474,7 @@ export default function AdminDashboard() {
       setEditingSubject(null);
       fetchSubjects();
     } catch (err: any) {
-      setSubjectError(getFriendlyErrorMessage(err));
+      setSubjectError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally {
       setSubjectCreating(false);
     }
@@ -488,7 +488,7 @@ export default function AdminDashboard() {
       setSubjectSuccess(`"${subjectName}" deleted.`);
       fetchSubjects();
     } catch (err: any) {
-      setSubjectError(getFriendlyErrorMessage(err));
+      setSubjectError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     }
   };
 
@@ -530,7 +530,7 @@ export default function AdminDashboard() {
       setShowCreateDept(false);
       fetchDepartments();
     } catch (err: any) {
-      setDeptError(getFriendlyErrorMessage(err));
+      setDeptError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally {
       setDeptCreating(false);
     }
@@ -556,7 +556,7 @@ export default function AdminDashboard() {
       setEditingDept(null);
       fetchDepartments();
     } catch (err: any) {
-      setDeptError(getFriendlyErrorMessage(err));
+      setDeptError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally {
       setDeptCreating(false);
     }
@@ -570,7 +570,7 @@ export default function AdminDashboard() {
       setDeptSuccess(`"${deptName}" deleted.`);
       fetchDepartments();
     } catch (err: any) {
-      setDeptError(getFriendlyErrorMessage(err));
+      setDeptError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     }
   };
 
@@ -708,7 +708,7 @@ export default function AdminDashboard() {
       URL.revokeObjectURL(url);
       setAcademicSuccess('Pre-promotion data downloaded successfully!');
     } catch (err: any) {
-      setAcademicError(getFriendlyErrorMessage(err));
+      setAcademicError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally { setExportingPreData(false); }
   };
 
@@ -727,7 +727,7 @@ export default function AdminDashboard() {
       fetchGraduatedStudents();
       fetchAnalytics();
     } catch (err: any) {
-      setAcademicError(getFriendlyErrorMessage(err));
+      setAcademicError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally { setPromoting(false); }
   };
 

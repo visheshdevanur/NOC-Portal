@@ -10,7 +10,7 @@ import {
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
   GraduationCap, BookOpen, Eye, Clock, Import, Check, Banknote, FileWarning
 } from 'lucide-react';
-import { getFriendlyErrorMessage } from '../../lib/errorHandler';
+import { logAndFormatError } from '../../lib/errorHandler';
 
 type ClearanceRequest = {
   id: string;
@@ -351,7 +351,7 @@ export default function FycDashboard() {
       }
       fetchRequests();
     } catch (err: any) {
-      alert("Failed to approve request: " + getFriendlyErrorMessage(err));
+      alert("Failed to approve request: " + await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
     }
   };
 
@@ -377,7 +377,7 @@ export default function FycDashboard() {
       }
       fetchRequests();
     } catch (err: any) {
-      alert("Error during bulk approval: " + getFriendlyErrorMessage(err));
+      alert("Error during bulk approval: " + await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
     }
   };
 
@@ -436,7 +436,7 @@ export default function FycDashboard() {
       setShowCreateUser(false);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
     } finally {
       setUserCreating(false);
     }
@@ -459,7 +459,7 @@ export default function FycDashboard() {
       setUserSuccess(`"${userName}" deleted.`);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
     }
   };
 
@@ -480,7 +480,7 @@ export default function FycDashboard() {
       setUserSuccess(`"${userName}" removed from your department.`);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
     }
   };
 
@@ -500,7 +500,7 @@ export default function FycDashboard() {
       setImportTeachersList(data || []);
       setSelectedImportIds(new Set());
     } catch (err: any) {
-      setImportError(getFriendlyErrorMessage(err));
+      setImportError(await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
       setImportTeachersList([]);
     } finally {
       setLoadingImportTeachers(false);
@@ -543,7 +543,7 @@ export default function FycDashboard() {
       setImportTeachersList([]);
       fetchUsers();
     } catch (err: any) {
-      setImportError(getFriendlyErrorMessage(err));
+      setImportError(await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
     } finally {
       setImportingTeachers(false);
     }

@@ -1,4 +1,5 @@
 import { logPlatformError, type PlatformErrorSeverity } from './superAdminApi';
+import { supabase } from './supabase';
 
 export const getFriendlyErrorMessage = (err: any): string => {
   if (!err) return 'An unknown error occurred.';
@@ -50,17 +51,30 @@ export const logAndFormatError = async (
   // Generate an error code if none provided
   const errorCode = context.error_code || `ERR_${context.action?.replace(/\s+/g, '_').toUpperCase() || 'UNKNOWN'}`;
 
+  // Fetch profile if not provided
+  let userProfile = context.profile;
+  if (!userProfile) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        userProfile = { id: user.id, email: user.email };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   // Log to platform
   try {
     await logPlatformError({
-      tenant_id: context.profile?.tenant_id || undefined,
+      tenant_id: userProfile?.tenant_id || undefined,
       dashboard_name: context.dashboard_name,
       nav_path: context.nav_path,
       error_code: errorCode,
       severity,
       error_detail: `[${context.action || 'Action'}] ${rawError}`,
-      triggered_by_role: context.profile?.role,
-      triggered_by_email: context.profile?.email || context.profile?.id,
+      triggered_by_role: userProfile?.role,
+      triggered_by_email: userProfile?.email || userProfile?.id,
     });
   } catch (logErr) {
     console.warn('Failed to log platform error:', logErr);

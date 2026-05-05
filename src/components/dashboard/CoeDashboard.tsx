@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { GraduationCap, Save, FileText, CheckCircle2, Calendar, Upload, Plus, Trash2, X, Image as ImageIcon, Download, Palette, Move, RotateCcw, Layers, Search } from 'lucide-react';
-import { getFriendlyErrorMessage } from '../../lib/errorHandler';
+import { logAndFormatError } from '../../lib/errorHandler';
 import { logActivity } from '../../lib/api';
 import Papa from 'papaparse';
 import { Rnd } from 'react-rnd';
@@ -114,7 +114,7 @@ export default function CoeDashboard() {
       setIaStudents((students || []).filter((s: any) => s.semester_id === iaSemId));
       setSelectedStudentForIa(null);
     } catch (err: any) {
-      setErrorMSG("Failed to fetch students: " + getFriendlyErrorMessage(err));
+      setErrorMSG("Failed to fetch students: " + await logAndFormatError(err, { dashboard_name: 'CoeDashboard' }));
     } finally {
       setLoadingIaStudents(false);
     }
@@ -128,7 +128,7 @@ export default function CoeDashboard() {
       const records = await getStudentIAAttendance(student.id);
       setStudentIaRecords(records || []);
     } catch (err: any) {
-      setErrorMSG("Failed to fetch IA attendance: " + getFriendlyErrorMessage(err));
+      setErrorMSG("Failed to fetch IA attendance: " + await logAndFormatError(err, { dashboard_name: 'CoeDashboard' }));
     } finally {
       setLoadingStudentIa(false);
     }
@@ -200,7 +200,7 @@ export default function CoeDashboard() {
       }
     } catch (err: any) {
       console.error(err);
-      setErrorMSG(getFriendlyErrorMessage(err));
+      setErrorMSG(await logAndFormatError(err, { dashboard_name: 'CoeDashboard' }));
     } finally {
       setLoading(false);
     }
@@ -240,7 +240,7 @@ export default function CoeDashboard() {
       setSuccessMSG('Hall Ticket Template saved successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {
-      setErrorMSG(getFriendlyErrorMessage(err));
+      setErrorMSG(await logAndFormatError(err, { dashboard_name: 'CoeDashboard' }));
     } finally {
       setSaving(false);
     }
@@ -304,7 +304,7 @@ export default function CoeDashboard() {
       setSemesters(semRes.data || []);
       setSubjects(subRes.data as Subject[] || []);
     } catch (err: any) {
-      setErrorMSG(getFriendlyErrorMessage(err));
+      setErrorMSG(await logAndFormatError(err, { dashboard_name: 'CoeDashboard' }));
     }
   };
 
@@ -336,7 +336,7 @@ export default function CoeDashboard() {
       setSuccessMSG('Timetable updated successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {
-      setErrorMSG("Failed to save timetable: " + getFriendlyErrorMessage(err));
+      setErrorMSG("Failed to save timetable: " + await logAndFormatError(err, { dashboard_name: 'CoeDashboard' }));
     } finally {
       setSavingTime(false);
     }
@@ -517,7 +517,7 @@ export default function CoeDashboard() {
       setSuccessMSG('Visual template mapping saved successfully!');
       setTimeout(() => setSuccessMSG(null), 3000);
     } catch (err: any) {
-      setErrorMSG(getFriendlyErrorMessage(err));
+      setErrorMSG(await logAndFormatError(err, { dashboard_name: 'CoeDashboard' }));
     } finally {
       setSavingBuilder(false);
     }

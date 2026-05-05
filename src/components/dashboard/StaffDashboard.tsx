@@ -12,7 +12,7 @@ import {
   X, Search, BookOpen, Users, UserPlus,
   Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download, Upload, ClipboardList
 } from 'lucide-react';
-import { getFriendlyErrorMessage } from '../../lib/errorHandler';
+import { logAndFormatError } from '../../lib/errorHandler';
 
 type UserProfile = {
   id: string;
@@ -212,7 +212,7 @@ export default function StaffDashboard() {
       await import('../../lib/api').then(m => m.markStudentDues(dueId, 'completed', due?.fine_amount || 0));
       fetchDues();
     } catch (err: any) {
-      alert("Failed to approve due: " + getFriendlyErrorMessage(err));
+      alert("Failed to approve due: " + await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     }
   };
 
@@ -222,7 +222,7 @@ export default function StaffDashboard() {
       // Update local state
       setDepartmentDues(prev => prev.map(d => d.id === dueId ? { ...d, paid_amount: paidAmount } : d));
     } catch (err: any) {
-      alert('Failed to update paid amount: ' + getFriendlyErrorMessage(err));
+      alert('Failed to update paid amount: ' + await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     }
   };
 
@@ -429,7 +429,7 @@ export default function StaffDashboard() {
       }
       fetchAttendances();
     } catch (err: any) {
-      setAttCsvError(getFriendlyErrorMessage(err));
+      setAttCsvError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setAttCsvUploading(false);
       e.target.value = '';
@@ -459,7 +459,7 @@ export default function StaffDashboard() {
       setCatForm({ label: '', minPct: '', maxPct: '', amount: '' });
       fetchCategories();
     } catch (err: any) {
-      setCatError(getFriendlyErrorMessage(err));
+      setCatError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setCatSaving(false);
     }
@@ -476,7 +476,7 @@ export default function StaffDashboard() {
       setReduceFineAmount('');
       fetchAttendances();
     } catch (err: any) {
-      alert('Failed: ' + getFriendlyErrorMessage(err));
+      alert('Failed: ' + await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally { setReduceFineLoading(false); }
   };
 
@@ -671,7 +671,7 @@ export default function StaffDashboard() {
       }
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setUploadingCSV(false);
       // reset file input
@@ -741,7 +741,7 @@ export default function StaffDashboard() {
       setShowCreateUser(false);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setUserCreating(false);
     }
@@ -776,7 +776,7 @@ export default function StaffDashboard() {
       setEditingUser(null);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setUserCreating(false);
     }
@@ -879,7 +879,7 @@ export default function StaffDashboard() {
       }
       fetchSubjects();
     } catch (err: any) {
-      setSubjectError(getFriendlyErrorMessage(err));
+      setSubjectError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setUploadingSubjectCSV(false);
       event.target.value = '';
@@ -926,7 +926,7 @@ export default function StaffDashboard() {
       setShowCreateSubject(false);
       fetchSubjects();
     } catch (err: any) {
-      setSubjectError(getFriendlyErrorMessage(err));
+      setSubjectError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setSubjectCreating(false);
     }
@@ -946,7 +946,7 @@ export default function StaffDashboard() {
       setEditingSubject(null);
       fetchSubjects();
     } catch (err: any) {
-      setSubjectError(getFriendlyErrorMessage(err));
+      setSubjectError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setSubjectCreating(false);
     }
@@ -959,7 +959,7 @@ export default function StaffDashboard() {
       setSubjectSuccess(`"${name}" deleted.`);
       fetchSubjects();
     } catch (err: any) {
-      setSubjectError(getFriendlyErrorMessage(err));
+      setSubjectError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     }
   };
 
@@ -1091,7 +1091,7 @@ export default function StaffDashboard() {
         setSelectedTeacher('');
       }
     } catch (err: any) {
-      setSectionError(getFriendlyErrorMessage(err));
+      setSectionError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setAssigning(false);
     }
@@ -1156,7 +1156,7 @@ export default function StaffDashboard() {
         setSectionSuccess(`Successfully assigned ${result.updated} sections from CSV!`);
       }
     } catch (err: any) {
-      setSectionError(getFriendlyErrorMessage(err));
+      setSectionError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setSectionCsvUploading(false);
       e.target.value = '';
@@ -1197,7 +1197,7 @@ export default function StaffDashboard() {
       setMgStudents(students || []);
     } catch (err: any) {
       console.error('Failed to fetch manage sections data:', err);
-      setMgError(getFriendlyErrorMessage(err));
+      setMgError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally { setMgLoading(false); }
   };
 
@@ -1219,7 +1219,7 @@ export default function StaffDashboard() {
       setMgSuccess(`Section "${sectionName}" deleted. ${count} students unassigned.`);
       fetchMgData(mgSemesterId);
     } catch (err: any) {
-      setMgError(getFriendlyErrorMessage(err));
+      setMgError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     }
   };
 
@@ -1243,7 +1243,7 @@ export default function StaffDashboard() {
       setMgAssignments({});
       fetchMgData(mgSemesterId);
     } catch (err: any) {
-      setMgError(getFriendlyErrorMessage(err));
+      setMgError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally { setMgSaving(false); }
   };
 
@@ -1301,7 +1301,7 @@ export default function StaffDashboard() {
       }
       fetchMgData(mgSemesterId);
     } catch (err: any) {
-      setMgError(getFriendlyErrorMessage(err));
+      setMgError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setMgUploading(false);
       event.target.value = '';

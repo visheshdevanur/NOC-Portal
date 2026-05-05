@@ -14,7 +14,7 @@ import {
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
   GraduationCap, BookOpen, Eye, Clock, Banknote, FileWarning
 } from 'lucide-react';
-import { getFriendlyErrorMessage } from '../../lib/errorHandler';
+import { logAndFormatError } from '../../lib/errorHandler';
 
 type ClearanceRequest = {
   id: string;
@@ -222,7 +222,7 @@ export default function HodDashboard() {
       fetchUsers();
       setShowImportModal(false);
     } catch (err: any) {
-      setImportError(getFriendlyErrorMessage(err));
+      setImportError(await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
     } finally {
       setImportingTeachers(false);
     }
@@ -235,7 +235,7 @@ export default function HodDashboard() {
       await import('../../lib/api').then(m => m.removeImportedTeacher(profile.department_id!, teacherId));
       fetchUsers();
     } catch (err: any) {
-      alert(getFriendlyErrorMessage(err));
+      alert(await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
     }
   };
 
@@ -295,7 +295,7 @@ export default function HodDashboard() {
       }
       fetchRequests();
     } catch (err: any) {
-      alert("Failed to approve request: " + getFriendlyErrorMessage(err));
+      alert("Failed to approve request: " + await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
     }
   };
 
@@ -335,7 +335,7 @@ export default function HodDashboard() {
       }
       fetchRequests();
     } catch (err: any) {
-      alert("Error during bulk approval: " + getFriendlyErrorMessage(err));
+      alert("Error during bulk approval: " + await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
     }
   };
 
@@ -374,7 +374,7 @@ export default function HodDashboard() {
       setShowCreateUser(false);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
     } finally {
       setUserCreating(false);
     }
@@ -388,7 +388,7 @@ export default function HodDashboard() {
       setUserSuccess(`"${userName}" deleted.`);
       fetchUsers();
     } catch (err: any) {
-      setUserError(getFriendlyErrorMessage(err));
+      setUserError(await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
     }
   };
 
