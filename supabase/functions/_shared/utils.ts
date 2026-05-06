@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno runtime, not checked by project tsc
 /**
  * Shared utilities for Supabase Edge Functions.
  * Import in Edge Functions via: import { ... } from '../_shared/utils.ts'
