@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   getPlatformErrors, getErrorStats,
-  type PlatformError,
+  type PlatformError, type PlatformErrorSeverity, type ErrorFilters,
   getAllTenants, type Tenant,
 } from '../../lib/superAdminApi';
 import {

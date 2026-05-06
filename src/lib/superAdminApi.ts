@@ -97,6 +97,18 @@ export async function getPlatformStats(): Promise<PlatformStats> {
 
 // ─── Error Logs ───
 
+export type PlatformErrorSeverity = 'CRITICAL' | 'WARNING' | 'INFO';
+
+export type ErrorFilters = {
+  tenant_id?: string;
+  dashboard_name?: string;
+  severity?: PlatformErrorSeverity;
+  role?: string;
+  error_code?: string;
+  date_from?: string;
+  date_to?: string;
+};
+
 export type PlatformError = {
   id: string;
   tenant_id: string | null;
@@ -104,23 +116,25 @@ export type PlatformError = {
   dashboard_name: string;
   nav_path: string | null;
   error_code: string;
-  severity: 'CRITICAL' | 'WARNING' | 'INFO';
+  severity: PlatformErrorSeverity;
   error_detail: string;
   triggered_by_role: string | null;
   triggered_by_email: string | null;
   created_at: string;
 };
 
-export async function getPlatformErrors(filters?: {
-  severity?: string;
-  dashboard?: string;
-  limit?: number;
-}): Promise<PlatformError[]> {
+export async function getPlatformErrors(filters?: ErrorFilters): Promise<PlatformError[]> {
   return invokeAdminApi<PlatformError[]>('get-errors', filters || {});
 }
 
-export async function getErrorStats(): Promise<{ stats: Record<string, number>; total: number }> {
-  return invokeAdminApi('get-error-stats');
+export async function getErrorStats(): Promise<{ critical: number; warning: number; info: number; total: number }> {
+  const raw = await invokeAdminApi<{ stats: Record<string, number>; total: number }>('get-error-stats');
+  return {
+    critical: raw?.stats?.CRITICAL || 0,
+    warning: raw?.stats?.WARNING || 0,
+    info: raw?.stats?.INFO || 0,
+    total: raw?.total || 0,
+  };
 }
 
 // ─── Error Logging (for frontend error handler) ───

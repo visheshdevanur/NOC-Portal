@@ -39,3 +39,5 @@ check_dues.js
 test_*.mjs
 wire_logs.js
 cleanup_imports.js
+
+.vercel
