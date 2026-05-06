@@ -1,20 +1,11 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
+import { log, startTimer, checkRateLimit, getCorsHeaders, jsonResponse } from '../_shared/utils.ts'
 
 const RAZORPAY_KEY_ID = Deno.env.get('RAZORPAY_KEY_ID') || ''
 const RAZORPAY_KEY_SECRET = Deno.env.get('RAZORPAY_KEY_SECRET') || ''
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
-}
+const corsHeaders = getCorsHeaders()
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -22,6 +13,7 @@ serve(async (req) => {
   }
 
   try {
+    const elapsed = startTimer()
     // 1. Validate caller JWT — only authenticated students can create orders
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
@@ -39,6 +31,13 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser()
     if (authError || !user) {
       return jsonResponse({ error: 'Invalid or expired token' }, 401)
+    }
+
+    // Rate limit: 5 payment orders per minute per student
+    const rl = checkRateLimit(`razorpay-order:${user.id}`, 5, 60_000)
+    if (!rl.allowed) {
+      log({ level: 'WARN', fn: 'create-razorpay-order', action: 'rate_limited', userId: user.id })
+      return jsonResponse({ error: 'Too many payment attempts. Please wait.' }, 429)
     }
 
     // 2. Parse request
@@ -98,10 +97,11 @@ serve(async (req) => {
       tenant_id: profile.tenant_id,
     })
 
+    log({ level: 'INFO', fn: 'create-razorpay-order', action: 'created', userId: user.id, duration: elapsed(), meta: { order_id: data.id, amount } })
     return jsonResponse(data)
   } catch (error) {
-    console.error('Error processing order:', error)
     const message = error instanceof Error ? error.message : 'Internal server error'
+    log({ level: 'ERROR', fn: 'create-razorpay-order', action: 'failed', error: message })
     return jsonResponse({ error: message }, 500)
   }
 })

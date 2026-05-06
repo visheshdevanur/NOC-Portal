@@ -1,17 +1,8 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
+import { log, startTimer, checkRateLimit, getCorsHeaders, jsonResponse } from '../_shared/utils.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
-}
+const corsHeaders = getCorsHeaders()
 
 /**
  * Role hierarchy: who can create whom.
@@ -31,6 +22,7 @@ serve(async (req) => {
   }
 
   try {
+    const elapsed = startTimer()
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
@@ -48,6 +40,15 @@ serve(async (req) => {
     const { data: { user: caller }, error: authError } = await userClient.auth.getUser()
     if (authError || !caller) {
       return jsonResponse({ error: 'Invalid or expired token' }, 401)
+    }
+
+    // Rate limit: 10 user creations per minute per caller
+    const rl = checkRateLimit(`create-user:${caller.id}`, 10, 60_000)
+    if (!rl.allowed) {
+      log({ level: 'WARN', fn: 'create-user', action: 'rate_limited', userId: caller.id })
+      return jsonResponse({ error: 'Too many requests. Please wait a moment.' }, 429, {
+        'Retry-After': String(Math.ceil(rl.resetMs / 1000)),
+      })
     }
 
     // 2. Get caller's profile to check permissions
@@ -141,6 +142,8 @@ serve(async (req) => {
       tenant_id: callerProfile.tenant_id,
     })
 
+    log({ level: 'INFO', fn: 'create-user', action: 'created', userId: caller.id, duration: elapsed(), meta: { role, email } })
+
     return jsonResponse({
       success: true,
       user_id: authData.user.id,
@@ -149,6 +152,7 @@ serve(async (req) => {
 
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal server error'
+    log({ level: 'ERROR', fn: 'create-user', action: 'failed', error: message })
     return jsonResponse({ error: message }, 500)
   }
 })
