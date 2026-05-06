@@ -213,7 +213,7 @@ export default function StudentDashboard() {
         currency: "INR",
         name: "NOC Portal",
         description: `Attendance Due: ${enrollment.subjects?.subject_name}`,
-        order_id: order.id,
+        order_id: (order as any).id,
         handler: async function (response: any) {
           try {
             const result = await verifyAndProcessRazorpayPayment(

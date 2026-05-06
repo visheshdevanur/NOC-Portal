@@ -70,7 +70,7 @@ function ErrorCard({ err }: { err: PlatformError }) {
 
 export default function ErrorLogPage() {
   const [errors, setErrors]   = useState<PlatformError[]>([]);
-  const [stats, setStats]     = useState<ErrorStats>({ critical: 0, warning: 0, info: 0, total: 0 });
+  const [stats, setStats]     = useState<{ critical: number; warning: number; info: number; total: number }>({ critical: 0, warning: 0, info: 0, total: 0 });
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);

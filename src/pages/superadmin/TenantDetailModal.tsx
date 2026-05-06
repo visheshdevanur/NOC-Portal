@@ -27,7 +27,6 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
       setLoading(true);
       try {
         const details = await getTenantDetails(tenant.id) as any;
-        const _roleCts = details?.roleCounts || {};
         const allUsers: TenantUser[] = [];
         // Build user list from role counts (details endpoint returns counts)
         setUsers(allUsers);

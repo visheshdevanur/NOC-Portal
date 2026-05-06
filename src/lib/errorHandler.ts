@@ -67,7 +67,6 @@ export const logAndFormatError = async (
   // Log to platform
   try {
     await logPlatformError({
-      tenant_id: userProfile?.tenant_id || undefined,
       dashboard_name: context.dashboard_name,
       nav_path: context.nav_path,
       error_code: errorCode,
