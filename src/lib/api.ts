@@ -143,35 +143,14 @@ export const markStudentDues = async (
 };
 
 export const bulkProcessCollegeDues = async (pendingDues: { id: string, fine_amount: number }[], allDuesIds: string[]) => {
-  // First, mark all dues as completed and fine = 0
-  const noDuesIds = allDuesIds.filter(id => !pendingDues.find(p => p.id === id));
-  
-  if (noDuesIds.length > 0) {
-    // Process in chunks if needed, but for typical college size <1000, in() works.
-    const chunks = [];
-    for (let i = 0; i < noDuesIds.length; i += 200) {
-      chunks.push(noDuesIds.slice(i, i + 200));
-    }
-    for (const chunk of chunks) {
-      const { error } = await supabase
-        .from('student_dues')
-        .update({ status: 'completed' } as any)
-        .in('id', chunk);
-      if (error) throw error;
-    }
-  }
+  const { data, error } = await supabase.rpc('bulk_process_college_dues', {
+    p_pending_ids: pendingDues.map(d => d.id),
+    p_pending_amounts: pendingDues.map(d => d.fine_amount),
+    p_all_ids: allDuesIds,
+  });
+  if (error) throw error;
 
-  // Next, update pending dues one by one (or bulk)
-  for (const due of pendingDues) {
-    const { error } = await supabase
-      .from('student_dues')
-      .update({ status: 'pending', fine_amount: due.fine_amount } as any)
-      .eq('id', due.id);
-    if (error) throw error;
-  }
-  
-  // Log the mass upload
-  await logActivity('Uploaded CSV for Dues', `Set ${pendingDues.length} students as pending, ${noDuesIds.length} marked completed.`);
+  await logActivity('Uploaded CSV for Dues', `Set ${pendingDues.length} students as pending, ${(data as any)?.cleared_updated || 0} marked completed.`);
   
   return true;
 };
@@ -999,52 +978,56 @@ export const getAccountsVerifiedFees = async () => {
 // =======================
 
 export const createRazorpayOrder = async (amount: number, enrollmentId: string) => {
-  const response = await fetch('/api/create-razorpay-order', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount, receipt: enrollmentId }),
+  const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
+    body: { amount, receipt: enrollmentId, enrollment_id: enrollmentId, due_type: 'attendance_fine' },
   });
-  const data = await response.json();
-  if (!response.ok || data?.error) throw new Error(data?.error || 'Failed to create order');
+  if (error) throw new Error(error.message || 'Failed to create order');
+  if (data?.error) throw new Error(data.error);
   return data;
 };
 
+/**
+ * After Razorpay checkout completes on the client, we poll the payment_orders
+ * table to see if the webhook has confirmed the payment. This is a safety net —
+ * the webhook does the real atomic processing server-side.
+ */
 export const verifyAndProcessRazorpayPayment = async (
   enrollmentId: string, 
   razorpay_order_id: string, 
   razorpay_payment_id: string, 
-  razorpay_signature: string
+  _razorpay_signature: string
 ) => {
-  const response = await fetch('/api/verify-razorpay-payment', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ razorpay_order_id, razorpay_payment_id, razorpay_signature }),
-  });
-  const verification = await response.json();
-  if (!response.ok || !verification?.verified) throw new Error(verification?.error || 'Payment verification failed');
+  // Poll for webhook confirmation (max 10 seconds)
+  const maxAttempts = 10;
+  for (let i = 0; i < maxAttempts; i++) {
+    const { data: order } = await supabase
+      .from('payment_orders')
+      .select('status')
+      .eq('razorpay_order_id', razorpay_order_id)
+      .single();
 
-  // If verified, update the subject_enrollment
-  const { data, error } = await supabase
+    if (order?.status === 'paid') {
+      logActivity('Attendance Due Paid', `Paid fine via Razorpay (Payment: ${razorpay_payment_id})`);
+      return { success: true };
+    }
+
+    // Wait 1 second before next poll
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  // If webhook hasn't confirmed after 10s, store the payment details 
+  // so it can be reconciled later
+  await supabase
     .from('subject_enrollment')
     .update({ 
-      attendance_fee_verified: true, 
-      status: 'completed', 
-      remarks: 'Cleared via Online Payment',
       razorpay_order_id,
       razorpay_payment_id,
-      razorpay_signature,
-      payment_date: new Date().toISOString()
+      remarks: 'Payment submitted — awaiting webhook confirmation',
     } as any)
-    .eq('id', enrollmentId)
-    .select('*, profiles!subject_enrollment_student_id_fkey(full_name)')
-    .single();
+    .eq('id', enrollmentId);
 
-  if (error) throw error;
-  
-  const studentName = data?.profiles?.full_name || 'student';
-  logActivity('Attendance Due Paid', `${studentName} paid fine via Razorpay (ID: ${razorpay_payment_id})`);
-  
-  return data;
+  logActivity('Payment Pending', `Razorpay payment ${razorpay_payment_id} awaiting webhook confirmation`);
+  return { success: true, pending_confirmation: true };
 };
 
 export const setAttendanceDue = async (studentId: string, subjectId: string, feeAmount: number) => {
@@ -1092,61 +1075,17 @@ export const getStudentByUSN = async (usn: string, departmentId: string) => {
 };
 
 export const bulkSetAttendanceDuesCSV = async (departmentId: string | undefined, rows: { roll_number: string; subject_code: string; amount: number }[]) => {
-  const rollNumbers = rows.map(r => r.roll_number.trim().toUpperCase());
-  
-  let query = supabase.from('profiles').select('id, roll_number').eq('role', 'student').in('roll_number', rollNumbers);
-  if (departmentId) {
-    query = query.eq('department_id', departmentId);
-  }
-  
-  const { data: students, error: studentError } = await query;
-  if (studentError) throw studentError;
-  if (!students || students.length === 0) throw new Error('No matching students found.');
+  if (!departmentId) throw new Error('Department ID is required');
 
-  const studentMap = new Map(students.map(s => [s.roll_number?.toUpperCase(), s.id]));
-  
-  // Get all subjects
-  const { data: allSubjects, error: subErr } = await supabase.from('subjects').select('id, subject_code');
-  if (subErr) throw subErr;
-  const subjectMap = new Map(allSubjects.map(s => [s.subject_code?.toUpperCase(), s.id]));
+  const { data, error } = await supabase.rpc('bulk_set_attendance_dues', {
+    p_department_id: departmentId,
+    p_rows: rows,
+  });
+  if (error) throw error;
 
-  let updated = 0;
-  const errors: string[] = [];
-
-  for (const row of rows) {
-    const studentId = studentMap.get(row.roll_number.trim().toUpperCase());
-    const subjectId = subjectMap.get(row.subject_code.trim().toUpperCase());
-    
-    if (!studentId) {
-      errors.push(`USN ${row.roll_number} not found`);
-      continue;
-    }
-    if (!subjectId) {
-      errors.push(`Subject ${row.subject_code} not found`);
-      continue;
-    }
-
-    try {
-      const { data: existing } = await supabase
-        .from('subject_enrollment')
-        .select('id')
-        .eq('student_id', studentId)
-        .eq('subject_id', subjectId)
-        .single();
-        
-      if (existing) {
-        await supabase
-          .from('subject_enrollment')
-          .update({ attendance_fee: row.amount, attendance_fee_verified: false, status: 'rejected' } as any)
-          .eq('id', existing.id);
-        updated++;
-      } else {
-        errors.push(`USN ${row.roll_number} not enrolled in ${row.subject_code}`);
-      }
-    } catch (err: any) {
-      errors.push(`USN ${row.roll_number}: ${err.message}`);
-    }
-  }
+  const result = data as any;
+  const updated = result?.updated || 0;
+  const errors = result?.errors || [];
 
   if (updated > 0) logActivity('Bulk Attendance Dues', `Assigned attendance fines for ${updated} students.`);
   return { updated, errors };
@@ -1440,53 +1379,15 @@ export const clearLibraryDue = async (studentId: string) => {
 
 /** Bulk process library dues from CSV — only USNs of not-paid students. Everyone else is auto-cleared. */
 export const bulkProcessLibraryDues = async (notPaidRolls: string[]) => {
-  const upperRolls = notPaidRolls.map(r => r.trim().toUpperCase());
+  const { data, error } = await supabase.rpc('bulk_process_library_dues', {
+    p_not_paid_rolls: notPaidRolls.map(r => r.trim()),
+  });
+  if (error) throw error;
 
-  // Get all library dues with their student roll numbers
-  const { data: allDues, error: duesError } = await supabase
-    .from('library_dues')
-    .select('id, student_id, profiles!library_dues_student_id_fkey(roll_number)');
-  if (duesError) throw duesError;
+  const result = data as any;
+  logActivity('Bulk Processed Library Dues', `${result?.not_paid || 0} not paid, ${result?.cleared || 0} auto-cleared`);
 
-  const notPaidIds: string[] = [];
-  const clearedIds: string[] = [];
-
-  for (const due of (allDues || [])) {
-    const roll = (due as any).profiles?.roll_number?.toUpperCase();
-    if (roll && upperRolls.includes(roll)) {
-      notPaidIds.push(due.id);
-    } else {
-      clearedIds.push(due.id);
-    }
-  }
-
-  // Mark not-paid students as having dues
-  if (notPaidIds.length > 0) {
-    for (let i = 0; i < notPaidIds.length; i += 200) {
-      const chunk = notPaidIds.slice(i, i + 200);
-      const { error } = await supabase
-        .from('library_dues')
-        .update({ has_dues: true, permitted: false, remarks: 'Not paid — bulk upload' } as any)
-        .in('id', chunk);
-      if (error) throw error;
-    }
-  }
-
-  // Auto-clear all other students
-  if (clearedIds.length > 0) {
-    for (let i = 0; i < clearedIds.length; i += 200) {
-      const chunk = clearedIds.slice(i, i + 200);
-      const { error } = await supabase
-        .from('library_dues')
-        .update({ has_dues: false, permitted: false, fine_amount: 0, remarks: 'Cleared — not in upload list' } as any)
-        .in('id', chunk);
-      if (error) throw error;
-    }
-  }
-
-  logActivity('Bulk Processed Library Dues', `${notPaidIds.length} not paid, ${clearedIds.length} auto-cleared`);
-
-  return notPaidIds.length;
+  return result?.not_paid || 0;
 };
 
 // =======================

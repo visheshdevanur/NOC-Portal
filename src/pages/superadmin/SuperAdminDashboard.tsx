@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getPlatformStats, getAllTenants, getErrorStats, type Tenant, type TenantStats, type ErrorStats, getTenantUserCount } from '../../lib/superAdminApi';
-import { logoutSuperAdmin } from '../../lib/superAdminAuth';
+import { getPlatformStats, getAllTenants, getErrorStats, type Tenant, type PlatformStats, getTenantUserCount } from '../../lib/superAdminApi';
+import { superAdminLogout } from '../../lib/superAdminAuth';
 import { useSATheme } from './SuperAdminApp';
 import { Shield, Building2, Users, FileCheck, Plus, Eye, LogOut, Search, ChevronRight, Zap, Sun, Moon, AlertTriangle } from 'lucide-react';
 import CreateTenantModal from './CreateTenantModal';
@@ -15,8 +15,8 @@ type View = 'overview' | 'errors';
 export default function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const { theme, toggle } = useSATheme();
   const [view, setView] = useState<View>('overview');
-  const [stats, setStats] = useState<TenantStats | null>(null);
-  const [errStats, setErrStats] = useState<ErrorStats>({ critical: 0, warning: 0, info: 0, total: 0 });
+  const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [errStats, setErrStats] = useState<{ critical: number; warning: number; info: number; total: number }>({ critical: 0, warning: 0, info: 0, total: 0 });
   const [tenants, setTenants] = useState<(Tenant & { userCount?: number })[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -41,7 +41,7 @@ export default function SuperAdminDashboard({ onLogout }: { onLogout: () => void
 
   useEffect(() => { fetchData(); }, []);
 
-  const handleLogout = () => { logoutSuperAdmin(); onLogout(); };
+  const handleLogout = async () => { await superAdminLogout(); onLogout(); };
   const filtered = tenants.filter(t => t.name.toLowerCase().includes(search.toLowerCase()) || t.slug.toLowerCase().includes(search.toLowerCase()));
 
   const statCards = [

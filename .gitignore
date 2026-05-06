@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Environment variables — NEVER commit credentials
+.env
+.env.*
+!.env.example
+
+# Supabase local state — contains project ref and personal email
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -24,3 +32,10 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Test/seed scripts with hardcoded credentials (should be deleted)
+seed_users.mjs
+check_dues.js
+test_*.mjs
+wire_logs.js
+cleanup_imports.js

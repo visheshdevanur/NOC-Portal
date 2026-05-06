@@ -548,7 +548,7 @@ export default function StaffDashboard() {
         if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}`);
       }
 
-      const { tempSupabase } = await import('../../lib/supabase');
+      const { createUserSecure } = await import('../../lib/supabase');
       
       const fetchedSemesters = await import('../../lib/api').then(m => m.getSemestersByDepartment(profile.department_id!));
 
@@ -594,41 +594,37 @@ export default function StaffDashboard() {
           existingProfile = existingData[0];
         }
 
-        let profileData: any = {
-          full_name,
-          role,
-          department_id: profile.department_id,
-        };
+        let semesterId: string | undefined;
 
-        if (role === 'student') {
-          if (section) profileData.section = section.toUpperCase();
-          if (roll) profileData.roll_number = roll;
-          
-          if (semNameOrId) {
-            const matchedSem = fetchedSemesters.find(s => s.name.toLowerCase() === semNameOrId.toLowerCase() || s.id === semNameOrId);
-            if (matchedSem) {
-              if (isFirstYearSem(matchedSem.name)) {
-                errorCount++;
-                errorDetails.push(`Row ${i + 1} (${email}): these(1,2) sem students cannot be inserted`);
-                continue;
-              }
-              profileData.semester_id = matchedSem.id;
-            } else {
+        if (role === 'student' && semNameOrId) {
+          const matchedSem = fetchedSemesters.find(s => s.name.toLowerCase() === semNameOrId.toLowerCase() || s.id === semNameOrId);
+          if (matchedSem) {
+            if (isFirstYearSem(matchedSem.name)) {
               errorCount++;
-              errorDetails.push(`Row ${i + 1} (${email}): Target semester "${semNameOrId}" not found in database.`);
+              errorDetails.push(`Row ${i + 1} (${email}): these(1,2) sem students cannot be inserted`);
               continue;
             }
+            semesterId = matchedSem.id;
+          } else {
+            errorCount++;
+            errorDetails.push(`Row ${i + 1} (${email}): Target semester "${semNameOrId}" not found in database.`);
+            continue;
           }
-        } else if (role === 'teacher') {
-             // Teachers don't need section/sem but might have an ID in roll_number
-             if (roll) profileData.roll_number = roll;
         }
 
         if (existingProfile) {
            // Update existing profile
+           const updateData: any = { full_name, role, department_id: profile.department_id };
+           if (role === 'student') {
+             if (section) updateData.section = section.toUpperCase();
+             if (roll) updateData.roll_number = roll;
+             if (semesterId) updateData.semester_id = semesterId;
+           } else if (role === 'teacher' && roll) {
+             updateData.roll_number = roll;
+           }
            const { error: updateError } = await supabase
              .from('profiles')
-             .update(profileData)
+             .update(updateData)
              .eq('id', existingProfile.id);
              
            if (updateError) {
@@ -636,27 +632,20 @@ export default function StaffDashboard() {
               errorDetails.push(`Row ${i + 1} (${email}): Update error - ${updateError.message}`);
               continue;
            }
-           
-           // Optionally update auth credentials if email changed (skip for now to keep it simple and avoid RPC overhead in loop)
         } else {
-           // Create new user
-           const { data: authData, error: authError } = await tempSupabase.auth.signUp({
-             email, password
-           });
-           
-           if (authError || !authData.user) {
+           // Create new user via secure Edge Function
+           try {
+             await createUserSecure({
+               email, password, full_name, role,
+               department_id: profile.department_id,
+               roll_number: roll || undefined,
+               section: role === 'student' ? section?.toUpperCase() : undefined,
+               semester_id: semesterId,
+               teacher_id: role === 'teacher' ? roll : undefined,
+             });
+           } catch (err: any) {
              errorCount++;
-             errorDetails.push(`Row ${i + 1} (${email}): Auth error - ${authError?.message || 'Unknown'}`);
-             continue;
-           }
-           
-           profileData.id = authData.user.id;
-           profileData.email = email;
-           
-           const { error: insertError } = await supabase.from('profiles').insert(profileData);
-           if (insertError) {
-             errorCount++;
-             errorDetails.push(`Row ${i + 1} (${email}): Profile insert error - ${insertError.message}`);
+             errorDetails.push(`Row ${i + 1} (${email}): ${err.message}`);
              continue;
            }
         }
@@ -709,32 +698,19 @@ export default function StaffDashboard() {
     }
 
     try {
-      const { tempSupabase } = await import('../../lib/supabase');
+      const { createUserSecure } = await import('../../lib/supabase');
 
-      const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+      await createUserSecure({
         email: newUser.email,
         password: newUser.password,
-      });
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('User creation failed');
-
-      const profileData: any = {
-        id: authData.user.id,
         full_name: newUser.full_name,
         role: newUser.role,
         department_id: profile.department_id,
-      };
-      if (newUser.role === 'student') {
-        if (newUser.section) profileData.section = newUser.section.toUpperCase();
-        if (newUser.semester_id) profileData.semester_id = newUser.semester_id;
-        if (newUser.roll_number) profileData.roll_number = newUser.roll_number;
-      }
-      if (newUser.role === 'teacher' && newUser.teacher_id) {
-        profileData.roll_number = newUser.teacher_id;
-      }
-
-      const { error: profileError } = await supabase.from('profiles').upsert(profileData);
-      if (profileError) throw profileError;
+        roll_number: newUser.role === 'student' ? newUser.roll_number : undefined,
+        section: newUser.role === 'student' ? newUser.section?.toUpperCase() : undefined,
+        semester_id: newUser.role === 'student' ? newUser.semester_id : undefined,
+        teacher_id: newUser.role === 'teacher' ? newUser.teacher_id : undefined,
+      });
 
       setUserSuccess(`${newUser.role === 'student' ? 'Student' : 'Teacher'} "${newUser.full_name}" created!`);
       setNewUser({ email: '', password: '', full_name: '', role: 'teacher', section: '', semester_id: '', roll_number: '', teacher_id: '' });

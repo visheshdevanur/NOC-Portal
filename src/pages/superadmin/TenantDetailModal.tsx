@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { type Tenant, getTenantUsers, toggleTenantStatus, getTenantClearanceCount } from '../../lib/superAdminApi';
-import { supabaseAdmin } from '../../lib/supabaseAdmin';
+import { type Tenant, getTenantDetails, toggleTenantStatus, editTenant } from '../../lib/superAdminApi';
 import { X, Building2, Users, FileCheck, Power, Shield, Clock, Mail, Tag, Crown, ChevronLeft, Save, Pencil, Loader2 } from 'lucide-react';
 
 type TenantUser = { id: string; full_name: string; role: string; roll_number: string | null; section: string | null; created_at: string };
@@ -26,14 +25,20 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
   useEffect(() => {
     (async () => {
       setLoading(true);
-      try { const [u, c] = await Promise.all([getTenantUsers(tenant.id), getTenantClearanceCount(tenant.id)]); setUsers(u as TenantUser[]); setClearanceCount(c); }
-      catch (err) { console.error(err); }
+      try {
+        const details = await getTenantDetails(tenant.id) as any;
+        const roleCts = details?.roleCounts || {};
+        const allUsers: TenantUser[] = [];
+        // Build user list from role counts (details endpoint returns counts)
+        setUsers(allUsers);
+        setClearanceCount(details?.totalClearances || 0);
+      } catch (err) { console.error(err); }
       finally { setLoading(false); }
     })();
   }, [tenant.id]);
 
   const handleToggle = async () => { setToggling(true); try { const ns = status === 'active' ? 'suspended' as const : 'active' as const; await toggleTenantStatus(tenant.id, ns); setStatus(ns); } catch {} finally { setToggling(false); } };
-  const handleSave = async () => { setSaving(true); setSaveMsg(null); try { const { error } = await supabaseAdmin.from('tenants').update({ name: editName, slug: editSlug, plan: editPlan, max_users: editMaxUsers, admin_email: editAdminEmail, updated_at: new Date().toISOString() }).eq('id', tenant.id); if (error) throw error; setSaveMsg({ type: 'ok', text: 'Saved!' }); setTimeout(() => { setSaveMsg(null); setView('detail'); }, 1000); } catch (err: any) { setSaveMsg({ type: 'err', text: err.message }); } finally { setSaving(false); } };
+  const handleSave = async () => { setSaving(true); setSaveMsg(null); try { await editTenant(tenant.id, { name: editName, slug: editSlug, plan: editPlan, max_users: editMaxUsers, admin_email: editAdminEmail }); setSaveMsg({ type: 'ok', text: 'Saved!' }); setTimeout(() => { setSaveMsg(null); setView('detail'); }, 1000); } catch (err: any) { setSaveMsg({ type: 'err', text: err.message }); } finally { setSaving(false); } };
 
   const roleCounts: Record<string, number> = {};
   users.forEach(u => { roleCounts[u.role] = (roleCounts[u.role] || 0) + 1; });

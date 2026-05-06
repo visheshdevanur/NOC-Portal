@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { validateSuperAdmin, loginSuperAdmin } from '../../lib/superAdminAuth';
+import { superAdminLogin } from '../../lib/superAdminAuth';
 import { useSATheme } from './SuperAdminApp';
 import { Shield, Lock, Mail, ArrowRight, Eye, EyeOff, Sun, Moon } from 'lucide-react';
 import './superadmin.css';
@@ -12,19 +12,18 @@ export default function SuperAdminLogin({ onLogin }: { onLogin: () => void }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setTimeout(() => {
-      if (validateSuperAdmin(email, password)) {
-        loginSuperAdmin();
-        onLogin();
-      } else {
-        setError('Invalid credentials. Access denied.');
-      }
+    try {
+      await superAdminLogin(email, password);
+      onLogin();
+    } catch (err: any) {
+      setError(err.message || 'Invalid credentials. Access denied.');
+    } finally {
       setLoading(false);
-    }, 600);
+    }
   };
 
   return (

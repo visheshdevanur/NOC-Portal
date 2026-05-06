@@ -183,10 +183,26 @@ export default function StudentDashboard() {
 
   const razorpayKey = (import.meta as any).env?.VITE_RAZORPAY_KEY_ID || 'rzp_test_YourTestKeyHere';
 
+  /** Dynamically load Razorpay checkout.js only when needed */
+  const loadRazorpayScript = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if ((window as any).Razorpay) { resolve(); return; }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Razorpay SDK'));
+      document.head.appendChild(script);
+    });
+  };
+
   const handleRazorpayPayment = async (enrollment: any) => {
     try {
       setPayingEnrollmentId(enrollment.id);
       setErrorMsg(null);
+
+      // Load Razorpay SDK dynamically
+      await loadRazorpayScript();
+
       const { createRazorpayOrder, verifyAndProcessRazorpayPayment } = await import('../../lib/api');
       
       const order = await createRazorpayOrder(enrollment.attendance_fee, enrollment.id);
@@ -200,7 +216,7 @@ export default function StudentDashboard() {
         order_id: order.id,
         handler: async function (response: any) {
           try {
-            await verifyAndProcessRazorpayPayment(
+            const result = await verifyAndProcessRazorpayPayment(
               enrollment.id,
               response.razorpay_order_id,
               response.razorpay_payment_id,
@@ -215,6 +231,9 @@ export default function StudentDashboard() {
               date: new Date().toLocaleString(),
               isBulk: false
             });
+            if ((result as any)?.pending_confirmation) {
+              setErrorMsg("Payment received — confirmation may take a moment. Refreshing...");
+            }
             fetchStudentData();
           } catch (err: any) {
             setErrorMsg("Payment verification failed: " + err.message);

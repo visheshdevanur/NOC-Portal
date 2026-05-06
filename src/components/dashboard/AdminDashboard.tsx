@@ -281,22 +281,14 @@ export default function AdminDashboard() {
     }
 
     try {
-      const { tempSupabase } = await import('../../lib/supabase');
+      const { createUserSecure } = await import('../../lib/supabase');
 
-      const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+      await createUserSecure({
         email: newUser.email,
         password: newUser.password,
-      });
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('User creation failed');
-
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id: authData.user.id,
         full_name: newUser.full_name,
-        role: newUser.role as any,
-        department_id: null,
+        role: newUser.role,
       });
-      if (profileError) throw profileError;
 
       setUserSuccess(`${newUser.role.toUpperCase()} "${newUser.full_name}" created successfully!`);
       setNewUser({ email: '', password: '', full_name: '', role: 'hod', department_id: '' });

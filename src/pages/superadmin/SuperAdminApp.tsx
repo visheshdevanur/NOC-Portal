@@ -18,8 +18,23 @@ function getInitialTheme(): Theme {
 }
 
 export default function SuperAdminApp() {
-  const [isLoggedIn, setIsLoggedIn] = useState(isSuperAdminLoggedIn());
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
+
+  // Check real auth session on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const loggedIn = await isSuperAdminLoggedIn();
+        setIsLoggedIn(loggedIn);
+      } catch {
+        setIsLoggedIn(false);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   // Listen for OS theme changes
   useEffect(() => {
@@ -38,6 +53,14 @@ export default function SuperAdminApp() {
     setTheme(next);
     localStorage.setItem('sa-theme', next);
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#09090b', color: '#fafafa' }}>
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <ThemeCtx.Provider value={{ theme, toggle }}>

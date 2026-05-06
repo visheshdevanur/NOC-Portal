@@ -401,27 +401,16 @@ export default function FycDashboard() {
     }
 
     try {
-      const { tempSupabase } = await import('../../lib/supabase');
+      const { createUserSecure } = await import('../../lib/supabase');
 
-      const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+      await createUserSecure({
         email: newUser.email,
         password: newUser.password,
-      });
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('User creation failed');
-
-      const profileData: any = {
-        id: authData.user.id,
         full_name: newUser.full_name,
-        role: newUser.role as any,
-        created_by: user.id
-      };
-      // Only set department_id if provided (clerks may need one)
-      if (newUser.department_id) profileData.department_id = newUser.department_id;
-      if (newUser.role === 'teacher' && newUser.teacher_id) profileData.roll_number = newUser.teacher_id;
-
-      const { error: profileError } = await supabase.from('profiles').upsert(profileData);
-      if (profileError) throw profileError;
+        role: newUser.role,
+        department_id: newUser.department_id || undefined,
+        teacher_id: newUser.role === 'teacher' ? newUser.teacher_id : undefined,
+      });
 
       await supabase.from('activity_logs').insert([{
         user_id: user?.id,
