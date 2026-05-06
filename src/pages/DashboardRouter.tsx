@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { useAuth } from '../lib/useAuth';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 const StudentDashboard = lazy(() => import('../components/dashboard/StudentDashboard'));
 const FacultyDashboard = lazy(() => import('../components/dashboard/FacultyDashboard'));
@@ -55,9 +56,11 @@ const DashboardRouter = () => {
   };
 
   return (
-    <Suspense fallback={<DashboardFallback />}>
-      {getDashboard()}
-    </Suspense>
+    <ErrorBoundary dashboardName={profile.role}>
+      <Suspense fallback={<DashboardFallback />}>
+        {getDashboard()}
+      </Suspense>
+    </ErrorBoundary>
   );
 };
 

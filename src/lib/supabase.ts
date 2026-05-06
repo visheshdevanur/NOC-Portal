@@ -8,6 +8,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // ─── Secure User Creation via Edge Function ───
 // Replaces the old tempSupabase.auth.signUp() pattern which was insecure.
 // The Edge Function validates caller permissions and prevents privilege escalation.
+// Uses invokeWithRetry for automatic exponential backoff on transient failures.
 
 export async function createUserSecure(params: {
   email: string;
@@ -20,17 +21,6 @@ export async function createUserSecure(params: {
   section?: string;
   semester_id?: string;
 }): Promise<{ user_id: string; message: string }> {
-  const { data, error } = await supabase.functions.invoke('create-user', {
-    body: params,
-  });
-
-  if (error) {
-    throw new Error(error.message || 'User creation failed');
-  }
-
-  if (data?.error) {
-    throw new Error(data.error);
-  }
-
-  return data as { user_id: string; message: string };
+  const { invokeWithRetry } = await import('./invokeWithRetry');
+  return invokeWithRetry<{ user_id: string; message: string }>('create-user', params);
 }

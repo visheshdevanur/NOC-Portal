@@ -6,7 +6,7 @@ import UpdatePassword from './pages/UpdatePassword';
 import DashboardRouter from './pages/DashboardRouter';
 import Layout from './components/layout/Layout';
 import Logs from './pages/Logs';
-import LibraryDashboard from './pages/LibraryDashboard';
+const LibraryDashboardLazy = lazy(() => import('./pages/LibraryDashboard'));
 import { ThemeProvider } from './components/ThemeProvider';
 
 const SuperAdminApp = lazy(() => import('./pages/superadmin/SuperAdminApp'));
@@ -92,7 +92,7 @@ function App() {
               path="/library" 
               element={
                 user && (user.user_metadata?.role === 'librarian' || user.user_metadata?.role === 'admin' || user.user_metadata?.role === 'principal') 
-                  ? <LibraryDashboard /> 
+                  ? <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}><LibraryDashboardLazy /></Suspense>
                   : <Navigate to="/" />
               } 
             />

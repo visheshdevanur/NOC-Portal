@@ -978,12 +978,10 @@ export const getAccountsVerifiedFees = async () => {
 // =======================
 
 export const createRazorpayOrder = async (amount: number, enrollmentId: string) => {
-  const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
-    body: { amount, receipt: enrollmentId, enrollment_id: enrollmentId, due_type: 'attendance_fine' },
+  const { invokeWithRetry } = await import('./invokeWithRetry');
+  return invokeWithRetry('create-razorpay-order', {
+    amount, receipt: enrollmentId, enrollment_id: enrollmentId, due_type: 'attendance_fine',
   });
-  if (error) throw new Error(error.message || 'Failed to create order');
-  if (data?.error) throw new Error(data.error);
-  return data;
 };
 
 /**
