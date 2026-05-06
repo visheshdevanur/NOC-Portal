@@ -64,6 +64,42 @@ serve(async (req) => {
       return jsonResponse({ error: 'Only students can create payment orders' }, 403)
     }
 
+    // FIX #31: Verify amount matches actual fine in database
+    if (enrollment_id && (!due_type || due_type === 'attendance_fine')) {
+      const { data: enrollment } = await adminClient
+        .from('subject_enrollment')
+        .select('attendance_fee, attendance_fee_verified')
+        .eq('id', enrollment_id)
+        .eq('student_id', user.id)
+        .single()
+
+      if (!enrollment) {
+        return jsonResponse({ error: 'Enrollment not found or does not belong to you' }, 404)
+      }
+      if (enrollment.attendance_fee_verified) {
+        return jsonResponse({ error: 'This fine has already been paid' }, 400)
+      }
+      if (Math.abs(amount - enrollment.attendance_fee) > 0.01) {
+        log({ level: 'WARN', fn: 'create-razorpay-order', action: 'amount_mismatch', userId: user.id, meta: { requested: amount, actual: enrollment.attendance_fee } })
+        return jsonResponse({ error: `Amount ₹${amount} does not match fine ₹${enrollment.attendance_fee}` }, 400)
+      }
+    } else if (due_type === 'college_fee') {
+      const { data: dues } = await adminClient
+        .from('student_dues')
+        .select('fine_amount, paid_amount, status')
+        .eq('student_id', user.id)
+        .eq('status', 'pending')
+
+      const totalDue = (dues || []).reduce((sum: number, d: any) => sum + (d.fine_amount - (d.paid_amount || 0)), 0)
+      if (totalDue <= 0) {
+        return jsonResponse({ error: 'No pending dues found' }, 400)
+      }
+      if (Math.abs(amount - totalDue) > 0.01) {
+        log({ level: 'WARN', fn: 'create-razorpay-order', action: 'amount_mismatch', userId: user.id, meta: { requested: amount, actual: totalDue } })
+        return jsonResponse({ error: `Amount ₹${amount} does not match outstanding dues ₹${totalDue}` }, 400)
+      }
+    }
+
     // 4. Create Razorpay order
     const authHeaderRazorpay = `Basic ${btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`)}`
 

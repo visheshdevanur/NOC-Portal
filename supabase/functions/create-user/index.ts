@@ -10,7 +10,7 @@ const corsHeaders = getCorsHeaders()
  * A role can only create roles that are below it in the hierarchy.
  */
 const ROLE_HIERARCHY: Record<string, string[]> = {
-  admin: ['hod', 'staff', 'faculty', 'teacher', 'coe', 'accounts', 'librarian', 'principal', 'fyc', 'clerk', 'student'],
+  admin: ['hod', 'staff', 'faculty', 'teacher', 'accounts', 'librarian', 'principal', 'fyc', 'clerk', 'student'],
   hod: ['staff', 'faculty', 'teacher', 'student'],
   fyc: ['clerk', 'teacher'],
   staff: ['teacher', 'student'],
@@ -71,9 +71,12 @@ serve(async (req) => {
       return jsonResponse({ error: 'email, password, full_name, and role are required' }, 400)
     }
 
-    // Basic validation
-    if (password.length < 6) {
-      return jsonResponse({ error: 'Password must be at least 6 characters' }, 400)
+    // FIX #33: Stronger password policy for production (8+ chars, must include letter + number)
+    if (password.length < 8) {
+      return jsonResponse({ error: 'Password must be at least 8 characters' }, 400)
+    }
+    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+      return jsonResponse({ error: 'Password must contain at least one letter and one number' }, 400)
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/

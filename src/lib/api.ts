@@ -15,7 +15,7 @@ export const logActivity = async (action: string, details?: string) => {
     user_name: profile?.full_name,
     action,
     details
-  } as any]);
+  }]);
 };
 
 /** Helper to detect 1st/2nd year semesters by name */
@@ -25,11 +25,12 @@ export const isFirstYearSem = (name: string) => {
   return n.includes('1st') || n.includes('2nd') || n === '1' || n === '2' || n.includes('first') || n.includes('second');
 };
 
-export const getActivityLogs = async () => {
+export const getActivityLogs = async (limit: number = 500) => {
   const { data, error } = await supabase
     .from('activity_logs')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
   if (error) throw error;
   return data;
 };
@@ -51,7 +52,7 @@ export const getStudentClearanceRequest = async (studentId: string) => {
 export const submitClearanceRequest = async (studentId: string) => {
   const { data, error } = await supabase
     .from('clearance_requests')
-    .insert([{ student_id: studentId, current_stage: 'faculty_review', status: 'pending' }] as any)
+    .insert([{ student_id: studentId, current_stage: 'faculty_review', status: 'pending' }])
     .select()
     .single();
     
@@ -95,7 +96,7 @@ export const markFacultySubjectStatus = async (
   attendancePct: number, 
   remarks: string
 ) => {
-  const updatePayload: any = { status: status as any, attendance_pct: attendancePct, remarks };
+  const updatePayload: any = { status: status, attendance_pct: attendancePct, remarks };
   
   // If the faculty approves the subject, automatically wipe any assigned attendance fines
   if (status === 'completed') {
@@ -134,7 +135,7 @@ export const markStudentDues = async (
 ) => {
   const { data, error } = await supabase
     .from('student_dues')
-    .update({ status: status as any, fine_amount: fineAmount } as any)
+    .update({ status: status, fine_amount: fineAmount })
     .eq('id', duesModuleId)
     .select();
   if (error) throw error;
@@ -150,7 +151,7 @@ export const bulkProcessCollegeDues = async (pendingDues: { id: string, fine_amo
   });
   if (error) throw error;
 
-  await logActivity('Uploaded CSV for Dues', `Set ${pendingDues.length} students as pending, ${(data as any)?.cleared_updated || 0} marked completed.`);
+  await logActivity('Uploaded CSV for Dues', `Set ${pendingDues.length} students as pending, ${(data)?.cleared_updated || 0} marked completed.`);
   
   return true;
 };
@@ -177,7 +178,7 @@ export const getUnassignedSubjects = async () => {
 export const assignTeacherToSubject = async (enrollmentId: string, teacherId: string) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ teacher_id: teacherId } as any)
+    .update({ teacher_id: teacherId })
     .eq('id', enrollmentId)
     .select()
     .single();
@@ -308,7 +309,6 @@ export const removeImportedTeacher = async (departmentId: string, teacherId: str
 };
 
 export const assignTeacherToSection = async (subjectId: string, section: string, teacherId: string, semesterId: string) => {
-  console.log('[assignTeacherToSection] Starting:', { subjectId, section, teacherId, semesterId });
 
   // 1. Find students in this section + semester
   const { data: students, error: studentError } = await supabase
@@ -322,7 +322,6 @@ export const assignTeacherToSection = async (subjectId: string, section: string,
     console.error('[assignTeacherToSection] Student query failed:', studentError);
     throw studentError;
   }
-  console.log('[assignTeacherToSection] Found students:', students?.length || 0);
   if (!students || students.length === 0) return [];
   
   const studentIds = students.map(s => s.id);
@@ -335,7 +334,6 @@ export const assignTeacherToSection = async (subjectId: string, section: string,
     .in('student_id', studentIds);
     
   const existingSet = new Set(existing?.map((e: any) => e.student_id));
-  console.log('[assignTeacherToSection] Existing enrollments:', existingSet.size);
   
   // 3. Insert new enrollment records for students not yet enrolled
   const newEnrollments = students
@@ -347,28 +345,23 @@ export const assignTeacherToSection = async (subjectId: string, section: string,
     }));
 
   if (newEnrollments.length > 0) {
-     console.log('[assignTeacherToSection] Inserting', newEnrollments.length, 'new enrollments');
-     const { error: insertErr } = await supabase.from('subject_enrollment').insert(newEnrollments as any);
+     const { error: insertErr } = await supabase.from('subject_enrollment').insert(newEnrollments);
      if (insertErr) {
-       console.error('[assignTeacherToSection] INSERT FAILED:', insertErr);
        throw new Error(`Failed to create enrollments: ${insertErr.message}. Code: ${insertErr.code}`);
      }
-     console.log('[assignTeacherToSection] Insert succeeded');
   }
 
   // 4. Update all matching enrollments with the teacher_id
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ teacher_id: teacherId } as any)
+    .update({ teacher_id: teacherId })
     .eq('subject_id', subjectId)
     .in('student_id', studentIds)
     .select();
     
   if (error) {
-    console.error('[assignTeacherToSection] UPDATE FAILED:', error);
     throw error;
   }
-  console.log('[assignTeacherToSection] Final result:', data?.length || 0, 'enrollments');
 
   const { data: tProfile } = await supabase.from('profiles').select('full_name').eq('id', teacherId).single();
   const { data: sInfo } = await supabase.from('subjects').select('subject_name').eq('id', subjectId).single();
@@ -469,7 +462,7 @@ export const getUsersByDeptAndRoles = async (departmentId: string, roles: string
 export const updateSubjectAPI = async (id: string, updates: Record<string, any>) => {
   const { data, error } = await supabase
     .from('subjects')
-    .update(updates as any)
+    .update(updates)
     .eq('id', id)
     .select()
     .single();
@@ -480,7 +473,7 @@ export const updateSubjectAPI = async (id: string, updates: Record<string, any>)
 export const updateUserAPI = async (id: string, updates: Record<string, any>) => {
   const { data, error } = await supabase
     .from('profiles')
-    .update(updates as any)
+    .update(updates)
     .eq('id', id)
     .select()
     .single();
@@ -524,7 +517,7 @@ export const getHodDepartmentStudents = async (departmentId: string) => {
 export const approveHodRequest = async (requestId: string) => {
   const { data, error } = await supabase
     .from('clearance_requests')
-    .update({ current_stage: 'cleared', status: 'completed' } as any)
+    .update({ current_stage: 'cleared', status: 'completed' })
     .eq('id', requestId)
     .select('*, profiles!clearance_requests_student_id_fkey(full_name)')
     .single();
@@ -672,7 +665,7 @@ export const getUserNotifications = async (userId: string) => {
 export const markNotificationRead = async (notificationId: string) => {
   const { error } = await supabase
     .from('notifications')
-    .update({ is_read: true } as any)
+    .update({ is_read: true })
     .eq('id', notificationId);
   if (error) throw error;
 };
@@ -691,7 +684,7 @@ export const getSubjectsByDepartment = async (departmentId: string) => {
 };
 
 export const createSubject = async (subject: { subject_name: string; subject_code: string; department_id: string; semester_id: string }) => {
-  const { data, error } = await supabase.from('subjects').insert(subject as any).select();
+  const { data, error } = await supabase.from('subjects').insert(subject).select();
   if (error) throw error;
   return data;
 };
@@ -768,13 +761,13 @@ export const overrideAttendanceFine = async (enrollmentId: string, feeAmount: nu
   
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ status: newStatus as any, remarks, attendance_fee: feeAmount } as any)
+    .update({ status: newStatus, remarks, attendance_fee: feeAmount })
     .eq('id', enrollmentId)
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name)')
     .single();
   if (error) throw error;
   const studentName = data?.profiles?.full_name || 'student';
-  logActivity('Staff Approved Fine', `Override and cleared attendance for ${studentName} with fee: ₹${feeAmount}`);
+  logActivity('Staff Approved Fine', `Override and cleared attendance for ${studentName} with fee: â‚¹${feeAmount}`);
   return data;
 };
 
@@ -807,7 +800,7 @@ export const getSemestersByDepartment = async (departmentId: string) => {
 export const updateStudentPaidAmount = async (dueId: string, paidAmount: number) => {
   const { data, error } = await supabase
     .from('student_dues')
-    .update({ paid_amount: paidAmount, updated_at: new Date().toISOString() } as any)
+    .update({ paid_amount: paidAmount, updated_at: new Date().toISOString() })
     .eq('id', dueId)
     .select()
     .single();
@@ -822,7 +815,7 @@ export const updateStudentDueFee = async (dueId: string, fineAmount: number, pai
   const status = fineAmount > 0 && fineAmount > paidAmount ? 'pending' : 'completed';
   const { error } = await supabase
     .from('student_dues')
-    .update({ fine_amount: fineAmount, paid_amount: paidAmount, status, updated_at: new Date().toISOString() } as any)
+    .update({ fine_amount: fineAmount, paid_amount: paidAmount, status, updated_at: new Date().toISOString() })
     .eq('id', dueId);
   if (error) throw error;
   return { id: dueId, fine_amount: fineAmount, paid_amount: paidAmount, status };
@@ -893,7 +886,7 @@ export const saveIAAttendance = async (
 ) => {
   const { data, error } = await supabase
     .from('ia_attendance')
-    .upsert(records as any, { onConflict: 'student_id,subject_id,ia_number' })
+    .upsert(records, { onConflict: 'student_id,subject_id,ia_number' })
     .select();
   if (error) throw error;
   logActivity('Saved IA Attendance', `Updated IA metrics for ${records.length} students`);
@@ -954,7 +947,7 @@ export const getAccountsPendingFeeVerifications = async () => {
 export const verifyAttendanceFee = async (enrollmentId: string) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ attendance_fee_verified: true } as any)
+    .update({ attendance_fee_verified: true })
     .eq('id', enrollmentId)
     .select()
     .single();
@@ -986,7 +979,7 @@ export const createRazorpayOrder = async (amount: number, enrollmentId: string) 
 
 /**
  * After Razorpay checkout completes on the client, we poll the payment_orders
- * table to see if the webhook has confirmed the payment. This is a safety net —
+ * table to see if the webhook has confirmed the payment. This is a safety net â€”
  * the webhook does the real atomic processing server-side.
  */
 export const verifyAndProcessRazorpayPayment = async (
@@ -1020,8 +1013,8 @@ export const verifyAndProcessRazorpayPayment = async (
     .update({ 
       razorpay_order_id,
       razorpay_payment_id,
-      remarks: 'Payment submitted — awaiting webhook confirmation',
-    } as any)
+      remarks: 'Payment submitted â€” awaiting webhook confirmation',
+    })
     .eq('id', enrollmentId);
 
   logActivity('Payment Pending', `Razorpay payment ${razorpay_payment_id} awaiting webhook confirmation`);
@@ -1039,15 +1032,15 @@ export const setAttendanceDue = async (studentId: string, subjectId: string, fee
   if (existing) {
     const { data, error } = await supabase
       .from('subject_enrollment')
-      .update({ attendance_fee: feeAmount, attendance_fee_verified: false, status: 'rejected' } as any)
+      .update({ attendance_fee: feeAmount, attendance_fee_verified: false, status: 'rejected' })
       .eq('id', existing.id)
       .select('*, profiles!subject_enrollment_student_id_fkey(full_name), subjects!subject_enrollment_subject_id_fkey(subject_name)')
       .single();
     if (error) throw error;
     
     const studentName = data?.profiles?.full_name || 'student';
-    const subjName = (data as any)?.subjects?.subject_name || 'subject';
-    logActivity('Assigned Attendance Due', `Staff set ₹${feeAmount} fine for ${studentName} in ${subjName}`);
+    const subjName = (data)?.subjects?.subject_name || 'subject';
+    logActivity('Assigned Attendance Due', `Staff set â‚¹${feeAmount} fine for ${studentName} in ${subjName}`);
     return data;
   } else {
     throw new Error("Student is not enrolled in this subject.");
@@ -1081,7 +1074,7 @@ export const bulkSetAttendanceDuesCSV = async (departmentId: string | undefined,
   });
   if (error) throw error;
 
-  const result = data as any;
+  const result = data as { updated?: number; errors?: string[] } | null;
   const updated = result?.updated || 0;
   const errors = result?.errors || [];
 
@@ -1109,11 +1102,11 @@ export const createAttendanceCategory = async (departmentId: string, label: stri
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from('attendance_fine_categories')
-    .insert([{ department_id: departmentId, label, min_pct: minPct, max_pct: maxPct, fine_amount: amount, created_by: user?.id, is_first_year: isFirstYear }] as any)
+    .insert([{ department_id: departmentId, label, min_pct: minPct, max_pct: maxPct, fine_amount: amount, created_by: user?.id, is_first_year: isFirstYear }])
     .select()
     .single();
   if (error) throw error;
-  logActivity('Created Fine Category', `${label}: ${minPct}%-${maxPct}% → ₹${amount}`);
+  logActivity('Created Fine Category', `${label}: ${minPct}%-${maxPct}% â†’ â‚¹${amount}`);
   return data;
 };
 
@@ -1121,12 +1114,12 @@ export const createAttendanceCategory = async (departmentId: string, label: stri
 export const updateAttendanceCategory = async (id: string, label: string, minPct: number, maxPct: number, amount: number) => {
   const { data, error } = await supabase
     .from('attendance_fine_categories')
-    .update({ label, min_pct: minPct, max_pct: maxPct, fine_amount: amount, updated_at: new Date().toISOString() } as any)
+    .update({ label, min_pct: minPct, max_pct: maxPct, fine_amount: amount, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
   if (error) throw error;
-  logActivity('Updated Fine Category', `${label}: ${minPct}%-${maxPct}% → ₹${amount}`);
+  logActivity('Updated Fine Category', `${label}: ${minPct}%-${maxPct}% â†’ â‚¹${amount}`);
   return data;
 };
 
@@ -1161,7 +1154,7 @@ export const applyMassFines = async (departmentId: string, isFirstYear: boolean)
   for (const enrollment of filtered) {
     const pct = enrollment.attendance_pct || 0;
     
-    // Already has a fee assigned and verified — skip
+    // Already has a fee assigned and verified â€” skip
     if (enrollment.attendance_fee > 0 && enrollment.attendance_fee_verified) {
       skipped++;
       continue;
@@ -1183,7 +1176,7 @@ export const applyMassFines = async (departmentId: string, isFirstYear: boolean)
 
     const { data: updatedRow, error } = await supabase
       .from('subject_enrollment')
-      .update({ attendance_fee: newFee, attendance_fee_verified: false } as any)
+      .update({ attendance_fee: newFee, attendance_fee_verified: false })
       .eq('id', enrollment.id)
       .select('id, attendance_fee')
       .single();
@@ -1204,15 +1197,15 @@ export const applyMassFines = async (departmentId: string, isFirstYear: boolean)
 export const reduceStudentFine = async (enrollmentId: string, newAmount: number) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ attendance_fee: newAmount, attendance_fee_verified: false } as any)
+    .update({ attendance_fee: newAmount, attendance_fee_verified: false })
     .eq('id', enrollmentId)
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name), subjects!subject_enrollment_subject_id_fkey(subject_name)')
     .single();
   if (error) throw error;
   
   const studentName = data?.profiles?.full_name || 'student';
-  const subjName = (data as any)?.subjects?.subject_name || 'subject';
-  logActivity('Reduced Fine', `Set fine to ₹${newAmount} for ${studentName} in ${subjName}`);
+  const subjName = (data)?.subjects?.subject_name || 'subject';
+  logActivity('Reduced Fine', `Set fine to â‚¹${newAmount} for ${studentName} in ${subjName}`);
   return data;
 };
 
@@ -1220,7 +1213,7 @@ export const reduceStudentFine = async (enrollmentId: string, newAmount: number)
 export const clearStudentFine = async (enrollmentId: string) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ attendance_fee_verified: true, status: 'completed' } as any)
+    .update({ attendance_fee_verified: true, status: 'completed' })
     .eq('id', enrollmentId)
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name), subjects!subject_enrollment_subject_id_fkey(subject_name)')
     .single();
@@ -1228,7 +1221,7 @@ export const clearStudentFine = async (enrollmentId: string) => {
   if (error) throw error;
   
   const studentName = data?.profiles?.full_name || 'student';
-  const subjName = (data as any)?.subjects?.subject_name || 'subject';
+  const subjName = (data)?.subjects?.subject_name || 'subject';
   logActivity('Cleared Fine', `Manually cleared fine (cash payment) for ${studentName} in ${subjName}`);
   return data;
 };
@@ -1274,7 +1267,7 @@ export const verifyAndProcessBulkRazorpayPayment = async (
         razorpay_payment_id,
         razorpay_signature,
         payment_date: new Date().toISOString()
-      } as any)
+      })
       .eq('id', eid)
       .select('*, subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
       .single();
@@ -1332,7 +1325,7 @@ export const updateLibraryDue = async (studentId: string, hasDues: boolean, fine
     .single();
   if (error) throw error;
   const studentName = data?.profiles?.full_name || 'student';
-  logActivity(hasDues ? 'Assigned Library Fine' : 'Cleared Library Fine', `Amount: ₹${fineAmount} for ${studentName}`);
+  logActivity(hasDues ? 'Assigned Library Fine' : 'Cleared Library Fine', `Amount: â‚¹${fineAmount} for ${studentName}`);
   return data;
 };
 
@@ -1340,7 +1333,7 @@ export const updateLibraryDue = async (studentId: string, hasDues: boolean, fine
 export const setLibraryDue = async (studentId: string) => {
   const { data, error } = await supabase
     .from('library_dues')
-    .update({ has_dues: true, permitted: false } as any)
+    .update({ has_dues: true, permitted: false })
     .eq('student_id', studentId)
     .select('*, profiles!library_dues_student_id_fkey(full_name)')
     .single();
@@ -1349,11 +1342,11 @@ export const setLibraryDue = async (studentId: string) => {
   return data;
 };
 
-/** Permit a student — they still have dues but clearance proceeds */
+/** Permit a student â€” they still have dues but clearance proceeds */
 export const permitLibraryDue = async (studentId: string) => {
   const { data, error } = await supabase
     .from('library_dues')
-    .update({ permitted: true } as any)
+    .update({ permitted: true })
     .eq('student_id', studentId)
     .select('*, profiles!library_dues_student_id_fkey(full_name)')
     .single();
@@ -1366,7 +1359,7 @@ export const permitLibraryDue = async (studentId: string) => {
 export const clearLibraryDue = async (studentId: string) => {
   const { data, error } = await supabase
     .from('library_dues')
-    .update({ has_dues: false, permitted: false, fine_amount: 0, paid_amount: 0, remarks: null } as any)
+    .update({ has_dues: false, permitted: false, fine_amount: 0, paid_amount: 0, remarks: null })
     .eq('student_id', studentId)
     .select('*, profiles!library_dues_student_id_fkey(full_name)')
     .single();
@@ -1375,14 +1368,14 @@ export const clearLibraryDue = async (studentId: string) => {
   return data;
 };
 
-/** Bulk process library dues from CSV — only USNs of not-paid students. Everyone else is auto-cleared. */
+/** Bulk process library dues from CSV â€” only USNs of not-paid students. Everyone else is auto-cleared. */
 export const bulkProcessLibraryDues = async (notPaidRolls: string[]) => {
   const { data, error } = await supabase.rpc('bulk_process_library_dues', {
     p_not_paid_rolls: notPaidRolls.map(r => r.trim()),
   });
   if (error) throw error;
 
-  const result = data as any;
+  const result = data as { not_paid?: number; cleared?: number } | null;
   logActivity('Bulk Processed Library Dues', `${result?.not_paid || 0} not paid, ${result?.cleared || 0} auto-cleared`);
 
   return result?.not_paid || 0;
@@ -1488,7 +1481,7 @@ export const bulkAssignSections = async (assignments: { student_id: string; sect
   for (const a of assignments) {
     const { error } = await supabase
       .from('profiles')
-      .update({ section: a.section.toUpperCase() } as any)
+      .update({ section: a.section.toUpperCase() })
       .eq('id', a.student_id);
     if (error) throw error;
     updated++;
@@ -1526,7 +1519,7 @@ export const bulkAssignSectionsCSV = async (departmentId: string, rows: { roll_n
 
     const { error } = await supabase
       .from('profiles')
-      .update({ section: row.section.trim().toUpperCase() } as any)
+      .update({ section: row.section.trim().toUpperCase() })
       .eq('id', studentId);
 
     if (error) {
@@ -1558,7 +1551,7 @@ export const getSectionsForSemester = async (departmentId: string, semesterId: s
 export const updateStudentSection = async (studentId: string, section: string | null) => {
   const { error } = await supabase
     .from('profiles')
-    .update({ section: section ? section.toUpperCase() : null } as any)
+    .update({ section: section ? section.toUpperCase() : null })
     .eq('id', studentId);
   if (error) throw error;
   logActivity('Updated Section', `Updated section for student to ${section || 'None'}`);
@@ -1568,7 +1561,7 @@ export const updateStudentSection = async (studentId: string, section: string | 
 export const deleteSection = async (departmentId: string, semesterId: string, sectionName: string) => {
   const { data, error } = await supabase
     .from('profiles')
-    .update({ section: null } as any)
+    .update({ section: null })
     .eq('department_id', departmentId)
     .eq('semester_id', semesterId)
     .eq('section', sectionName)

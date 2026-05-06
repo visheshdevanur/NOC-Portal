@@ -31,6 +31,7 @@ type UserProfile = {
   role: string;
   department_id: string | null;
   section: string | null;
+  roll_number?: string | null;
   created_at: string;
   semesters?: { name: string } | null;
   departments?: { name: string } | null;
@@ -137,14 +138,13 @@ export default function FycDashboard() {
     }
   }, [user, activeTab]);
 
+  // FIX #21: Replace Realtime WebSocket with interval polling (30s)
   useEffect(() => {
     if (user) {
-      const channel = supabase.channel('fyc-dashboard')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'clearance_requests', filter: `current_stage=eq.hod_review` }, () => {
-          if (activeTab === 'approvals') fetchRequests();
-        })
-        .subscribe();
-      return () => { supabase.removeChannel(channel); }
+      const interval = setInterval(() => {
+        if (activeTab === 'approvals') fetchRequests();
+      }, 30_000);
+      return () => { clearInterval(interval); }
     }
   }, [user, activeTab]);
 
@@ -230,7 +230,7 @@ export default function FycDashboard() {
       // Directly mark as completed (cleared)
       const { error } = await supabase
         .from('student_dues')
-        .update({ status: 'completed', updated_at: new Date().toISOString() } as any)
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
         .eq('id', dueId);
       if (error) throw error;
       
@@ -392,7 +392,7 @@ export default function FycDashboard() {
       return;
     }
 
-    // Clerk is global (not department-scoped) — no department_id needed
+    // Clerk is global (not department-scoped) â€” no department_id needed
 
     if (newUser.role === 'teacher' && !newUser.teacher_id) {
       setUserError('Teacher ID is required for Teachers.');
@@ -455,7 +455,7 @@ export default function FycDashboard() {
   const handleRemoveImportedTeacher = async (userId: string, userName: string) => {
     if (!confirm(`Remove "${userName}" from your department? (This will NOT delete their account)`)) return;
     try {
-      const { error } = await supabase.from('profiles').update({ created_by: null } as any).eq('id', userId);
+      const { error } = await supabase.from('profiles').update({ created_by: null }).eq('id', userId);
       if (error) throw error;
       
       await supabase.from('activity_logs').insert([{
@@ -506,7 +506,7 @@ export default function FycDashboard() {
       for (const teacherId of selectedImportIds) {
         const { error } = await supabase
           .from('profiles')
-          .update({ created_by: user.id } as any)
+          .update({ created_by: user.id })
           .eq('id', teacherId);
         if (error) throw error;
         count++;
@@ -565,7 +565,7 @@ export default function FycDashboard() {
       const stage = req ? req.current_stage : 'N/A';
       const sem = student.semesters?.name || 'N/A';
       const dept = student.departments?.name || 'N/A';
-      return `"${student.full_name}","${(student as any).roll_number || 'N/A'}","${dept}","${sem}","${student.section || 'N/A'}","${status}","${stage}"`;
+      return `"${student.full_name}","${(student).roll_number || 'N/A'}","${dept}","${sem}","${student.section || 'N/A'}","${status}","${stage}"`;
     }).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -591,7 +591,7 @@ export default function FycDashboard() {
       const dept = student.departments?.name || 'N/A';
       const appliedDate = req.created_at ? new Date(req.created_at).toLocaleDateString() : 'N/A';
       const updatedDate = req.updated_at ? new Date(req.updated_at).toLocaleDateString() : 'N/A';
-      return `"${student.full_name}","${(student as any).roll_number || 'N/A'}","${dept}","${sem}","${student.section || 'N/A'}","${req.status}","${req.current_stage}","${appliedDate}","${updatedDate}"`;
+      return `"${student.full_name}","${(student).roll_number || 'N/A'}","${dept}","${sem}","${student.section || 'N/A'}","${req.status}","${req.current_stage}","${appliedDate}","${updatedDate}"`;
     }).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -665,7 +665,7 @@ export default function FycDashboard() {
 
   const filteredStudents = departmentStudents.filter(s =>
     s.full_name?.toLowerCase().includes(searchStudents.toLowerCase()) ||
-    (s as any).roll_number?.toLowerCase().includes(searchStudents.toLowerCase()) ||
+    (s).roll_number?.toLowerCase().includes(searchStudents.toLowerCase()) ||
     s.section?.toLowerCase().includes(searchStudents.toLowerCase())
   );
 
@@ -798,7 +798,7 @@ export default function FycDashboard() {
         <div className="space-y-6">
           {userSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>✓ {userSuccess}</span>
+              <span>âœ“ {userSuccess}</span>
               <button onClick={() => setUserSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -854,7 +854,7 @@ export default function FycDashboard() {
                 )}
                 {importSuccess && (
                   <div className="p-3 mb-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-                    <span>✓ {importSuccess}</span>
+                    <span>âœ“ {importSuccess}</span>
                     <button onClick={() => setImportSuccess(null)}><X className="w-4 h-4" /></button>
                   </div>
                 )}
@@ -991,7 +991,7 @@ export default function FycDashboard() {
                       <option value="teacher">Teacher</option>
                     </select>
                   </div>
-                  {/* Clerk is global — no department selector needed */}
+                  {/* Clerk is global â€” no department selector needed */}
                   {newUser.role === 'teacher' && (
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-1">Teacher ID</label>
@@ -1034,7 +1034,7 @@ export default function FycDashboard() {
                   <tbody className="divide-y divide-border">
                     {filteredUsers.map((u) => {
                       // If the teacher has a department_id, they were imported (not created by FYC from scratch)
-                      const isImported = (u.role === 'teacher' || u.role === 'faculty') && !!(u as any).department_id;
+                      const isImported = (u.role === 'teacher' || u.role === 'faculty') && !!(u).department_id;
                       return (
                         <tr key={u.id} className={`hover:bg-secondary/20 transition-colors ${isImported ? 'bg-blue-500/5' : ''}`}>
                           <td className="p-4 font-medium text-foreground">
@@ -1047,7 +1047,7 @@ export default function FycDashboard() {
                               )}
                             </div>
                           </td>
-                          <td className="p-4 text-muted-foreground">{u.departments?.name || '—'}</td>
+                          <td className="p-4 text-muted-foreground">{u.departments?.name || 'â€”'}</td>
                           <td className="p-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${roleColors[u.role] || 'bg-secondary text-foreground'}`}>
                               {u.role}
@@ -1158,7 +1158,7 @@ export default function FycDashboard() {
                                      return (
                                        <tr key={s.id} className="hover:bg-secondary/10 transition-colors bg-background">
                                          <td className="p-3 font-medium text-foreground">{s.full_name}</td>
-                                         <td className="p-3 text-muted-foreground text-sm font-mono">{(s as any).roll_number || '—'}</td>
+                                         <td className="p-3 text-muted-foreground text-sm font-mono">{(s).roll_number || 'â€”'}</td>
                                          <td className="p-3">
                                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${
                                               !req ? 'bg-secondary text-muted-foreground' : 
@@ -1169,7 +1169,7 @@ export default function FycDashboard() {
                                               {!req ? 'NOT APPLIED' : req.status.toUpperCase()}
                                            </span>
                                          </td>
-                                         <td className="p-3 text-xs font-medium text-muted-foreground">{req ? req.current_stage : '—'}</td>
+                                         <td className="p-3 text-xs font-medium text-muted-foreground">{req ? req.current_stage : 'â€”'}</td>
                                        </tr>
                                      )
                                   })}
@@ -1239,7 +1239,7 @@ export default function FycDashboard() {
                         <th className="p-4 font-semibold">Department</th>
                         <th className="p-4 font-semibold">Subject</th>
                         <th className="p-4 font-semibold text-center">Attendance %</th>
-                        <th className="p-4 font-semibold text-center">Paid Fine (₹)</th>
+                        <th className="p-4 font-semibold text-center">Paid Fine (â‚¹)</th>
                         <th className="p-4 font-semibold">Status</th>
                       </tr>
                     </thead>
@@ -1247,8 +1247,8 @@ export default function FycDashboard() {
                       {filtered.map(item => (
                         <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
                           <td className="p-4 font-medium text-foreground">{item.profiles?.full_name}</td>
-                          <td className="p-4 text-muted-foreground font-mono text-sm">{item.profiles?.roll_number || '—'}</td>
-                          <td className="p-4 text-sm">{item.profiles?.departments?.name || '—'}</td>
+                          <td className="p-4 text-muted-foreground font-mono text-sm">{item.profiles?.roll_number || 'â€”'}</td>
+                          <td className="p-4 text-sm">{item.profiles?.departments?.name || 'â€”'}</td>
                           <td className="p-4">
                             <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
                             <div className="text-xs text-muted-foreground">{item.subjects?.subject_code}</div>
@@ -1257,7 +1257,7 @@ export default function FycDashboard() {
                             <span className="text-amber-600 dark:text-amber-400 font-bold">{item.attendance_pct}%</span>
                           </td>
                           <td className="p-4 text-center font-bold text-foreground">
-                            {item.attendance_fee ? `₹${item.attendance_fee}` : '—'}
+                            {item.attendance_fee ? `â‚¹${item.attendance_fee}` : 'â€”'}
                           </td>
                           <td className="p-4">
                             <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
@@ -1503,7 +1503,7 @@ export default function FycDashboard() {
                             </span>
                             {hasAssignments ? (
                               <span className="text-xs text-muted-foreground">
-                                {teacher.assignments.length} subject{teacher.assignments.length !== 1 ? 's' : ''} · {[...new Set(teacher.assignments.flatMap(a => a.sections))].length} section{[...new Set(teacher.assignments.flatMap(a => a.sections))].length !== 1 ? 's' : ''}
+                                {teacher.assignments.length} subject{teacher.assignments.length !== 1 ? 's' : ''} Â· {[...new Set(teacher.assignments.flatMap(a => a.sections))].length} section{[...new Set(teacher.assignments.flatMap(a => a.sections))].length !== 1 ? 's' : ''}
                               </span>
                             ) : (
                               <span className="text-xs text-amber-500 font-medium">No sections assigned</span>
@@ -1656,7 +1656,7 @@ export default function FycDashboard() {
                               {log.action}
                             </span>
                           </td>
-                          <td className="p-4 text-sm text-muted-foreground">{log.details || '—'}</td>
+                          <td className="p-4 text-sm text-muted-foreground">{log.details || 'â€”'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1681,3 +1681,4 @@ export default function FycDashboard() {
     </div>
   );
 }
+

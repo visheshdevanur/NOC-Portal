@@ -1,34 +1,34 @@
 /**
  * Super Admin Auth — Real Supabase Authentication
  *
- * Replaces the old client-side password check with actual JWT-based auth.
+ * FIX #22: Uses a SEPARATE Supabase client to prevent session collision.
  * A super admin is a user with `is_platform_admin = true` in their profile.
  */
-import { supabase } from './supabase';
+import { superAdminSupabase } from './superAdminSupabase';
 
 /**
  * Login as a super admin using real Supabase auth.
  * Returns the user on success, throws on failure.
  */
 export async function superAdminLogin(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await superAdminSupabase.auth.signInWithPassword({ email, password });
   if (error) throw new Error(error.message);
   if (!data.user) throw new Error('Login failed');
 
   // Verify this user is actually a platform admin
-  const { data: profile, error: profileError } = await supabase
+  const { data: profile, error: profileError } = await superAdminSupabase
     .from('profiles')
     .select('id, role, is_platform_admin')
     .eq('id', data.user.id)
     .single();
 
   if (profileError || !profile) {
-    await supabase.auth.signOut();
+    await superAdminSupabase.auth.signOut();
     throw new Error('Profile not found');
   }
 
   if (profile.role !== 'super_admin' && !profile.is_platform_admin) {
-    await supabase.auth.signOut();
+    await superAdminSupabase.auth.signOut();
     throw new Error('Access denied: not a platform administrator');
   }
 
@@ -39,10 +39,10 @@ export async function superAdminLogin(email: string, password: string) {
  * Check if the current session belongs to a super admin.
  */
 export async function isSuperAdminLoggedIn(): Promise<boolean> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await superAdminSupabase.auth.getSession();
   if (!session) return false;
 
-  const { data: profile } = await supabase
+  const { data: profile } = await superAdminSupabase
     .from('profiles')
     .select('role, is_platform_admin')
     .eq('id', session.user.id)
@@ -55,5 +55,5 @@ export async function isSuperAdminLoggedIn(): Promise<boolean> {
  * Sign out the super admin.
  */
 export async function superAdminLogout() {
-  await supabase.auth.signOut();
+  await superAdminSupabase.auth.signOut();
 }

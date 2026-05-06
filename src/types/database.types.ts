@@ -1,4 +1,4 @@
-export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'clerk' | 'hod' | 'admin' | 'accounts' | 'coe' | 'principal' | 'librarian' | 'fyc';
+export type Role = 'student' | 'faculty' | 'teacher' | 'staff' | 'clerk' | 'hod' | 'admin' | 'accounts' | 'principal' | 'librarian' | 'fyc';
 export type DeptType = 'library' | 'hostel' | 'accounts';
 export type ClearanceStatus = 'pending' | 'rejected' | 'completed';
 export type ClearanceStage = 'student_application' | 'faculty_review' | 'library_review' | 'department_review' | 'hod_review' | 'cleared' | 'rejected';
@@ -71,11 +71,7 @@ export interface Database {
         Insert: { id?: string; student_id: string; has_dues?: boolean; fine_amount?: number; remarks?: string | null; created_at?: string; updated_at?: string };
         Update: { id?: string; student_id?: string; has_dues?: boolean; fine_amount?: number; remarks?: string | null; created_at?: string; updated_at?: string };
       };
-      hall_ticket_templates: {
-        Row: { id: string; institution_name: string; title: string; instructions: string; signature_text: string; logo_url: string | null; signatures: string[] | null; bg_image_url: string | null; mapping_coordinates: any | null; created_at: string; updated_at: string };
-        Insert: { id?: string; institution_name?: string; title?: string; instructions?: string; signature_text?: string; logo_url?: string | null; signatures?: string[] | null; bg_image_url?: string | null; mapping_coordinates?: any | null; created_at?: string; updated_at?: string };
-        Update: { id?: string; institution_name?: string; title?: string; instructions?: string; signature_text?: string; logo_url?: string | null; signatures?: string[] | null; bg_image_url?: string | null; mapping_coordinates?: any | null; created_at?: string; updated_at?: string };
-      };
+
       clearance_requests: {
         Row: {
           id: string;

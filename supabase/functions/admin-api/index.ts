@@ -192,26 +192,36 @@ serve(async (req) => {
         return jsonResponse({ success: true })
       }
 
-      // ─── DELETE TENANT ───
+      // ─── DELETE TENANT (FIX #12: Batched with timeout protection) ───
       case 'delete-tenant': {
         const { tenant_id } = params
         if (!tenant_id) return jsonResponse({ error: 'tenant_id required' }, 400)
 
-        // Delete all profiles (auth users) for this tenant
+        // Delete all profiles (auth users) for this tenant in batches
         const { data: profiles } = await adminClient
           .from('profiles')
           .select('id')
           .eq('tenant_id', tenant_id)
 
-        if (profiles) {
-          for (const p of profiles) {
-            await adminClient.auth.admin.deleteUser(p.id)
+        if (profiles && profiles.length > 0) {
+          // Process in batches of 20 to avoid Edge Function timeout
+          const BATCH_SIZE = 20
+          let deleted = 0
+          for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
+            const batch = profiles.slice(i, i + BATCH_SIZE)
+            await Promise.allSettled(
+              batch.map(p => adminClient.auth.admin.deleteUser(p.id))
+            )
+            deleted += batch.length
+            log({ level: 'INFO', fn: 'admin-api', action: 'delete-tenant-progress', meta: { deleted, total: profiles.length } })
           }
         }
 
+        // Delete the tenant record (cascades to remaining data via FK)
         const { error } = await adminClient.from('tenants').delete().eq('id', tenant_id)
         if (error) throw error
-        return jsonResponse({ success: true })
+        log({ level: 'INFO', fn: 'admin-api', action: 'tenant-deleted', meta: { tenant_id, users_deleted: profiles?.length || 0 } })
+        return jsonResponse({ success: true, users_deleted: profiles?.length || 0 })
       }
 
       // ─── PLATFORM STATS ───
@@ -245,17 +255,19 @@ serve(async (req) => {
         return jsonResponse({ data })
       }
 
-      // ─── ERROR STATS ───
+      // ─── ERROR STATS (FIX #16: Use COUNT queries instead of fetching all rows) ───
       case 'get-error-stats': {
-        const { data, error } = await adminClient
-          .from('platform_error_logs')
-          .select('severity')
-        if (error) throw error
-        const stats = { CRITICAL: 0, WARNING: 0, INFO: 0 }
-        for (const row of data || []) {
-          if (row.severity in stats) stats[row.severity as keyof typeof stats]++
+        const [critRes, warnRes, infoRes] = await Promise.all([
+          adminClient.from('platform_error_logs').select('*', { count: 'exact', head: true }).eq('severity', 'CRITICAL'),
+          adminClient.from('platform_error_logs').select('*', { count: 'exact', head: true }).eq('severity', 'WARNING'),
+          adminClient.from('platform_error_logs').select('*', { count: 'exact', head: true }).eq('severity', 'INFO'),
+        ])
+        const stats = {
+          CRITICAL: critRes.count || 0,
+          WARNING: warnRes.count || 0,
+          INFO: infoRes.count || 0,
         }
-        return jsonResponse({ stats, total: data?.length || 0 })
+        return jsonResponse({ stats, total: stats.CRITICAL + stats.WARNING + stats.INFO })
       }
 
       default:

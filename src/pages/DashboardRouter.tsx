@@ -9,7 +9,7 @@ const StaffDashboard = lazy(() => import('../components/dashboard/StaffDashboard
 const ClerkDashboard = lazy(() => import('../components/dashboard/ClerkDashboard'));
 const AdminDashboard = lazy(() => import('../components/dashboard/AdminDashboard'));
 const AccountsDashboard = lazy(() => import('../components/dashboard/AccountsDashboard'));
-const CoeDashboard = lazy(() => import('../components/dashboard/CoeDashboard'));
+
 const FycDashboard = lazy(() => import('../components/dashboard/FycDashboard'));
 const LibraryDashboard = lazy(() => import('../pages/LibraryDashboard'));
 
@@ -48,7 +48,7 @@ const DashboardRouter = () => {
       case 'principal':
       case 'admin': return <AdminDashboard />;
       case 'accounts': return <AccountsDashboard />;
-      case 'coe': return <CoeDashboard />;
+
       case 'fyc': return <FycDashboard />;
       case 'librarian': return <LibraryDashboard />;
       default: return <div>Access Denied. Unknown role: {profile.role}</div>;

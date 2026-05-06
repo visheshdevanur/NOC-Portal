@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { logAndFormatError } from '../../lib/errorHandler';
 
-type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'hallticket' | 'logs' | 'academic';
+type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'logs' | 'academic';
 
 type Department = {
   id: string;
@@ -21,10 +21,10 @@ type UserProfile = {
   id: string;
   full_name: string;
   role: string;
-  email?: string;
+  email: string | null;
   department_id: string | null;
   section: string | null;
-  created_at: string;
+  created_at: string | null;
   departments?: { name: string } | null;
   semesters?: { name: string } | null;
 };
@@ -33,25 +33,13 @@ type Subject = {
   id: string;
   subject_name: string;
   subject_code: string;
-  department_id?: string;
+  department_id: string | null;
+  semester_id?: string | null;
   departments?: { name: string } | null;
+  semesters?: { name: string } | null;
 };
 
-type StudentStatus = {
-  id: string;
-  student_id: string;
-  current_stage: string;
-  status: string;
-  remarks: string | null;
-  created_at: string;
-  updated_at: string;
-  profiles: {
-    full_name: string;
-    department_id: string | null;
-    section: string | null;
-    departments: { name: string } | null;
-  } | null;
-};
+
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -114,12 +102,6 @@ export default function AdminDashboard() {
   // Hierarchy state for All Users
   const [expandedAllUsersSections, setExpandedAllUsersSections] = useState<Set<string>>(new Set(['global', 'first_year']));
 
-  // Hall Ticket State
-  const [studentStatuses, setStudentStatuses] = useState<StudentStatus[]>([]);
-  const [htLoading, setHtLoading] = useState(false);
-  const [htSearch, setHtSearch] = useState('');
-  const [htError, setHtError] = useState<string | null>(null);
-  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
 
   // System Logs State
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
@@ -152,14 +134,14 @@ export default function AdminDashboard() {
     if (activeTab === 'subjects') { fetchSubjects(); fetchDepartments(); }
     if (activeTab === 'departments') { fetchDepartments(); fetchUsers(); }
     if (activeTab === 'allusers') { fetchAllUsers(); fetchDepartments(); }
-    if (activeTab === 'hallticket') { fetchStudentStatuses(); fetchDepartments(); }
+
     if (activeTab === 'logs') fetchAdminLogs();
     if (activeTab === 'academic') { fetchPromotionPreview(); fetchGraduatedStudents(); fetchDepartments(); }
   }, [activeTab]);
 
   // ==================== SYSTEM LOGS ====================
-  // Admin should only see logs from COE, Librarian, HOD, and Accounts
-  const ADMIN_VISIBLE_ROLES = ['coe', 'librarian', 'hod', 'accounts'];
+  // Admin should only see logs from Librarian, HOD, and Accounts
+  const ADMIN_VISIBLE_ROLES = ['librarian', 'hod', 'accounts'];
   const fetchAdminLogs = async () => {
     setLogsLoading(true);
     try {
@@ -180,7 +162,7 @@ export default function AdminDashboard() {
       let deptMatch = false;
       if (logsDeptFilter === 'all') deptMatch = true;
       else if (logsDeptFilter === 'accounts' && role === 'accounts') deptMatch = true;
-      else if (logsDeptFilter === 'coe' && role === 'coe') deptMatch = true;
+
       else if (logsDeptFilter === 'library' && role === 'librarian') deptMatch = true;
       else if (logsDeptFilter === userDept) deptMatch = true;
 
@@ -207,13 +189,13 @@ export default function AdminDashboard() {
   }, [adminLogs, logsDeptFilter, logsRoleFilter, activeTab]);
 
   const filteredLogs = adminLogs.filter(log => {
-    // Only show COE, librarian, HOD, and accounts logs (already filtered at fetch level, but double-check)
+    // Only show librarian, HOD, and accounts logs (already filtered at fetch level, but double-check)
     if (!ADMIN_VISIBLE_ROLES.includes(log.user_role)) return false;
     
     let deptMatch = false;
     if (logsDeptFilter === 'all') deptMatch = true;
     else if (logsDeptFilter === 'accounts' && log.user_role === 'accounts') deptMatch = true;
-    else if (logsDeptFilter === 'coe' && log.user_role === 'coe') deptMatch = true;
+
     else if (logsDeptFilter === 'library' && log.user_role === 'librarian') deptMatch = true;
     else if (logsDeptFilter === log.department_id) deptMatch = true;
 
@@ -262,7 +244,7 @@ export default function AdminDashboard() {
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'coe', 'principal', 'librarian']).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'principal', 'librarian']).order('created_at', { ascending: false });
       if (error) throw error;
       setUsers(data || []);
     } catch (err: any) { console.error('Failed to fetch users:', err); }
@@ -331,7 +313,7 @@ export default function AdminDashboard() {
         const { error: rpcError } = await supabase.rpc('admin_update_user_credentials', {
           target_user_id: editingUser.id,
           new_email: editingUser.email.trim(),
-          new_password: null
+          new_password: undefined
         });
         if (rpcError) throw rpcError;
       }
@@ -429,7 +411,7 @@ export default function AdminDashboard() {
         subject_code: newSubject.subject_code.toUpperCase(),
         department_id: safeDeptId,
         semester_id: safeSemId
-      }] as any);
+      }]);
       if (error) throw error;
 
       setSubjectSuccess(`Subject "${newSubject.subject_name}" created!`);
@@ -510,7 +492,7 @@ export default function AdminDashboard() {
       const { data: deptData, error: deptErr } = await supabase.from('departments').insert([{
         name: newDept.name,
         hod_id: newDept.hod_id || null
-      }] as any).select().single();
+      }]).select().single();
       if (deptErr) throw deptErr;
 
       if (newDept.hod_id) {
@@ -577,11 +559,11 @@ export default function AdminDashboard() {
       // Fetch imported teachers mapping to know who created them
       const { data: imported } = await supabase.from('imported_teachers').select('teacher_id, created_by');
       if (imported && imported.length > 0) {
-        const creatorIds = [...new Set(imported.map(i => i.created_by).filter(Boolean))];
+        const creatorIds = [...new Set(imported.map(i => i.created_by).filter((id): id is string => id !== null))];
         if (creatorIds.length > 0) {
           const { data: creators } = await supabase.from('profiles').select('id, role').in('id', creatorIds);
           const creatorRoleMap = Object.fromEntries((creators || []).map(c => [c.id, c.role]));
-          const tMap = Object.fromEntries(imported.map(i => [i.teacher_id, creatorRoleMap[i.created_by] || 'unknown']));
+          const tMap = Object.fromEntries(imported.map(i => [i.teacher_id, creatorRoleMap[i.created_by ?? ''] || 'unknown']));
           setTeacherCreatorRoles(tMap);
         }
       }
@@ -595,67 +577,7 @@ export default function AdminDashboard() {
     return matchesSearch;
   });
 
-  // ==================== HALL TICKET STATUS ====================
-  const fetchStudentStatuses = async () => {
-    setHtLoading(true);
-    setHtError(null);
-    try {
-      // First fetch all clearance requests
-      const { data: reqData, error: reqError } = await supabase
-        .from('clearance_requests')
-        .select('*');
-      if (reqError) throw reqError;
 
-      if (!reqData || reqData.length === 0) {
-        setStudentStatuses([]);
-        return;
-      }
-
-      // Then fetch profile info for each student
-      const studentIds = reqData.map((r: any) => r.student_id);
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, full_name, department_id, section, departments!profiles_department_id_fkey(name)')
-        .in('id', studentIds);
-      if (profileError) throw profileError;
-
-      // Merge the data
-      const profileMap = new Map((profileData || []).map((p: any) => [p.id, p]));
-      const merged = reqData.map((r: any) => ({
-        ...r,
-        profiles: profileMap.get(r.student_id) || null,
-      }));
-
-      setStudentStatuses(merged as unknown as StudentStatus[]);
-    } catch (err: any) {
-      console.error('Hall ticket fetch error:', err);
-      setHtError(err.message || 'Failed to load student statuses');
-    }
-    finally { setHtLoading(false); }
-  };
-
-  // Group by department
-  const statusesByDept = studentStatuses.reduce((acc, s) => {
-    const deptName = s.profiles?.departments?.name || 'Unassigned';
-    if (!acc[deptName]) acc[deptName] = [];
-    acc[deptName].push(s);
-    return acc;
-  }, {} as Record<string, StudentStatus[]>);
-
-  const filteredStatusDepts = Object.entries(statusesByDept).filter(([dept, statuses]) =>
-    htSearch === '' ||
-    dept.toLowerCase().includes(htSearch.toLowerCase()) ||
-    statuses.some(s => s.profiles?.full_name?.toLowerCase().includes(htSearch.toLowerCase()))
-  );
-
-  const toggleDept = (dept: string) => {
-    setExpandedDepts(prev => {
-      const next = new Set(prev);
-      if (next.has(dept)) next.delete(dept);
-      else next.add(dept);
-      return next;
-    });
-  };
 
   // ==================== ACADEMIC MANAGEMENT ====================
   const fetchPromotionPreview = async () => {
@@ -683,7 +605,7 @@ export default function AdminDashboard() {
       const { getPrePromotionData } = await import('../../lib/api');
       const data = await getPrePromotionData();
       // Build CSV from students data
-      const students = data?.students || [];
+      const students = (data as any)?.students || [];
       if (students.length === 0) { setAcademicError('No student data to export.'); return; }
       const header = 'Name,Roll Number,Department,Semester,Section,Clearance Stage,Clearance Status\n';
       const rows = students.map((s: any) =>
@@ -713,7 +635,7 @@ export default function AdminDashboard() {
       const { promoteAllStudents: doPromote } = await import('../../lib/api');
       const result = await doPromote();
       setPromotionResult(result);
-      setAcademicSuccess(`Promotion complete! ${result.total_promoted} promoted, ${result.total_graduated} graduated.`);
+      setAcademicSuccess(`Promotion complete! ${(result as any)?.total_promoted || 0} promoted, ${(result as any)?.total_graduated || 0} graduated.`);
       setShowPromoteConfirm(false);
       fetchPromotionPreview();
       fetchGraduatedStudents();
@@ -746,8 +668,8 @@ export default function AdminDashboard() {
   const promotionSummary = (() => {
     const byDeptSem: Record<string, Record<string, number>> = {};
     for (const s of promotionPreview) {
-      const dept = (s as any).departments?.name || 'Unassigned';
-      const sem = (s as any).semesters?.name || 'Unassigned';
+      const dept = (s).departments?.name || 'Unassigned';
+      const sem = (s).semesters?.name || 'Unassigned';
       if (!byDeptSem[dept]) byDeptSem[dept] = {};
       byDeptSem[dept][sem] = (byDeptSem[dept][sem] || 0) + 1;
     }
@@ -800,25 +722,7 @@ export default function AdminDashboard() {
     staff: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
     hod: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     admin: 'bg-red-500/10 text-red-600 dark:text-red-400',
-    coe: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-  };
 
-  const stageColors: Record<string, string> = {
-    student_application: 'bg-gray-500/10 text-gray-600',
-    faculty_review: 'bg-amber-500/10 text-amber-600',
-    department_review: 'bg-blue-500/10 text-blue-600',
-    hod_review: 'bg-purple-500/10 text-purple-600',
-    cleared: 'bg-emerald-500/10 text-emerald-600',
-    rejected: 'bg-red-500/10 text-red-600',
-  };
-
-  const stageLabels: Record<string, string> = {
-    student_application: 'Application',
-    faculty_review: 'Faculty Review',
-    department_review: 'Dept Review',
-    hod_review: 'HOD Review',
-    cleared: '✓ Cleared',
-    rejected: '✗ Rejected',
   };
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
@@ -828,7 +732,7 @@ export default function AdminDashboard() {
     { id: 'hods', label: 'Core Staff', icon: <UserPlus className="w-4 h-4" /> },
     { id: 'subjects', label: 'Subjects / Semester', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'allusers', label: 'All Users', icon: <Eye className="w-4 h-4" /> },
-    { id: 'hallticket', label: 'Hall Tickets', icon: <GraduationCap className="w-4 h-4" /> },
+
     { id: 'logs', label: 'Activity Logs', icon: <Activity className="w-4 h-4" /> },
   ];
 
@@ -854,8 +758,8 @@ export default function AdminDashboard() {
                     {u.role}
                   </span>
                 </td>
-                <td className="p-3 text-muted-foreground">{u.section || u.semesters?.name ? `${u.semesters?.name ? `Sem ${u.semesters.name} ` : ''}${u.section || ''}` : '—'}</td>
-                <td className="p-3 text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td>
+                <td className="p-3 text-muted-foreground">{u.section || u.semesters?.name ? `${u.semesters?.name ? `Sem ${u.semesters.name} ` : ''}${u.section || ''}` : 'â€”'}</td>
+                <td className="p-3 text-muted-foreground">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -983,7 +887,7 @@ export default function AdminDashboard() {
                         return numA - numB;
                       }).map(([sem, count]) => {
                         const semNum = parseInt(sem);
-                        const arrow = semNum === 8 ? '→ Graduated' : isNaN(semNum) ? '' : `→ Sem ${semNum + 1}`;
+                        const arrow = semNum === 8 ? 'â†’ Graduated' : isNaN(semNum) ? '' : `â†’ Sem ${semNum + 1}`;
                         return (
                           <div key={sem} className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">
@@ -1006,18 +910,18 @@ export default function AdminDashboard() {
               <div className="space-y-4">
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
                   <p className="text-amber-600 dark:text-amber-400 font-medium text-sm">
-                    ⚠️ This action will promote ALL students across ALL departments to their next semester.
+                    âš ï¸ This action will promote ALL students across ALL departments to their next semester.
                   </p>
                 </div>
                 <div className="text-sm text-muted-foreground space-y-2">
-                  <p>• Semesters 1→2, 2→3, ... 7→8</p>
-                  <p>• <strong>8th Sem</strong> students will be moved to <strong>Graduated</strong></p>
-                  <p>• <strong>2nd→3rd Sem</strong> students will have sections cleared for reassignment</p>
-                  <p>• All old clearance data, enrollments, IA attendance will be cleared</p>
+                  <p>â€¢ Semesters 1â†’2, 2â†’3, ... 7â†’8</p>
+                  <p>â€¢ <strong>8th Sem</strong> students will be moved to <strong>Graduated</strong></p>
+                  <p>â€¢ <strong>2ndâ†’3rd Sem</strong> students will have sections cleared for reassignment</p>
+                  <p>â€¢ All old clearance data, enrollments, IA attendance will be cleared</p>
                 </div>
                 <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl">
                   <p className="text-foreground text-sm font-medium">
-                    💡 Tip: Use "Download Current Data" before promoting to backup all records.
+                    ðŸ’¡ Tip: Use "Download Current Data" before promoting to backup all records.
                   </p>
                 </div>
                 <p className="text-foreground font-bold text-center">Are you sure you want to promote all eligible students?</p>
@@ -1087,7 +991,7 @@ export default function AdminDashboard() {
                           {isDeptExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
                           <div>
                             <h3 className="text-lg font-bold text-foreground">{dept}</h3>
-                            <p className="text-sm text-muted-foreground">{deptStudents.length} students • {Object.keys(batches).length} semester(s)</p>
+                            <p className="text-sm text-muted-foreground">{deptStudents.length} students â€¢ {Object.keys(batches).length} semester(s)</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -1120,7 +1024,7 @@ export default function AdminDashboard() {
                                         {students.map((s: any) => (
                                           <tr key={s.id} className="hover:bg-secondary/10 transition-colors">
                                             <td className="p-3 font-medium text-foreground">{s.full_name}</td>
-                                            <td className="p-3 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
+                                            <td className="p-3 text-muted-foreground font-mono text-sm">{s.roll_number || 'â€”'}</td>
                                             <td className="p-3 text-muted-foreground text-sm">{new Date(s.created_at).toLocaleDateString()}</td>
                                           </tr>
                                         ))}
@@ -1259,7 +1163,7 @@ export default function AdminDashboard() {
                     <option value="hod">HOD (Head of Department)</option>
                     <option value="fyc">First Year Coordinator (FYC)</option>
                     <option value="accounts">Accounts Staff</option>
-                    <option value="coe">Controller of Examination (COE)</option>
+
                     <option value="librarian">Librarian</option>
                   </select>
                 </FormField>
@@ -1346,7 +1250,7 @@ export default function AdminDashboard() {
                             {u.role}
                           </span>
                         </td>
-                        <td className="p-4 text-muted-foreground">{departments.find(d => d.hod_id === u.id)?.name || '—'}</td>
+                        <td className="p-4 text-muted-foreground">{departments.find(d => d.hod_id === u.id)?.name || 'â€”'}</td>
                         <td className="p-4 text-right">
                           {u.role !== 'admin' && (
                             <>
@@ -1458,7 +1362,7 @@ export default function AdminDashboard() {
 
                {/* Mass Create Semester Modal (no dept selected) */}
                {showCreateSemester && !selectedDeptSubjects && (
-                 <Modal title="Mass Create Semesters — All Departments" icon={<Plus className="w-5 h-5 text-primary" />} onClose={() => setShowCreateSemester(false)}>
+                 <Modal title="Mass Create Semesters â€” All Departments" icon={<Plus className="w-5 h-5 text-primary" />} onClose={() => setShowCreateSemester(false)}>
                    {semesterError && <div className="mb-4"><AlertBanner type="error" message={semesterError} onClose={() => setSemesterError(null)} /></div>}
                    <div className="space-y-4">
                      <FormField label="Semester Names (comma-separated)">
@@ -1530,7 +1434,7 @@ export default function AdminDashboard() {
              <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
                {subjectsLoading ? (
                  <div className="p-8 text-center text-muted-foreground animate-pulse">Loading subjects...</div>
-               ) : subjects.filter(s => s.department_id === selectedDeptSubjects.id && (s as any).semester_id === selectedSemSubjects.id).length === 0 ? (
+               ) : subjects.filter(s => s.department_id === selectedDeptSubjects.id && (s).semester_id === selectedSemSubjects.id).length === 0 ? (
                  <div className="p-8 text-center text-muted-foreground">No subjects found for this semester.</div>
                ) : (
                  <div className="overflow-x-auto">
@@ -1543,7 +1447,7 @@ export default function AdminDashboard() {
                        </tr>
                      </thead>
                      <tbody className="divide-y divide-border">
-                       {subjects.filter(s => s.department_id === selectedDeptSubjects.id && (s as any).semester_id === selectedSemSubjects.id).map(sub => (
+                       {subjects.filter(s => s.department_id === selectedDeptSubjects.id && (s).semester_id === selectedSemSubjects.id).map(sub => (
                          <tr key={sub.id} className="hover:bg-secondary/20 transition-colors">
                            <td className="p-4 font-bold text-foreground">{sub.subject_code}</td>
                            <td className="p-4 font-medium text-muted-foreground">{sub.subject_name}</td>
@@ -1594,13 +1498,13 @@ export default function AdminDashboard() {
                     <ShieldCheck className="w-6 h-6 text-amber-500" />
                     <div>
                       <h3 className="text-lg font-bold text-foreground">Global Users</h3>
-                      <p className="text-sm text-muted-foreground">Accounts, Librarian, Admin, COE, Principal</p>
+                      <p className="text-sm text-muted-foreground">Accounts, Librarian, Admin, Principal</p>
                     </div>
                   </div>
                 </button>
                 {expandedAllUsersSections.has('global') && (
                   <div className="border-t border-border p-4 bg-background/50">
-                     {renderUsersTable(filteredAllUsers.filter(u => ['admin', 'principal', 'coe', 'accounts', 'librarian'].includes(u.role) || (!u.department_id && u.role !== 'student')))}
+                     {renderUsersTable(filteredAllUsers.filter(u => ['admin', 'principal', 'accounts', 'librarian'].includes(u.role) || (!u.department_id && u.role !== 'student')))}
                   </div>
                 )}
               </div>
@@ -1658,106 +1562,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ========= HALL TICKET STATUS TAB ========= */}
-      {activeTab === 'hallticket' && (
-        <div className="space-y-6">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-                <GraduationCap className="w-6 h-6 text-primary" />
-                Student Clearance Status by Branch
-              </h2>
-              <p className="text-muted-foreground text-sm mt-1">Click a department to expand and see individual student statuses.</p>
-            </div>
-            <div className="relative w-full md:max-w-xs">
-              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input type="text" placeholder="Search student or department..." className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary w-full" value={htSearch} onChange={e => setHtSearch(e.target.value)} />
-            </div>
-          </div>
-
-          {htError && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm mb-4">
-              <strong>Error:</strong> {htError}
-            </div>
-          )}
-
-          {htLoading ? (
-            <div className="p-8 text-center text-muted-foreground animate-pulse">Loading student statuses...</div>
-          ) : filteredStatusDepts.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground bg-card rounded-3xl border border-border">No clearance requests found. Students need to apply for clearance first.</div>
-          ) : (
-            <div className="space-y-4">
-              {filteredStatusDepts.map(([dept, statuses]) => {
-                const cleared = statuses.filter(s => s.current_stage === 'cleared').length;
-                const rejected = statuses.filter(s => s.status === 'rejected').length;
-                const pending = statuses.length - cleared - rejected;
-                const isExpanded = expandedDepts.has(dept);
-
-                return (
-                  <div key={dept} className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
-                    <button
-                      onClick={() => toggleDept(dept)}
-                      className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        {isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
-                        <div>
-                          <h3 className="text-lg font-bold text-foreground">{dept}</h3>
-                          <p className="text-sm text-muted-foreground">{statuses.length} students</p>
-                        </div>
-                      </div>
-                      <div className="flex gap-3 text-sm font-medium">
-                        <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600">✓ {cleared}</span>
-                        <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-600">⏳ {pending}</span>
-                        {rejected > 0 && <span className="px-3 py-1 rounded-full bg-red-500/10 text-red-600">✗ {rejected}</span>}
-                      </div>
-                    </button>
-
-                    {isExpanded && (
-                      <div className="border-t border-border overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="bg-secondary/30 text-foreground text-sm border-b border-border">
-                              <th className="p-4 font-semibold">Student</th>
-                              <th className="p-4 font-semibold">Section</th>
-                              <th className="p-4 font-semibold">Current Stage</th>
-                              <th className="p-4 font-semibold">Status</th>
-                              <th className="p-4 font-semibold">Applied</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {statuses.map(s => (
-                              <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
-                                <td className="p-4 font-medium text-foreground">{s.profiles?.full_name || 'Unknown'}</td>
-                                <td className="p-4 text-muted-foreground">{s.profiles?.section || '—'}</td>
-                                <td className="p-4">
-                                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${stageColors[s.current_stage] || 'bg-secondary text-foreground'}`}>
-                                    {stageLabels[s.current_stage] || s.current_stage}
-                                  </span>
-                                </td>
-                                <td className="p-4">
-                                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                    s.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600' :
-                                    s.status === 'rejected' ? 'bg-red-500/10 text-red-600' :
-                                    'bg-amber-500/10 text-amber-600'
-                                  }`}>
-                                    {s.status.toUpperCase()}
-                                  </span>
-                                </td>
-                                <td className="p-4 text-sm text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Logs Tab */}
       {activeTab === 'logs' && (
@@ -1765,7 +1569,7 @@ export default function AdminDashboard() {
           <div className="flex justify-between items-center mb-6">
             <div>
               <h2 className="text-2xl font-bold text-foreground">System Activity Logs</h2>
-              <p className="text-muted-foreground mt-1">Monitoring COE, Librarian, HOD and Accounts activity.</p>
+              <p className="text-muted-foreground mt-1">Monitoring Librarian, HOD and Accounts activity.</p>
             </div>
           </div>
           
@@ -1783,7 +1587,7 @@ export default function AdminDashboard() {
               >
                 <option value="all">All Departments / Global</option>
                 <option value="accounts">Accounts</option>
-                <option value="coe">COE</option>
+
                 <option value="library">Library</option>
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
@@ -1798,15 +1602,15 @@ export default function AdminDashboard() {
                   setLogsUserFilter('all');
                 }}
                 className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50"
-                disabled={['accounts', 'coe', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all'}
+                disabled={['accounts', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all'}
               >
                 <option value="all">All Roles</option>
-                <option value="coe">COE</option>
+
                 <option value="librarian">Librarian</option>
                 <option value="hod">HODs</option>
                 <option value="accounts">Accounts</option>
               </select>
-              {['accounts', 'coe', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all' && (
+              {['accounts', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all' && (
                 <p className="text-xs text-muted-foreground mt-1">Role is implicitly set by department.</p>
               )}
             </div>
@@ -1906,7 +1710,7 @@ function AlertBanner({ type, message, onClose }: { type: 'error' | 'success'; me
     : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400';
   return (
     <div className={`p-4 border rounded-xl text-sm flex justify-between items-center ${cls}`}>
-      <span>{type === 'error' ? <strong>Error: </strong> : '✓ '}{message}</span>
+      <span>{type === 'error' ? <strong>Error: </strong> : 'âœ“ '}{message}</span>
       <button onClick={onClose}><X className="w-4 h-4" /></button>
     </div>
   );
@@ -1949,3 +1753,4 @@ function FormField({ label, children }: { label: string; children: any }) {
     </div>
   );
 }
+

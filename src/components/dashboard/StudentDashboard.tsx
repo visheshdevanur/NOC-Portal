@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import { 
   getStudentClearanceRequest, 
@@ -28,18 +29,13 @@ type SubjectEnrollment = {
   teacher_id: string;
   status: string;
   attendance_pct: number | null;
+  attendance_fee: number | null;
+  attendance_fee_verified: boolean | null;
   remarks: string | null;
   created_at: string;
   updated_at: string;
   subjects: { subject_name: string; subject_code: string; exam_date: string | null; exam_time: string | null };
   profiles: { full_name: string } | null;
-};
-type StudentDues = {
-  id: string;
-  student_id: string;
-  fine_amount: number | null;
-  status: string;
-  updated_at: string;
 };
 
 type IAAttendanceRecord = {
@@ -53,109 +49,68 @@ type IAAttendanceRecord = {
 
 export default function StudentDashboard() {
   const { user, profile } = useAuth();
-  const [request, setRequest] = useState<ClearanceRequest | null>(null);
-  const [enrollments, setEnrollments] = useState<SubjectEnrollment[]>([]);
-  const [deptClearances, setDeptClearances] = useState<StudentDues[]>([]);
-  const [availableSubjects, setAvailableSubjects] = useState<any[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [hallTemplate, setHallTemplate] = useState<any>(null);
-  const [iaRecords, setIaRecords] = useState<IAAttendanceRecord[]>([]);
-  const [libraryDue, setLibraryDue] = useState<any>(null);
-  const [departmentName, setDepartmentName] = useState<string>('N/A');
-  const [semesterName, setSemesterName] = useState<string>('N/A');
   const [showReportModal, setShowReportModal] = useState(false);
   const [payingEnrollmentId, setPayingEnrollmentId] = useState<string | null>(null);
   const [paymentReceipt, setPaymentReceipt] = useState<any>(null);
+  const [localErrorMsg, setLocalErrorMsg] = useState<string | null>(null);
 
-  // Load Razorpay Script
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    document.body.appendChild(script);
-    return () => { document.body.removeChild(script); };
-  }, []);
-
-  // Debounce realtime refetches to avoid cascading re-renders
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const debouncedFetch = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchStudentData(), 300);
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      fetchStudentData();
-      
-      // Setup Realtime Subscription with debounced handler
-      const channel = supabase.channel('student-dashboard')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'clearance_requests', filter: `student_id=eq.${user.id}` }, debouncedFetch)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'subject_enrollment', filter: `student_id=eq.${user.id}` }, debouncedFetch)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'student_dues', filter: `student_id=eq.${user.id}` }, debouncedFetch)
-        .subscribe();
-
-      return () => {
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        supabase.removeChannel(channel);
-      }
-    }
-  }, [user, profile?.semester_id]);
-
-  const fetchStudentData = async () => {
-    setLoading(true);
-    setErrorMsg(null);
-    try {
-      if (!user) return;
-
-      // Execute all independent database queries simultaneously in a single network round-trip.
-      const [req, deptRes, semRes, subsDataRes, subs, depts, templateRes, iaData, libData] = await Promise.all([
+  // FIX #21: Replace Realtime WebSocket with React Query polling (30s interval)
+  const { data: studentData, isLoading: loading, error: queryError, refetch } = useQuery({
+    queryKey: ['student-dashboard', user?.id, profile?.semester_id],
+    queryFn: async () => {
+      if (!user) return null;
+      const [req, deptRes, semRes, subsDataRes, subs, depts, iaData, libData] = await Promise.all([
         getStudentClearanceRequest(user.id),
         profile?.department_id ? supabase.from('departments').select('name').eq('id', profile.department_id).single() : Promise.resolve({ data: null }),
         profile?.semester_id ? supabase.from('semesters').select('name').eq('id', profile.semester_id).single() : Promise.resolve({ data: null }),
         profile?.semester_id ? supabase.from('subjects').select('*').eq('semester_id', profile.semester_id) : Promise.resolve({ data: null }),
         getStudentSubjects(user.id),
         getStudentDues(user.id),
-        supabase.from('hall_ticket_templates').select('*').limit(1).single(),
         getStudentIAAttendance(user.id),
         getStudentLibraryDues(user.id)
       ]);
+      return {
+        request: req as ClearanceRequest | null,
+        departmentName: deptRes.data?.name || 'N/A',
+        semesterName: semRes.data?.name || 'N/A',
+        availableSubjects: subsDataRes.data || [],
+        enrollments: (subs || []) as unknown as SubjectEnrollment[],
+        deptClearances: (depts || []) as any[],
+        iaRecords: (iaData || []) as unknown as IAAttendanceRecord[],
+        libraryDue: libData || null,
+      };
+    },
+    enabled: !!user,
+    refetchInterval: 30_000,  // Poll every 30s instead of Realtime WebSocket
+  });
 
-      setRequest(req);
-      
-      if (deptRes.data) setDepartmentName(deptRes.data.name);
-      if (semRes.data) setSemesterName(semRes.data.name);
-      if (!req && subsDataRes.data) setAvailableSubjects(subsDataRes.data);
-      if (templateRes.data) setHallTemplate(templateRes.data);
-      setIaRecords((iaData || []) as unknown as IAAttendanceRecord[]);
-      setLibraryDue(libData || null);
-      
-      if (req) {
-        setEnrollments(subs as unknown as SubjectEnrollment[]);
-        setDeptClearances(depts as any[]);
-      }
-    } catch (error: any) {
-      console.error('Error fetching student data:', error);
-      setErrorMsg(error?.message || 'Failed to fetch data');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Derive state from query data
+  const request = studentData?.request ?? null;
+  const departmentName = studentData?.departmentName ?? 'N/A';
+  const semesterName = studentData?.semesterName ?? 'N/A';
+  const availableSubjects = studentData?.availableSubjects ?? [];
+  const enrollments = studentData?.enrollments ?? [];
+  const deptClearances = studentData?.deptClearances ?? [];
+
+  const iaRecords = studentData?.iaRecords ?? [];
+  const libraryDue = studentData?.libraryDue ?? null;
+  const errorMsg = localErrorMsg || (queryError ? (queryError as Error).message : null);
+
+
 
   const handleApplyForClearance = async () => {
     if (selectedSubjects.length === 0) {
-      setErrorMsg('Please select at least one subject to apply for clearance.');
+      setLocalErrorMsg('Please select at least one subject to apply for clearance.');
       return;
     }
 
     setApplying(true);
-    setErrorMsg(null);
+    setLocalErrorMsg(null);
     try {
       // Step 1: Create the clearance request
-      const reqResult = await submitClearanceRequest(user!.id);
-      console.log('Clearance request created:', reqResult);
+      await submitClearanceRequest(user!.id);
       
       // Step 2: Create subject enrollments (WITHOUT teacher_id initially)
       const enrollInserts: any[] = selectedSubjects.map(subId => ({
@@ -167,26 +122,26 @@ export default function StudentDashboard() {
         remarks: null
       }));
       
-      const { error: enrollError } = await supabase.from('subject_enrollment').insert(enrollInserts as any);
+      const { error: enrollError } = await supabase.from('subject_enrollment').insert(enrollInserts);
       if (enrollError) {
         console.error('Enrollment insert error:', enrollError);
       }
 
-      await fetchStudentData();
+      await refetch();
     } catch (err: any) {
       console.error("Failed to apply for clearance", err);
-      setErrorMsg(err?.message || 'Failed to initialize workflow.');
+      setLocalErrorMsg(err?.message || 'Failed to initialize workflow.');
     } finally {
       setApplying(false);
     }
   };
 
-  const razorpayKey = (import.meta as any).env?.VITE_RAZORPAY_KEY_ID || 'rzp_test_YourTestKeyHere';
+  const razorpayKey = (import.meta).env?.VITE_RAZORPAY_KEY_ID || 'rzp_test_YourTestKeyHere';
 
   /** Dynamically load Razorpay checkout.js only when needed */
   const loadRazorpayScript = (): Promise<void> => {
     return new Promise((resolve, reject) => {
-      if ((window as any).Razorpay) { resolve(); return; }
+      if ((window).Razorpay) { resolve(); return; }
       const script = document.createElement('script');
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
       script.onload = () => resolve();
@@ -198,7 +153,7 @@ export default function StudentDashboard() {
   const handleRazorpayPayment = async (enrollment: any) => {
     try {
       setPayingEnrollmentId(enrollment.id);
-      setErrorMsg(null);
+      setLocalErrorMsg(null);
 
       // Load Razorpay SDK dynamically
       await loadRazorpayScript();
@@ -224,19 +179,19 @@ export default function StudentDashboard() {
             );
             setPaymentReceipt({
               studentName: profile?.full_name || '',
-              usn: (profile as any)?.roll_number || '',
+              usn: (profile)?.roll_number || '',
               amount: enrollment.attendance_fee,
               subjects: [{ name: enrollment.subjects?.subject_name, code: enrollment.subjects?.subject_code, amount: enrollment.attendance_fee }],
               paymentId: response.razorpay_payment_id,
               date: new Date().toLocaleString(),
               isBulk: false
             });
-            if ((result as any)?.pending_confirmation) {
-              setErrorMsg("Payment received — confirmation may take a moment. Refreshing...");
+            if ((result)?.pending_confirmation) {
+              setLocalErrorMsg("Payment received â€” confirmation may take a moment. Refreshing...");
             }
-            fetchStudentData();
+            refetch();
           } catch (err: any) {
-            setErrorMsg("Payment verification failed: " + err.message);
+            setLocalErrorMsg("Payment verification failed: " + err.message);
           } finally {
             setPayingEnrollmentId(null);
           }
@@ -255,14 +210,14 @@ export default function StudentDashboard() {
         }
       };
 
-      const rzp = new (window as any).Razorpay(options);
+      const rzp = new (window).Razorpay(options);
       rzp.on('payment.failed', function (response: any){
-        setErrorMsg(`Payment failed: ${response.error.description}`);
+        setLocalErrorMsg(`Payment failed: ${response.error.description}`);
         setPayingEnrollmentId(null);
       });
       rzp.open();
     } catch (err: any) {
-      setErrorMsg("Error initiating payment: " + err.message);
+      setLocalErrorMsg("Error initiating payment: " + err.message);
       setPayingEnrollmentId(null);
     }
   };
@@ -276,7 +231,7 @@ export default function StudentDashboard() {
 
     try {
       setPayingAll(true);
-      setErrorMsg(null);
+      setLocalErrorMsg(null);
       const { createBulkRazorpayOrder, verifyAndProcessBulkRazorpayPayment } = await import('../../lib/api');
       const enrollmentIds = pendingAttendanceDues.map((d: any) => d.id);
       
@@ -299,16 +254,16 @@ export default function StudentDashboard() {
             );
             setPaymentReceipt({
               studentName: profile?.full_name || '',
-              usn: (profile as any)?.roll_number || '',
+              usn: (profile)?.roll_number || '',
               amount: totalAmount,
               subjects: pendingAttendanceDues.map((d: any) => ({ name: d.subjects?.subject_name, code: d.subjects?.subject_code, amount: d.attendance_fee })),
               paymentId: response.razorpay_payment_id,
               date: new Date().toLocaleString(),
               isBulk: true
             });
-            fetchStudentData();
+            refetch();
           } catch (err: any) {
-            setErrorMsg("Bulk payment verification failed: " + err.message);
+            setLocalErrorMsg("Bulk payment verification failed: " + err.message);
           } finally {
             setPayingAll(false);
           }
@@ -327,14 +282,14 @@ export default function StudentDashboard() {
         }
       };
 
-      const rzp = new (window as any).Razorpay(options);
+      const rzp = new (window).Razorpay(options);
       rzp.on('payment.failed', function (response: any){
-        setErrorMsg(`Payment failed: ${response.error.description}`);
+        setLocalErrorMsg(`Payment failed: ${response.error.description}`);
         setPayingAll(false);
       });
       rzp.open();
     } catch (err: any) {
-      setErrorMsg("Error initiating bulk payment: " + err.message);
+      setLocalErrorMsg("Error initiating bulk payment: " + err.message);
       setPayingAll(false);
     }
   };
@@ -373,10 +328,10 @@ export default function StudentDashboard() {
   const libraryPass = allLibraryCleared || isLibraryPermitted;
   
   const allDeptCleared = useMemo(() => deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed'), [deptClearances]);
-  const isDeptPermitted = useMemo(() => deptClearances.length > 0 && deptClearances.some(d => d.status === 'pending' && (d as any).permitted_until && new Date((d as any).permitted_until) > new Date()), [deptClearances]);
+  const isDeptPermitted = useMemo(() => deptClearances.length > 0 && deptClearances.some(d => d.status === 'pending' && (d).permitted_until && new Date((d).permitted_until) > new Date()), [deptClearances]);
   const deptPass = allDeptCleared || isDeptPermitted;
   
-  const pendingAttendanceDues = useMemo(() => enrollments.filter(e => (e as any).attendance_fee > 0 && !(e as any).attendance_fee_verified), [enrollments]);
+  const pendingAttendanceDues = useMemo(() => enrollments.filter(e => (e.attendance_fee ?? 0) > 0 && !e.attendance_fee_verified), [enrollments]);
 
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
   const { allIAEligible } = useMemo(() => {
@@ -424,7 +379,7 @@ export default function StudentDashboard() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground font-medium">USN</p>
-                <p className="text-sm font-bold text-foreground font-mono">{(profile as any)?.roll_number || 'N/A'}</p>
+                <p className="text-sm font-bold text-foreground font-mono">{(profile)?.roll_number || 'N/A'}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -453,8 +408,8 @@ export default function StudentDashboard() {
           </div>
           <div>
             <p className="text-xs text-muted-foreground font-medium">Section</p>
-            <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${(profile as any)?.section ? 'bg-emerald-500/10 text-emerald-600' : 'bg-secondary text-muted-foreground'}`}>
-              {(profile as any)?.section || 'Unassigned'}
+            <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${(profile)?.section ? 'bg-emerald-500/10 text-emerald-600' : 'bg-secondary text-muted-foreground'}`}>
+              {(profile)?.section || 'Unassigned'}
             </span>
           </div>
         </div>
@@ -558,7 +513,7 @@ export default function StudentDashboard() {
             </p>
             {!canDownloadHallTicket && (
               <p className="text-xs text-destructive mt-1 font-medium">
-                ⚠ {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : `Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval.`}
+                âš  {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : `Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval.`}
               </p>
             )}
           </div>
@@ -700,7 +655,7 @@ export default function StudentDashboard() {
 
                     {!isEligible && (
                       <p className="mt-3 text-xs text-destructive font-medium bg-destructive/10 px-3 py-2 rounded-lg border border-destructive/20">
-                        ⚠ Insufficient IA Attendance — Need {2 - presentCount} more IA{2 - presentCount > 1 ? 's' : ''}
+                        âš  Insufficient IA Attendance â€” Need {2 - presentCount} more IA{2 - presentCount > 1 ? 's' : ''}
                       </p>
                     )}
                   </div>
@@ -723,7 +678,7 @@ export default function StudentDashboard() {
             </h2>
             {pendingAttendanceDues.length > 0 && (
               <span className="bg-amber-500/10 text-amber-600 font-bold text-sm px-4 py-2 rounded-full">
-                {pendingAttendanceDues.length} Pending · ₹{pendingAttendanceDues.reduce((s: number, d: any) => s + (d.attendance_fee || 0), 0)}
+                {pendingAttendanceDues.length} Pending Â· â‚¹{pendingAttendanceDues.reduce((s: number, d: any) => s + (d.attendance_fee || 0), 0)}
               </span>
             )}
           </div>
@@ -757,17 +712,17 @@ export default function StudentDashboard() {
                       <td className="p-4 text-center">
                         {hasFine ? (
                           <span className={`px-3 py-1 rounded-lg font-bold ${isPaid ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
-                            ₹{enr.attendance_fee}
+                            â‚¹{enr.attendance_fee}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground text-sm">—</span>
+                          <span className="text-muted-foreground text-sm">â€”</span>
                         )}
                       </td>
                       <td className="p-4 text-center">
                         {isPaid ? (
-                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">✅ Paid</span>
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">âœ… Paid</span>
                         ) : hasFine ? (
-                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">⏳ Pending</span>
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">â³ Pending</span>
                         ) : (
                           <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
                         )}
@@ -796,7 +751,7 @@ export default function StudentDashboard() {
           {pendingAttendanceDues.length > 1 && (
             <div className="mt-6 pt-6 border-t-2 border-amber-500/20 flex flex-col md:flex-row justify-between items-center gap-4">
               <div>
-                <p className="text-lg font-bold text-foreground">Total Due: <span className="text-amber-600">₹{pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)}</span></p>
+                <p className="text-lg font-bold text-foreground">Total Due: <span className="text-amber-600">â‚¹{pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)}</span></p>
                 <p className="text-sm text-muted-foreground">{pendingAttendanceDues.length} subjects with pending fines</p>
               </div>
               <button
@@ -804,7 +759,7 @@ export default function StudentDashboard() {
                 disabled={payingAll || !!payingEnrollmentId}
                 className="px-8 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-md text-lg disabled:opacity-50"
               >
-                {payingAll ? 'Initiating...' : `Pay All (₹${pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)})`}
+                {payingAll ? 'Initiating...' : `Pay All (â‚¹${pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)})`}
               </button>
             </div>
           )}
@@ -833,9 +788,9 @@ export default function StudentDashboard() {
                   <div>
                     <h3 className="font-semibold text-foreground text-lg group-hover:text-primary transition-colors">{enr.subjects?.subject_name || 'Unknown Subject'}</h3>
                     {enr.teacher_id ? (
-                      <p className="text-sm text-muted-foreground font-medium">{enr.subjects?.subject_code || 'N/A'} • Teacher: {enr.profiles?.full_name || 'N/A'}</p>
+                      <p className="text-sm text-muted-foreground font-medium">{enr.subjects?.subject_code || 'N/A'} â€¢ Teacher: {enr.profiles?.full_name || 'N/A'}</p>
                     ) : (
-                      <p className="text-sm text-amber-500 font-medium">{enr.subjects?.subject_code || 'N/A'} • Waiting for Teacher Assignment</p>
+                      <p className="text-sm text-amber-500 font-medium">{enr.subjects?.subject_code || 'N/A'} â€¢ Waiting for Teacher Assignment</p>
                     )}
                     <div className="mt-2 flex items-center gap-2">
                        <span className="text-xs text-foreground bg-background px-2 py-1 rounded-md border border-border">
@@ -882,7 +837,7 @@ export default function StudentDashboard() {
                 <div className="mb-3 sm:mb-0">
                   <h3 className="font-semibold text-foreground capitalize text-lg">Central College Dues</h3>
                   {dept.fine_amount && dept.fine_amount > 0 ? (
-                     <p className={`text-sm font-medium mt-1 inline-block px-2 py-1 rounded-md ${isPermitActive ? 'text-amber-600 bg-amber-500/10' : 'text-destructive bg-destructive/10'}`}>Pending Dues: ₹{dept.fine_amount}</p>
+                     <p className={`text-sm font-medium mt-1 inline-block px-2 py-1 rounded-md ${isPermitActive ? 'text-amber-600 bg-amber-500/10' : 'text-destructive bg-destructive/10'}`}>Pending Dues: â‚¹{dept.fine_amount}</p>
                   ) : (
                      <p className="text-sm text-muted-foreground mt-1">No outstanding dues</p>
                   )}
@@ -938,7 +893,7 @@ export default function StudentDashboard() {
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
                    <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
-                   <p className="text-sm text-amber-600 font-medium mt-1 inline-block bg-amber-500/10 px-2 py-1 rounded-md">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
+                   <p className="text-sm text-amber-600 font-medium mt-1 inline-block bg-amber-500/10 px-2 py-1 rounded-md">Pending Dues: â‚¹{libraryDue.fine_amount || 0}</p>
                    {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
                    <p className="text-xs text-amber-600 font-bold mt-2 flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" /> Temporarily Permitted
@@ -955,7 +910,7 @@ export default function StudentDashboard() {
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-destructive/20 bg-destructive/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
                    <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
-                   <p className="text-sm text-destructive font-medium mt-1 inline-block bg-destructive/10 px-2 py-1 rounded-md">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
+                   <p className="text-sm text-destructive font-medium mt-1 inline-block bg-destructive/10 px-2 py-1 rounded-md">Pending Dues: â‚¹{libraryDue.fine_amount || 0}</p>
                    {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
                  </div>
                  <div className="flex items-center gap-3">
@@ -1008,7 +963,7 @@ export default function StudentDashboard() {
               </div>
 
               <div className="text-center mb-10 relative z-10 pointer-events-none">
-                <h1 className="text-3xl font-bold uppercase tracking-widest text-primary mb-2">{hallTemplate?.institution_name || 'NOC PORTAL'}</h1>
+                <h1 className="text-3xl font-bold uppercase tracking-widest text-primary mb-2">NOC PORTAL</h1>
                 <h2 className="text-xl font-semibold text-muted-foreground">OFFICIAL NO DUE CLEARANCE REPORT</h2>
               </div>
               
@@ -1019,7 +974,7 @@ export default function StudentDashboard() {
                 </div>
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground uppercase tracking-wider font-semibold">Roll Number</p>
-                  <p className="text-xl font-bold font-mono">{(profile as any)?.roll_number || profile?.id?.substring(0,8).toUpperCase()}</p>
+                  <p className="text-xl font-bold font-mono">{(profile)?.roll_number || profile?.id?.substring(0,8).toUpperCase()}</p>
                 </div>
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground uppercase tracking-wider font-semibold">Department</p>
@@ -1093,19 +1048,19 @@ export default function StudentDashboard() {
                   {paymentReceipt.subjects.map((sub: any, i: number) => (
                     <div key={i} className="flex justify-between mt-2">
                       <span className="text-sm">{sub.name} <span className="text-muted-foreground">({sub.code})</span></span>
-                      <span className="font-bold text-sm">₹{sub.amount}</span>
+                      <span className="font-bold text-sm">â‚¹{sub.amount}</span>
                     </div>
                   ))}
                 </div>
                 {paymentReceipt.subjects.length > 1 && (
                   <div className="pt-3 mt-3 border-t border-border flex justify-between">
                     <span className="font-bold">Total Paid:</span>
-                    <span className="font-bold text-emerald-600">₹{paymentReceipt.amount}</span>
+                    <span className="font-bold text-emerald-600">â‚¹{paymentReceipt.amount}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground text-sm">Amount Paid:</span>
-                  <span className="font-bold">₹{paymentReceipt.amount}</span>
+                  <span className="font-bold">â‚¹{paymentReceipt.amount}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground text-sm">Date & Time:</span>
@@ -1113,7 +1068,7 @@ export default function StudentDashboard() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground text-sm">Status:</span>
-                  <span className="px-2 py-1 bg-emerald-500/10 text-emerald-600 rounded-full text-xs font-bold">✅ Success</span>
+                  <span className="px-2 py-1 bg-emerald-500/10 text-emerald-600 rounded-full text-xs font-bold">âœ… Success</span>
                 </div>
                 <div className="pt-3 mt-3 border-t border-border flex justify-between">
                   <span className="text-muted-foreground text-sm">Transaction ID:</span>
@@ -1136,7 +1091,7 @@ export default function StudentDashboard() {
   );
 }
 
-// Stepper Component — memoized to prevent unnecessary re-renders
+// Stepper Component â€” memoized to prevent unnecessary re-renders
 const Step = memo(function Step({ title, description, isComplete, isPermitted, isActive, icon }: any) {
   return (
     <div className="relative flex flex-col items-center">
@@ -1167,3 +1122,4 @@ const Step = memo(function Step({ title, description, isComplete, isPermitted, i
     </div>
   );
 });
+

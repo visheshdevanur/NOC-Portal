@@ -24,6 +24,8 @@ type UserProfile = {
   section: string | null;
   roll_number?: string | null;
   created_at: string;
+  created_by?: string | null;
+  semesters?: { name: string } | null;
 };
 
 type Subject = {
@@ -48,7 +50,7 @@ type Semester = {
 const isFirstYearSem = (name: string) => {
   if (!name) return false;
   const trimmed = name.trim();
-  // Semester names are "1", "2", "3", etc. — only 1 and 2 are first year
+  // Semester names are "1", "2", "3", etc. â€” only 1 and 2 are first year
   return trimmed === '1' || trimmed === '2';
 };
 
@@ -170,12 +172,11 @@ export default function StaffDashboard() {
       fetchDeptName();
       fetchData();
 
-      const channel = supabase.channel('staff-dashboard')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-          if (activeTab === 'users') fetchUsers();
-        })
-        .subscribe();
-      return () => { supabase.removeChannel(channel); }
+      // FIX #21: Replace Realtime WebSocket with interval polling (30s)
+      const interval = setInterval(() => {
+        if (activeTab === 'users') fetchUsers();
+      }, 30_000);
+      return () => { clearInterval(interval); }
     }
   }, [profile]);
 
@@ -442,8 +443,8 @@ export default function StaffDashboard() {
     const maxPct = Number(catForm.maxPct);
     const amount = Number(catForm.amount);
     if (!label) { setCatError('Label is required'); return; }
-    if (isNaN(minPct) || isNaN(maxPct) || minPct < 0 || maxPct > 100 || minPct > maxPct) { setCatError('Invalid percentage range (0-100, min ≤ max)'); return; }
-    if (isNaN(amount) || amount < 0) { setCatError('Fine amount must be ≥ 0'); return; }
+    if (isNaN(minPct) || isNaN(maxPct) || minPct < 0 || maxPct > 100 || minPct > maxPct) { setCatError('Invalid percentage range (0-100, min â‰¤ max)'); return; }
+    if (isNaN(amount) || amount < 0) { setCatError('Fine amount must be â‰¥ 0'); return; }
     
     setCatSaving(true); setCatError(null);
     try {
@@ -467,7 +468,7 @@ export default function StaffDashboard() {
 
   const handleReduceFine = async (enrollmentId: string) => {
     const amt = Number(reduceFineAmount);
-    if (isNaN(amt) || amt < 0) { alert('Enter a valid amount (≥ 0)'); return; }
+    if (isNaN(amt) || amt < 0) { alert('Enter a valid amount (â‰¥ 0)'); return; }
     setReduceFineLoading(true);
     try {
       const { reduceStudentFine } = await import('../../lib/api');
@@ -498,11 +499,11 @@ export default function StaffDashboard() {
     setLoadingUsers(true);
     try {
       const data = await getUsersByDeptAndRoles(profile.department_id, ['teacher', 'faculty', 'student']);
-      // Staff only handles higher semesters (not 1st/2nd) — also exclude FYC-managed teachers
+      // Staff only handles higher semesters (not 1st/2nd) â€” also exclude FYC-managed teachers
       const sems = await getSemestersByDepartment(profile.department_id);
       const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
       const filtered = (data as UserProfile[]).filter(u => {
-        if ((u.role === 'teacher' || u.role === 'faculty') && (u as any).created_by) return false;
+        if ((u.role === 'teacher' || u.role === 'faculty') && (u).created_by) return false;
         if (u.role === 'student') {
           // Exclude 1st/2nd sem students
           return u.semester_id ? !firstYearSemIds.has(u.semester_id) : true;
@@ -870,7 +871,7 @@ export default function StaffDashboard() {
       const data = await getSubjectsByDepartment(profile.department_id);
       // Staff only sees higher semester subjects (not 1st/2nd)
       const filtered = (data as Subject[]).filter(s => {
-        const semName = (s as any).semesters?.name;
+        const semName = (s).semesters?.name;
         if (!semName) return true;
         return !isFirstYearSem(semName);
       });
@@ -964,7 +965,7 @@ export default function StaffDashboard() {
       const data = await getSubjectsByDepartment(deptId);
       // Only show subjects from semesters 3-8
       const filtered = (data as Subject[]).filter(s => {
-        const semName = (s as any).semesters?.name;
+        const semName = (s).semesters?.name;
         if (!semName) return false;
         const n = parseInt(semName);
         return n >= 3 && n <= 8;
@@ -1327,7 +1328,7 @@ export default function StaffDashboard() {
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
               <GraduationCap className="w-8 h-8 mr-3 text-amber-500" />
-              {profile?.full_name} — {deptName}
+              {profile?.full_name} â€” {deptName}
             </h1>
             <p className="text-muted-foreground">Manage users, subjects, and teacher assignments.</p>
           </div>
@@ -1382,7 +1383,7 @@ export default function StaffDashboard() {
                       <th className="p-3 font-semibold">Label</th>
                       <th className="p-3 font-semibold text-center">Min %</th>
                       <th className="p-3 font-semibold text-center">Max %</th>
-                      <th className="p-3 font-semibold text-center">Fine (₹)</th>
+                      <th className="p-3 font-semibold text-center">Fine (â‚¹)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -1391,7 +1392,7 @@ export default function StaffDashboard() {
                         <td className="p-3 font-medium text-foreground">{cat.label}</td>
                         <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.min_pct}%</span></td>
                         <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.max_pct}%</span></td>
-                        <td className="p-3 text-center font-bold text-amber-600">₹{cat.fine_amount}</td>
+                        <td className="p-3 text-center font-bold text-amber-600">â‚¹{cat.fine_amount}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1425,7 +1426,7 @@ export default function StaffDashboard() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Fine Amount (₹)</label>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Fine Amount (â‚¹)</label>
                     <input type="number" min="0" placeholder="e.g. 500" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={catForm.amount} onChange={e => setCatForm({...catForm, amount: e.target.value})} />
                   </div>
                 </div>
@@ -1468,8 +1469,8 @@ export default function StaffDashboard() {
           </div>
           
           {/* Status Messages */}
-          {massFineResult && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>✅ {massFineResult}</span><button onClick={() => setMassFineResult(null)}><X className="w-4 h-4" /></button></div>}
-          {attCsvSuccess && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>✅ {attCsvSuccess}</span><button onClick={() => setAttCsvSuccess(null)}><X className="w-4 h-4" /></button></div>}
+          {massFineResult && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>âœ… {massFineResult}</span><button onClick={() => setMassFineResult(null)}><X className="w-4 h-4" /></button></div>}
+          {attCsvSuccess && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>âœ… {attCsvSuccess}</span><button onClick={() => setAttCsvSuccess(null)}><X className="w-4 h-4" /></button></div>}
           {attCsvError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center"><span><strong>Error:</strong> {attCsvError}</span><button onClick={() => setAttCsvError(null)}><X className="w-4 h-4" /></button></div>}
           
           {/* Students Table */}
@@ -1494,7 +1495,7 @@ export default function StaffDashboard() {
                         <th className="p-4 font-semibold">Section</th>
                         <th className="p-4 font-semibold">Subject</th>
                         <th className="p-4 font-semibold text-center">Attendance %</th>
-                        <th className="p-4 font-semibold text-center">Fine (₹)</th>
+                        <th className="p-4 font-semibold text-center">Fine (â‚¹)</th>
                         <th className="p-4 font-semibold text-center">Status</th>
                         <th className="p-4 font-semibold text-right">Actions</th>
                       </tr>
@@ -1503,7 +1504,7 @@ export default function StaffDashboard() {
                       {filtered.map(item => (
                         <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
                           <td className="p-4 font-medium text-foreground">{item.profiles?.full_name}</td>
-                          <td className="p-4 text-sm font-mono text-muted-foreground">{item.profiles?.roll_number || '—'}</td>
+                          <td className="p-4 text-sm font-mono text-muted-foreground">{item.profiles?.roll_number || 'â€”'}</td>
                           <td className="p-4"><span className="px-2 py-1 bg-secondary rounded-md text-xs font-medium">{item.profiles?.section || 'None'}</span></td>
                           <td className="p-4">
                             <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
@@ -1515,7 +1516,7 @@ export default function StaffDashboard() {
                           <td className="p-4 text-center">
                             {item.attendance_fee > 0 ? (
                               <span className={`px-3 py-1 rounded-lg font-bold whitespace-nowrap ${item.attendance_fee_verified ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
-                                ₹{item.attendance_fee}
+                                â‚¹{item.attendance_fee}
                               </span>
                             ) : (
                               <span className="text-muted-foreground text-sm">Not set</span>
@@ -1536,7 +1537,7 @@ export default function StaffDashboard() {
                                 <input
                                   type="number"
                                   min="0"
-                                  placeholder="₹"
+                                  placeholder="â‚¹"
                                   className="w-24 p-2 border border-border rounded-xl text-sm bg-background focus:ring-2 focus:ring-amber-500 focus:outline-none font-bold"
                                   value={reduceFineAmount}
                                   onChange={e => setReduceFineAmount(e.target.value)}
@@ -1593,7 +1594,7 @@ export default function StaffDashboard() {
           )}
           {userSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>✓ {userSuccess}</span>
+              <span>âœ“ {userSuccess}</span>
               <button onClick={() => setUserSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -1814,14 +1815,14 @@ export default function StaffDashboard() {
                     {filteredUsers.map(u => (
                       <tr key={u.id} className="hover:bg-secondary/20 transition-colors">
                         <td className="p-4 font-medium text-foreground">{u.full_name}</td>
-                        <td className="p-4 text-muted-foreground font-mono text-sm">{u.roll_number || '—'}</td>
+                        <td className="p-4 text-muted-foreground font-mono text-sm">{u.roll_number || 'â€”'}</td>
                         <td className="p-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${roleColors[u.role] || 'bg-secondary text-foreground'}`}>
                             {u.role}
                           </span>
                         </td>
-                        <td className="p-4 text-muted-foreground text-sm">{(u as any).semesters?.name || '—'}</td>
-                        <td className="p-4 text-muted-foreground">{u.section || '—'}</td>
+                        <td className="p-4 text-muted-foreground text-sm">{(u).semesters?.name || 'â€”'}</td>
+                        <td className="p-4 text-muted-foreground">{u.section || 'â€”'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1838,7 +1839,7 @@ export default function StaffDashboard() {
         <div className="space-y-6">
           {subjectSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>✓ {subjectSuccess}</span>
+              <span>âœ“ {subjectSuccess}</span>
               <button onClick={() => setSubjectSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -2048,7 +2049,7 @@ export default function StaffDashboard() {
                           );
                         })}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">{importSelectedSubjects.length} selected · Duplicates will be skipped</p>
+                      <p className="text-xs text-muted-foreground mt-2">{importSelectedSubjects.length} selected Â· Duplicates will be skipped</p>
                     </div>
                   ) : importSourceDeptId ? (
                     <div className="p-4 text-center text-muted-foreground text-sm border-2 border-dashed border-border rounded-xl">No subjects found in this department (Semester 3-8).</div>
@@ -2139,7 +2140,7 @@ export default function StaffDashboard() {
           )}
           {sectionSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>✓ {sectionSuccess}</span>
+              <span>âœ“ {sectionSuccess}</span>
               <button onClick={() => setSectionSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -2149,7 +2150,7 @@ export default function StaffDashboard() {
               <div>
                 <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                   <Link2 className="w-5 h-5 text-amber-500" />
-                  Bulk Section ↔ Teacher Assignment
+                  Bulk Section â†” Teacher Assignment
                 </h2>
                 <p className="text-muted-foreground text-sm mt-1">
                   Select a subject, section, and teacher. All students in the section will be enrolled and assigned to the teacher for that subject.
@@ -2195,7 +2196,7 @@ export default function StaffDashboard() {
                 >
                   <option value="">Select...</option>
                   {deptSubjects.filter((s: any) => s.semester_id === selectedSemesterForAssign).map(s => (
-                    <option key={s.id} value={s.id}>{s.subject_code} — {s.subject_name}</option>
+                    <option key={s.id} value={s.id}>{s.subject_code} â€” {s.subject_name}</option>
                   ))}
                 </select>
               </div>
@@ -2284,8 +2285,8 @@ export default function StaffDashboard() {
                           <th className="p-4 font-semibold">Student Name</th>
                           <th className="p-4 font-semibold">Roll Number</th>
                           <th className="p-4 font-semibold">Section & Sem</th>
-                          <th className="p-4 font-semibold">Fine (₹)</th>
-                          <th className="p-4 font-semibold">Paid (₹)</th>
+                          <th className="p-4 font-semibold">Fine (â‚¹)</th>
+                          <th className="p-4 font-semibold">Paid (â‚¹)</th>
                           <th className="p-4 font-semibold text-right">Actions</th>
                         </tr>
                       </thead>
@@ -2293,12 +2294,12 @@ export default function StaffDashboard() {
                         {filtered.map(d => (
                           <tr key={d.id} className="hover:bg-secondary/20 transition-colors">
                             <td className="p-4 font-medium text-foreground">{d.profiles?.full_name}</td>
-                            <td className="p-4 text-muted-foreground font-mono">{d.profiles?.roll_number || '—'}</td>
+                            <td className="p-4 text-muted-foreground font-mono">{d.profiles?.roll_number || 'â€”'}</td>
                             <td className="p-4 text-muted-foreground">
-                              {d.profiles?.section ? `Sec ${d.profiles.section}` : '—'}
-                              {d.profiles?.semesters?.name ? ` · ${d.profiles.semesters.name}` : ''}
+                              {d.profiles?.section ? `Sec ${d.profiles.section}` : 'â€”'}
+                              {d.profiles?.semesters?.name ? ` Â· ${d.profiles.semesters.name}` : ''}
                             </td>
-                            <td className="p-4 font-bold text-destructive">₹{d.fine_amount || 0}</td>
+                            <td className="p-4 font-bold text-destructive">â‚¹{d.fine_amount || 0}</td>
                             <td className="p-4">
                               <input
                                 type="number"
@@ -2452,7 +2453,7 @@ export default function StaffDashboard() {
                     <th className="p-4 font-semibold">Semester</th>
                     <th className="p-4 font-semibold text-center">Library Dues</th>
                     <th className="p-4 font-semibold text-center">College Fee Status</th>
-                    <th className="p-4 font-semibold">Attendance Fines (₹)</th>
+                    <th className="p-4 font-semibold">Attendance Fines (â‚¹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -2481,9 +2482,9 @@ export default function StaffDashboard() {
                         <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
                           <td className="p-4 text-sm text-muted-foreground">{idx + 1}</td>
                           <td className="p-4 font-medium text-foreground">{s.full_name}</td>
-                          <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
-                          <td className="p-4 text-muted-foreground">{s.section || '—'}</td>
-                          <td className="p-4 text-muted-foreground text-sm">{s.semesters?.name || '—'}</td>
+                          <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || 'â€”'}</td>
+                          <td className="p-4 text-muted-foreground">{s.section || 'â€”'}</td>
+                          <td className="p-4 text-muted-foreground text-sm">{s.semesters?.name || 'â€”'}</td>
                           <td className="p-4 text-center">
                             {hasLibDues ? (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">
@@ -2510,11 +2511,11 @@ export default function StaffDashboard() {
                           </td>
                           <td className="p-4 font-bold text-sm">
                             {attFineUnpaid > 0 ? (
-                              <span className="text-amber-600 dark:text-amber-400">₹{attFineUnpaid} (Pending)</span>
+                              <span className="text-amber-600 dark:text-amber-400">â‚¹{attFineUnpaid} (Pending)</span>
                             ) : attFinePaid > 0 ? (
-                              <span className="text-emerald-600 dark:text-emerald-400">₹{attFinePaid} (Paid)</span>
+                              <span className="text-emerald-600 dark:text-emerald-400">â‚¹{attFinePaid} (Paid)</span>
                             ) : (
-                              <span className="text-muted-foreground">—</span>
+                              <span className="text-muted-foreground">â€”</span>
                             )}
                           </td>
                         </tr>
@@ -2596,7 +2597,7 @@ export default function StaffDashboard() {
                         </td>
                         <td className="p-5 font-bold text-foreground">{log.user_name || 'System User'}</td>
                         <td className="p-5 text-sm font-medium text-primary">{log.action}</td>
-                        <td className="p-5 text-sm text-foreground max-w-sm truncate" title={log.details || ''}>{log.details || '—'}</td>
+                        <td className="p-5 text-sm text-foreground max-w-sm truncate" title={log.details || ''}>{log.details || 'â€”'}</td>
                       </tr>
                     ))
                   )}
@@ -2615,7 +2616,7 @@ export default function StaffDashboard() {
       {/* ========= MANAGE SECTIONS TAB ========= */}
       {activeTab === 'managesections' && (
         <div className="space-y-6">
-          {mgSuccess && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>✓ {mgSuccess}</span><button onClick={() => setMgSuccess(null)}><X className="w-4 h-4" /></button></div>}
+          {mgSuccess && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>âœ“ {mgSuccess}</span><button onClick={() => setMgSuccess(null)}><X className="w-4 h-4" /></button></div>}
           {mgError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center"><span><strong>Error:</strong> {mgError}</span><button onClick={() => setMgError(null)}><X className="w-4 h-4" /></button></div>}
 
           {/* Semester Selector */}
@@ -2745,7 +2746,7 @@ export default function StaffDashboard() {
                           return (
                             <tr key={s.id} className={`transition-colors ${isChanged ? 'bg-amber-500/5' : 'hover:bg-secondary/20'}`}>
                               <td className="p-4 font-medium text-foreground">{s.full_name}</td>
-                              <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
+                              <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || 'â€”'}</td>
                               <td className="p-4">
                                 <select 
                                   className={`px-3 py-1.5 bg-background border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 ${isChanged ? 'border-amber-500 text-amber-700 dark:text-amber-400 font-bold' : 'border-border'}`}
@@ -2778,4 +2779,5 @@ export default function StaffDashboard() {
     </div>
   );
 }
+
 

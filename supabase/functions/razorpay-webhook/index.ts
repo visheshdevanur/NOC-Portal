@@ -5,9 +5,19 @@ import { encode as hexEncode } from 'https://deno.land/std@0.177.0/encoding/hex.
 
 const RAZORPAY_WEBHOOK_SECRET = Deno.env.get('RAZORPAY_WEBHOOK_SECRET') || ''
 
+// FIX #27: Constant-time comparison to prevent timing attacks on HMAC
+function timingSafeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let result = 0
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return result === 0
+}
+
 /**
  * Verify Razorpay webhook signature using HMAC-SHA256.
- * Razorpay sends the signature in `x-razorpay-signature` header.
+ * Uses constant-time comparison to prevent timing attacks.
  */
 async function verifyWebhookSignature(body: string, signature: string): Promise<boolean> {
   if (!RAZORPAY_WEBHOOK_SECRET || !signature) return false
@@ -25,116 +35,91 @@ async function verifyWebhookSignature(body: string, signature: string): Promise<
   const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData)
   const expectedSignature = new TextDecoder().decode(hexEncode(new Uint8Array(signatureBuffer)))
 
-  return expectedSignature === signature
+  return timingSafeCompare(expectedSignature, signature)
+}
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-razorpay-signature',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 serve(async (req) => {
-  // Webhooks are POST only — no CORS needed (server-to-server)
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
-  }
-
-  const rawBody = await req.text()
-  const signature = req.headers.get('x-razorpay-signature') || ''
-
-  // 1. Verify webhook signature
-  const isValid = await verifyWebhookSignature(rawBody, signature)
-  if (!isValid) {
-    console.error('Invalid Razorpay webhook signature')
-    return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 401 })
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const event = JSON.parse(rawBody)
-    const eventType = event?.event
+    const body = await req.text()
+    const signature = req.headers.get('x-razorpay-signature') || ''
 
-    // 2. Only process payment.captured events
-    if (eventType !== 'payment.captured') {
-      // Acknowledge other events without processing
-      return new Response(JSON.stringify({ received: true, event: eventType }), { status: 200 })
+    // 1. Verify webhook authenticity
+    const isValid = await verifyWebhookSignature(body, signature)
+    if (!isValid) {
+      console.error('Invalid webhook signature')
+      return new Response(JSON.stringify({ error: 'Invalid signature' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
-    const payment = event?.payload?.payment?.entity
+    // 2. Parse event
+    const event = JSON.parse(body)
+    if (event.event !== 'payment.captured') {
+      return new Response(JSON.stringify({ received: true, event: event.event }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const payment = event.payload?.payment?.entity
     if (!payment) {
-      return new Response(JSON.stringify({ error: 'Missing payment entity' }), { status: 400 })
+      return new Response(JSON.stringify({ error: 'No payment entity in event' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     const orderId = payment.order_id
     const paymentId = payment.id
-    const amountPaid = payment.amount / 100 // Convert from paise to rupees
+    const amountPaid = payment.amount / 100 // paise to rupees
 
-    console.log(`Processing payment: ${paymentId} for order: ${orderId}, amount: ₹${amountPaid}`)
+    console.log(`Processing payment: Order=${orderId}, Payment=${paymentId}, Amount=₹${amountPaid}`)
 
-    // 3. Create admin client (server-side only)
+    // 3. Create admin client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const adminClient = createClient(supabaseUrl, serviceKey)
 
-    // 4. Look up the order in our payment_orders table
-    const { data: orderRecord, error: orderError } = await adminClient
-      .from('payment_orders')
-      .select('*')
-      .eq('razorpay_order_id', orderId)
-      .single()
-
-    if (orderError || !orderRecord) {
-      console.error(`Order not found: ${orderId}`, orderError)
-      // Still return 200 to prevent Razorpay from retrying
-      return new Response(JSON.stringify({ error: 'Order not found', order_id: orderId }), { status: 200 })
-    }
-
-    // 5. Prevent double-processing (idempotency)
-    if (orderRecord.status === 'paid') {
-      console.log(`Order ${orderId} already processed, skipping`)
-      return new Response(JSON.stringify({ received: true, already_processed: true }), { status: 200 })
-    }
-
-    const studentId = orderRecord.student_id
-    const enrollmentId = orderRecord.enrollment_id
-
-    // 6. Atomically update payment status + attendance fee verification
-    // Update payment order status
-    await adminClient
-      .from('payment_orders')
-      .update({
-        status: 'paid',
-        razorpay_payment_id: paymentId,
-        amount_paid: amountPaid,
-        paid_at: new Date().toISOString(),
-      })
-      .eq('id', orderRecord.id)
-
-    // If this payment is for an attendance fine on a specific enrollment
-    if (enrollmentId) {
-      await adminClient
-        .from('subject_enrollment')
-        .update({ attendance_fee_verified: true })
-        .eq('id', enrollmentId)
-        .eq('student_id', studentId)
-    }
-
-    // If this payment is for a college fee due
-    if (orderRecord.due_type === 'college_fee') {
-      await adminClient
-        .from('student_dues')
-        .update({ status: 'completed', paid_amount: amountPaid })
-        .eq('student_id', studentId)
-    }
-
-    // 7. Log the payment
-    await adminClient.from('activity_logs').insert({
-      user_id: studentId,
-      user_role: 'student',
-      action: 'Payment Completed',
-      details: `Payment ₹${amountPaid} verified via webhook (Order: ${orderId}, Payment: ${paymentId})`,
+    // FIX #11: Process atomically via single RPC instead of 4 separate DB calls
+    // This ensures all-or-nothing: payment_orders + enrollment + dues + activity log
+    const { data, error } = await adminClient.rpc('process_payment_webhook', {
+      p_razorpay_order_id: orderId,
+      p_razorpay_payment_id: paymentId,
+      p_amount_paid: amountPaid,
     })
 
-    console.log(`Payment processed successfully: ${paymentId}`)
-    return new Response(JSON.stringify({ success: true }), { status: 200 })
+    if (error) {
+      console.error('Atomic payment RPC failed:', error.message)
+      // Return 200 to prevent Razorpay infinite retries — log for manual reconciliation
+      return new Response(JSON.stringify({ error: 'Processing failed', received: true, details: error.message }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    console.log(`Payment processed successfully: ${paymentId}`, data)
+    return new Response(JSON.stringify({ success: true, ...(data || {}) }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
 
   } catch (err) {
     console.error('Webhook processing error:', err)
-    // Return 200 anyway to prevent Razorpay infinite retries
-    return new Response(JSON.stringify({ error: 'Processing failed', received: true }), { status: 200 })
+    // Return 200 to prevent Razorpay infinite retries
+    return new Response(JSON.stringify({ error: 'Processing failed', received: true }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 })

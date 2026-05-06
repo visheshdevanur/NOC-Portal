@@ -4,8 +4,11 @@
  * All operations are proxied through the `admin-api` Edge Function
  * which validates the caller's JWT and uses service_role server-side.
  * NO service_role key exists in this file or the browser bundle.
+ * FIX #22: Uses the separate super admin Supabase client.
  */
-import { supabase } from './supabase';
+import { superAdminSupabase as supabase } from './superAdminSupabase';
+// Keep main client import ONLY for logPlatformError (used by errorHandler in main app context)
+import { supabase as mainSupabase } from './supabase';
 
 type AdminApiResponse<T = unknown> = { data?: T; error?: string };
 
@@ -150,7 +153,8 @@ export async function logPlatformError(errorData: {
 }) {
   try {
     // Use the log-error Edge Function (which uses service_role internally)
-    await supabase.functions.invoke('log-error', { body: errorData });
+    // Uses mainSupabase since this is called from the NOC app, not super admin portal
+    await mainSupabase.functions.invoke('log-error', { body: errorData });
   } catch {
     // Never let error logging crash the app
     console.error('Failed to log platform error');

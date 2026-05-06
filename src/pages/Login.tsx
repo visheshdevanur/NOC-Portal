@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Lock, Mail, KeyRound, Eye, EyeOff, ArrowRight, Building2 } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
@@ -6,6 +7,7 @@ import { ThemeToggle } from '../components/ThemeToggle';
 type ResetStep = 'login' | 'request-otp' | 'verify-otp' | 'update-password';
 
 const Login = () => {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -28,6 +30,14 @@ const Login = () => {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
 
+  // FIX #32: Brute force protection — track failed attempts
+  const loginAttemptsRef = useRef(0);
+  const lockoutUntilRef = useRef<number>(0);
+  const [_lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  // FIX #50: OTP rate limiting — 60s cooldown between OTP requests
+  const [otpCooldown, setOtpCooldown] = useState(0);
+
   const resetAllStates = () => {
     setError(null);
     setSuccessMessage(null);
@@ -41,9 +51,18 @@ const Login = () => {
     resetAllStates();
   };
 
-  // Step 0: Standard Login
+  // Step 0: Standard Login with brute force protection
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // FIX #32: Check lockout
+    const now = Date.now();
+    if (lockoutUntilRef.current > now) {
+      const remaining = Math.ceil((lockoutUntilRef.current - now) / 1000);
+      setError(`Too many failed attempts. Please wait ${remaining} seconds.`);
+      return;
+    }
+
     setLoading(true);
     resetAllStates();
 
@@ -53,16 +72,41 @@ const Login = () => {
         password,
       });
       if (error) throw error;
+      // Reset attempts on success
+      loginAttemptsRef.current = 0;
     } catch (err: any) {
-      setError(err.message || 'An error occurred during login');
+      loginAttemptsRef.current++;
+      // FIX #32: Lock out after 5 failed attempts for 30 seconds
+      if (loginAttemptsRef.current >= 5) {
+        lockoutUntilRef.current = Date.now() + 30000;
+        setLockoutSeconds(30);
+        const interval = setInterval(() => {
+          setLockoutSeconds(prev => {
+            if (prev <= 1) { clearInterval(interval); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+        loginAttemptsRef.current = 0;
+        setError('Too many failed attempts. Please wait 30 seconds before trying again.');
+      } else {
+        // FIX #32: Generic error message to prevent email enumeration
+        setError('Invalid email or password');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Step 1: Send OTP to email
+  // Step 1: Send OTP to email (with rate limiting)
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // FIX #50: OTP cooldown
+    if (otpCooldown > 0) {
+      setError(`Please wait ${otpCooldown} seconds before requesting another OTP.`);
+      return;
+    }
+
     setLoading(true);
     resetAllStates();
 
@@ -72,6 +116,15 @@ const Login = () => {
 
       setSuccessMessage("An OTP has been sent to your email.");
       setResetStep('verify-otp');
+
+      // FIX #50: Start 60s cooldown
+      setOtpCooldown(60);
+      const interval = setInterval(() => {
+        setOtpCooldown(prev => {
+          if (prev <= 1) { clearInterval(interval); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
     } catch (err: any) {
       setError(err.message || 'Error sending OTP');
     } finally {
@@ -96,8 +149,8 @@ const Login = () => {
 
       // Flag that we're in password-reset mode so App.tsx doesn't redirect to dashboard
       sessionStorage.setItem('password_reset_pending', 'true');
-      // Hard redirect to the update-password page
-      window.location.href = '/update-password';
+      // FIX #39: Use React Router navigate instead of window.location.href to avoid session race
+      navigate('/update-password');
     } catch (err: any) {
       setError(err.message || 'Invalid or expired OTP');
       setSuccessMessage(null);
@@ -111,6 +164,15 @@ const Login = () => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
       setError("Passwords do not match");
+      return;
+    }
+    // FIX #49: Client-side validation matching server policy
+    if (newPassword.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+    if (!/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      setError("Password must contain at least one letter and one number");
       return;
     }
 
@@ -204,7 +266,7 @@ const Login = () => {
 
           {/* Error & Success Messages */}
           {error && (
-            <div className="mb-6 bg-destructive/10 border-l-4 border-destructive p-4 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
+            <div role="alert" aria-live="assertive" className="mb-6 bg-destructive/10 border-l-4 border-destructive p-4 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="flex items-center">
                 <Lock className="h-5 w-5 text-destructive mr-3 shrink-0" />
                 <p className="text-sm font-medium text-destructive">{error}</p>
@@ -213,7 +275,7 @@ const Login = () => {
           )}
 
           {successMessage && (
-            <div className="mb-6 bg-emerald-500/10 border-l-4 border-emerald-500 p-4 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
+            <div role="status" aria-live="polite" className="mb-6 bg-emerald-500/10 border-l-4 border-emerald-500 p-4 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
               <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{successMessage}</p>
             </div>
           )}
@@ -223,7 +285,7 @@ const Login = () => {
             
             {/* ---------------- LOGIN VIEW ---------------- */}
             {resetStep === 'login' && (
-              <form className="space-y-7" onSubmit={handleLogin}>
+              <form className="space-y-7" onSubmit={handleLogin} aria-label="Login form">
                 {/* Floating Email Input */}
                 <div className="relative group">
                   <input

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/useAuth';
 import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, updateStudentDueFee, logActivity } from '../../lib/api';
 import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft } from 'lucide-react';
@@ -49,14 +49,11 @@ export default function AccountsDashboard() {
     fetchDues();
     fetchDepartments();
 
-    const channel = supabase.channel('accounts-dashboard')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_dues' }, () => {
-        fetchDues();
-      })
-      .subscribe();
+    // FIX #21: Replace Realtime WebSocket with interval polling (30s)
+    const interval = setInterval(() => { fetchDues(); }, 30_000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, []);
 
@@ -111,13 +108,13 @@ export default function AccountsDashboard() {
       await updateStudentDueFee(dueId, fineAmount, paidAmount);
       
       if (fineAmount === 0 && previousAmount > 0) {
-        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName} (Paid: ₹${previousAmount})`);
+        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName} (Paid: â‚¹${previousAmount})`);
       } else if (fineAmount === 0 && previousAmount === 0) {
         await logActivity('Cleared Due Amount', `Cleared dues for ${profileName}`);
       } else if (diff > 0) {
-        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} for ${profileName} (Paid: ₹${diff})`);
+        await logActivity('Updated Due Amount', `Set due amount to â‚¹${fineAmount} for ${profileName} (Paid: â‚¹${diff})`);
       } else {
-        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} (Paid: ₹${paidAmount}) for ${profileName}`);
+        await logActivity('Updated Due Amount', `Set due amount to â‚¹${fineAmount} (Paid: â‚¹${paidAmount}) for ${profileName}`);
       }
       // Update local state
       setDues(prev => prev.map(d => {
@@ -127,7 +124,7 @@ export default function AccountsDashboard() {
         }
         return d;
       }));
-      setSuccess(`Due amount updated. Fine: ₹${fineAmount}, Paid: ₹${paidAmount}.`);
+      setSuccess(`Due amount updated. Fine: â‚¹${fineAmount}, Paid: â‚¹${paidAmount}.`);
     } catch (err: any) {
       setError('Failed to update due amount: ' + (err?.message || 'Unknown'));
     }
@@ -258,7 +255,7 @@ export default function AccountsDashboard() {
               onClick={downloadTemplate}
               className="flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 px-4 py-3 rounded-xl font-medium transition-all shadow-sm"
             >
-              📄 Not-Paid Template
+              ðŸ“„ Not-Paid Template
             </button>
             <label className="flex items-center gap-2 bg-emerald-500 text-white hover:bg-emerald-600 px-4 py-3 rounded-xl font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50">
               {uploadingCSV ? "Processing..." : "Upload Not-Paid List"}
@@ -300,7 +297,7 @@ export default function AccountsDashboard() {
         </div>
       )}
 
-      {/* Breadcrumb Bar — hidden during global search */}
+      {/* Breadcrumb Bar â€” hidden during global search */}
       {!isGlobalSearch && (
       <div className="flex bg-card p-4 rounded-2xl items-center text-sm font-medium text-muted-foreground overflow-x-auto whitespace-nowrap shadow-sm border border-border">
         <button 
@@ -373,11 +370,11 @@ export default function AccountsDashboard() {
                         <td className="p-5 font-medium text-foreground text-sm sm:text-base">{d.profiles?.full_name || 'Unknown'}</td>
                         <td className="p-5 text-sm text-muted-foreground font-bold tracking-widest">{d.profiles?.roll_number || 'N/A'}</td>
                         <td className="p-5 text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">{d.profiles?.departments?.name || '—'}</span>
-                          <span className="mx-1">·</span>
-                          <span>{d.profiles?.semesters?.name || '—'}</span>
-                          <span className="mx-1">·</span>
-                          <span>Sec {d.profiles?.section || '—'}</span>
+                          <span className="font-medium text-foreground">{d.profiles?.departments?.name || 'â€”'}</span>
+                          <span className="mx-1">Â·</span>
+                          <span>{d.profiles?.semesters?.name || 'â€”'}</span>
+                          <span className="mx-1">Â·</span>
+                          <span>Sec {d.profiles?.section || 'â€”'}</span>
                         </td>
                         <td className="p-5">
                           {(() => {
@@ -406,7 +403,7 @@ export default function AccountsDashboard() {
                               <button
                                 onClick={async () => {
                                   try {
-                                    const { error } = await supabase.from('student_dues').update({ status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null } as any).eq('id', d.id);
+                                    const { error } = await supabase.from('student_dues').update({ status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null }).eq('id', d.id);
                                     if (error) throw error;
                                     await logActivity('Set College Due', `Marked ${d.profiles?.full_name || 'student'} as having dues`);
                                     setSuccess(`Set due for ${d.profiles?.full_name}`);
@@ -609,7 +606,7 @@ export default function AccountsDashboard() {
                                   <button
                                     onClick={async () => {
                                       try {
-                                        const { error } = await supabase.from('student_dues').update({ status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null } as any).eq('id', d.id);
+                                        const { error } = await supabase.from('student_dues').update({ status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null }).eq('id', d.id);
                                         if (error) throw error;
                                         await logActivity('Set College Due', `Marked ${d.profiles?.full_name || 'student'} as having dues`);
                                         setSuccess(`Set due for ${d.profiles?.full_name}`);
@@ -666,3 +663,4 @@ export default function AccountsDashboard() {
     </div>
   );
 }
+

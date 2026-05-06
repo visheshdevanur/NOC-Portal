@@ -1,8 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder-project.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
+// FIX #25: Throw on missing env vars instead of silently falling back to placeholders
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    'Missing Supabase environment variables. Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in your .env file.'
+  );
+}
+
+// FIX #29: Database types generated at src/lib/database.types.ts
+// TODO: Wire into createClient<Database> once dashboard local types are aligned
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // ─── Secure User Creation via Edge Function ───

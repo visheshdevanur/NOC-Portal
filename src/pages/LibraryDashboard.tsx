@@ -3,6 +3,7 @@ import { getLibraryDues, bulkProcessLibraryDues, getAllDepartments, getSemesters
 import { BookOpen, UserCheck, AlertCircle, Search, Upload, Download, RefreshCw, X, Building2, GraduationCap, CornerUpLeft, Users, ShieldCheck, ShieldOff, ShieldAlert } from 'lucide-react';
 import Papa from 'papaparse';
 import { getFriendlyErrorMessage } from '../lib/errorHandler';
+import { validateCsvFileSize } from '../lib/csvSanitizer';
 
 export default function LibraryDashboard() {
   const [libraryDues, setLibraryDues] = useState<any[]>([]);
@@ -116,6 +117,15 @@ export default function LibraryDashboard() {
     setCsvProcessing(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    // FIX #44: Validate file size before parsing
+    try {
+      validateCsvFileSize(csvFile, 5);
+    } catch (sizeErr: any) {
+      setErrorMsg(sizeErr.message);
+      setCsvProcessing(false);
+      return;
+    }
 
     Papa.parse(csvFile, {
       header: true,

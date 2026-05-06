@@ -35,7 +35,9 @@ type UserProfile = {
   role: string;
   department_id: string | null;
   section: string | null;
+  roll_number?: string | null;
   created_at: string;
+  created_by?: string | null;
   semesters?: { name: string } | null;
   clearance_requests?: ClearanceInfo[] | ClearanceInfo | null;
 };
@@ -139,14 +141,13 @@ export default function HodDashboard() {
     }
   }, [user, activeTab, profile?.department_id]);
 
+  // FIX #21: Replace Realtime WebSocket with interval polling (30s)
   useEffect(() => {
     if (user) {
-      const channel = supabase.channel('hod-dashboard')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'clearance_requests', filter: `current_stage=eq.hod_review` }, () => {
-          if (activeTab === 'approvals') fetchRequests();
-        })
-        .subscribe();
-      return () => { supabase.removeChannel(channel); }
+      const interval = setInterval(() => {
+        if (activeTab === 'approvals') fetchRequests();
+      }, 30_000);
+      return () => { clearInterval(interval); }
     }
   }, [user, activeTab]);
 
@@ -186,7 +187,7 @@ export default function HodDashboard() {
     try {
       const data = await getUsersByDeptAndRoles(profile.department_id, ['staff', 'teacher', 'faculty']);
       // Exclude FYC-managed teachers (created_by is set by FYC)
-      const filtered = (data as UserProfile[]).filter(u => !(u as any).created_by);
+      const filtered = (data as UserProfile[]).filter(u => !(u).created_by);
       setDepartmentUsers(filtered);
 
       const importedData = await import('../../lib/api').then(m => m.getImportedTeachersForDept(profile.department_id!));
@@ -304,7 +305,7 @@ export default function HodDashboard() {
       // Directly mark as completed (cleared)
       const { error } = await supabase
         .from('student_dues')
-        .update({ status: 'completed', updated_at: new Date().toISOString() } as any)
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
         .eq('id', dueId);
       if (error) throw error;
       
@@ -396,7 +397,7 @@ export default function HodDashboard() {
       const status = req ? req.status : 'Not Applied';
       const stage = req ? req.current_stage : 'N/A';
       const sem = student.semesters?.name || 'N/A';
-      return `"${student.full_name}","${(student as any).roll_number || 'N/A'}","${sem}","${student.section || 'N/A'}","${status}","${stage}"`;
+      return `"${student.full_name}","${(student).roll_number || 'N/A'}","${sem}","${student.section || 'N/A'}","${status}","${stage}"`;
     }).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -421,7 +422,7 @@ export default function HodDashboard() {
       const sem = student.semesters?.name || 'N/A';
       const appliedDate = req.created_at ? new Date(req.created_at).toLocaleDateString() : 'N/A';
       const updatedDate = req.updated_at ? new Date(req.updated_at).toLocaleDateString() : 'N/A';
-      return `"${student.full_name}","${(student as any).roll_number || 'N/A'}","${sem}","${student.section || 'N/A'}","${req.status}","${req.current_stage}","${appliedDate}","${updatedDate}"`;
+      return `"${student.full_name}","${(student).roll_number || 'N/A'}","${sem}","${student.section || 'N/A'}","${req.status}","${req.current_stage}","${appliedDate}","${updatedDate}"`;
     }).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -497,7 +498,7 @@ export default function HodDashboard() {
   // Filter students by search
   const filteredStudents = departmentStudents.filter(s =>
     s.full_name?.toLowerCase().includes(searchStudents.toLowerCase()) ||
-    (s as any).roll_number?.toLowerCase().includes(searchStudents.toLowerCase()) ||
+    (s).roll_number?.toLowerCase().includes(searchStudents.toLowerCase()) ||
     s.section?.toLowerCase().includes(searchStudents.toLowerCase())
   );
 
@@ -528,7 +529,7 @@ export default function HodDashboard() {
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
             <UserCog className="w-8 h-8 mr-3 text-emerald-500" />
-            HOD — {deptName}
+            HOD â€” {deptName}
           </h1>
           <p className="text-muted-foreground">Manage clearances, staff, teachers, and subjects.</p>
         </div>
@@ -627,7 +628,7 @@ export default function HodDashboard() {
         <div className="space-y-6">
           {userSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>✓ {userSuccess}</span>
+              <span>âœ“ {userSuccess}</span>
               <button onClick={() => setUserSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -994,7 +995,7 @@ export default function HodDashboard() {
                                      return (
                                        <tr key={s.id} className="hover:bg-secondary/10 transition-colors bg-background">
                                          <td className="p-3 font-medium text-foreground">{s.full_name}</td>
-                                         <td className="p-3 text-muted-foreground text-sm font-mono">{(s as any).roll_number || '—'}</td>
+                                         <td className="p-3 text-muted-foreground text-sm font-mono">{(s).roll_number || 'â€”'}</td>
                                          <td className="p-3">
                                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${
                                               !req ? 'bg-secondary text-muted-foreground' : 
@@ -1005,7 +1006,7 @@ export default function HodDashboard() {
                                               {!req ? 'NOT APPLIED' : req.status.toUpperCase()}
                                            </span>
                                          </td>
-                                         <td className="p-3 text-xs font-medium text-muted-foreground">{req ? req.current_stage : '—'}</td>
+                                         <td className="p-3 text-xs font-medium text-muted-foreground">{req ? req.current_stage : 'â€”'}</td>
                                        </tr>
                                      )
                                   })}
@@ -1032,7 +1033,7 @@ export default function HodDashboard() {
               Attendance Fine Payments
             </h2>
             <p className="text-muted-foreground text-sm">
-              Track all student attendance fines — pending, paid, and verified.
+              Track all student attendance fines â€” pending, paid, and verified.
             </p>
           </div>
 
@@ -1380,7 +1381,7 @@ export default function HodDashboard() {
                             </span>
                             {hasAssignments ? (
                               <span className="text-xs text-muted-foreground">
-                                {teacher.assignments.length} subject{teacher.assignments.length !== 1 ? 's' : ''} · {[...new Set(teacher.assignments.flatMap(a => a.sections))].length} section{[...new Set(teacher.assignments.flatMap(a => a.sections))].length !== 1 ? 's' : ''}
+                                {teacher.assignments.length} subject{teacher.assignments.length !== 1 ? 's' : ''} Â· {[...new Set(teacher.assignments.flatMap(a => a.sections))].length} section{[...new Set(teacher.assignments.flatMap(a => a.sections))].length !== 1 ? 's' : ''}
                               </span>
                             ) : (
                               <span className="text-xs text-amber-500 font-medium">No sections assigned</span>
@@ -1518,7 +1519,7 @@ export default function HodDashboard() {
                               {log.action}
                             </span>
                           </td>
-                          <td className="p-4 text-sm text-muted-foreground">{log.details || '—'}</td>
+                          <td className="p-4 text-sm text-muted-foreground">{log.details || 'â€”'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1543,3 +1544,4 @@ export default function HodDashboard() {
     </div>
   );
 }
+
