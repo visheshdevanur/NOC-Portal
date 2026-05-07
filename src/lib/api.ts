@@ -127,7 +127,8 @@ export const markFacultySubjectStatus = async (
 export const getAllStudentDues = async () => {
   const { data, error } = await supabase
     .from('student_dues')
-    .select('*, profiles!student_dues_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name))');
+    .select('*, profiles!student_dues_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name))')
+    .limit(5000);
 
   if (error) throw error;
   return data;
@@ -692,7 +693,8 @@ export const getAllUsers = async () => {
   const { data, error } = await supabase
     .from('profiles')
     .select('*, departments(name)')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(5000);
   if (error) throw error;
   return data;
 };
@@ -700,7 +702,8 @@ export const getAllUsers = async () => {
 export const getAllStudentStatuses = async () => {
   const { data, error } = await supabase
     .from('clearance_requests')
-    .select('*, profiles!clearance_requests_student_id_fkey(full_name, department_id, section, departments(name))');
+    .select('*, profiles!clearance_requests_student_id_fkey(full_name, department_id, section, departments(name))')
+    .limit(5000);
   if (error) throw error;
   return data;
 };
@@ -898,7 +901,8 @@ export const getAccountsPendingFeeVerifications = async () => {
     .from('subject_enrollment')
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
     .gt('attendance_fee', 0)
-    .eq('attendance_fee_verified', false);
+    .eq('attendance_fee_verified', false)
+    .limit(5000);
   if (error) throw error;
   return data;
 };
@@ -921,7 +925,8 @@ export const getAccountsVerifiedFees = async () => {
     .from('subject_enrollment')
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
     .gt('attendance_fee', 0)
-    .eq('attendance_fee_verified', true);
+    .eq('attendance_fee_verified', true)
+    .limit(5000);
   if (error) throw error;
   return data;
 };
@@ -1214,7 +1219,8 @@ export const getHodFinePayments = async (departmentId: string) => {
 export const getLibraryDues = async () => {
   const { data, error } = await supabase
     .from('library_dues')
-    .select('*, profiles!library_dues_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name))');
+    .select('*, profiles!library_dues_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name))')
+    .limit(5000);
   if (error) throw error;
   return data;
 };
@@ -1325,7 +1331,8 @@ export const getPromotionPreview = async () => {
     .select('id, full_name, department_id, semester_id, section, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)')
     .eq('role', 'student')
     .or('status.is.null,status.eq.active')
-    .order('full_name');
+    .order('full_name')
+    .limit(5000);
   if (error) throw error;
   return data;
 };
@@ -1337,7 +1344,8 @@ export const getGraduatedStudents = async () => {
     .select('id, full_name, roll_number, department_id, batch, section, created_at, departments!profiles_department_id_fkey(name)')
     .eq('role', 'student')
     .eq('status', 'graduated')
-    .order('full_name');
+    .order('full_name')
+    .limit(5000);
   if (error) throw error;
   return data;
 };
@@ -1349,7 +1357,8 @@ export const getActiveStudentsDetails = async () => {
     .select('id, full_name, roll_number, department_id, section, created_at, semesters!profiles_semester_id_fkey(name), departments!profiles_department_id_fkey(name)')
     .eq('role', 'student')
     .or('status.is.null,status.eq.active')
-    .order('full_name');
+    .order('full_name')
+    .limit(5000);
   if (error) throw error;
   return data;
 };
