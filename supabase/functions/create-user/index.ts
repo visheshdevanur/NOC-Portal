@@ -1,7 +1,7 @@
 // @ts-nocheck — Deno runtime, not checked by project tsc
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-import { log, startTimer, checkRateLimit, getCorsHeaders, jsonResponse } from '../_shared/utils.ts'
+import { log, startTimer, checkRateLimit, getCorsHeaders, jsonResponse, validateOrigin } from '../_shared/utils.ts'
 
 const corsHeaders = getCorsHeaders()
 
@@ -21,6 +21,10 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  // Reject cross-origin requests in production
+  const originError = validateOrigin(req)
+  if (originError) return originError
 
   try {
     const elapsed = startTimer()

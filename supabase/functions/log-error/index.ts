@@ -30,10 +30,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
  * does NOT need the service key.
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { getCorsHeaders, validateOrigin } from '../_shared/utils.ts'
+
+const corsHeaders = getCorsHeaders()
 
 const VALID_SEVERITIES = ['CRITICAL', 'WARNING', 'INFO'] as const
 type Severity = typeof VALID_SEVERITIES[number]
@@ -43,6 +42,10 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  // Reject cross-origin requests in production
+  const originError = validateOrigin(req)
+  if (originError) return originError
 
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {

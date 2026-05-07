@@ -84,11 +84,48 @@ export function checkRateLimit(
 
 // ─── CORS Helper ───
 
+/**
+ * Returns CORS headers. In production, ALLOWED_ORIGIN must be set
+ * in Supabase Dashboard → Edge Function Secrets.
+ * If not set, defaults to '*' for local development only.
+ */
 export function getCorsHeaders(): Record<string, string> {
+  const origin = Deno.env.get('ALLOWED_ORIGIN') || '*'
   return {
-    'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || '*',
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   }
+}
+
+/**
+ * Validates the request Origin header against ALLOWED_ORIGIN.
+ * Returns a 403 Response if the origin is not allowed, or null if OK.
+ * 
+ * Webhooks (no Origin header) and local dev (ALLOWED_ORIGIN not set) are allowed through.
+ * 
+ * IMPORTANT: Set ALLOWED_ORIGIN in Supabase Dashboard → Settings → Edge Functions → Secrets
+ * Example: ALLOWED_ORIGIN=https://your-domain.vercel.app
+ */
+export function validateOrigin(req: Request): Response | null {
+  const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN')
+  
+  // If ALLOWED_ORIGIN is not configured, allow all (dev mode)
+  if (!allowedOrigin) return null
+  
+  const requestOrigin = req.headers.get('Origin')
+  
+  // Webhooks and server-to-server calls don't have Origin headers — allow them
+  if (!requestOrigin) return null
+  
+  // Check if origin matches
+  if (requestOrigin !== allowedOrigin) {
+    return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  
+  return null
 }
 
 export function jsonResponse(body: unknown, status = 200, extraHeaders?: Record<string, string>) {

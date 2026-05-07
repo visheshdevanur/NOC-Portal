@@ -1,7 +1,7 @@
 // @ts-nocheck — Deno runtime, not checked by project tsc
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-import { log, startTimer, checkRateLimit, getCorsHeaders, jsonResponse } from '../_shared/utils.ts'
+import { log, startTimer, checkRateLimit, getCorsHeaders, jsonResponse, validateOrigin } from '../_shared/utils.ts'
 
 const RAZORPAY_KEY_ID = Deno.env.get('RAZORPAY_KEY_ID') || ''
 const RAZORPAY_KEY_SECRET = Deno.env.get('RAZORPAY_KEY_SECRET') || ''
@@ -12,6 +12,10 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  // Reject cross-origin requests in production
+  const originError = validateOrigin(req)
+  if (originError) return originError
 
   try {
     const elapsed = startTimer()
@@ -52,7 +56,7 @@ serve(async (req) => {
       return jsonResponse({ error: 'Amount exceeds maximum allowed (₹50,000)' }, 400)
     }
 
-    // 3. Verify the student actually has a pending fine of this amount
+    // 3. Verify the student actually has a pending fine
     const adminClient = createClient(supabaseUrl, serviceKey)
     const { data: profile } = await adminClient
       .from('profiles')
@@ -64,43 +68,7 @@ serve(async (req) => {
       return jsonResponse({ error: 'Only students can create payment orders' }, 403)
     }
 
-    // FIX #31: Verify amount matches actual fine in database
-    if (enrollment_id && (!due_type || due_type === 'attendance_fine')) {
-      const { data: enrollment } = await adminClient
-        .from('subject_enrollment')
-        .select('attendance_fee, attendance_fee_verified')
-        .eq('id', enrollment_id)
-        .eq('student_id', user.id)
-        .single()
-
-      if (!enrollment) {
-        return jsonResponse({ error: 'Enrollment not found or does not belong to you' }, 404)
-      }
-      if (enrollment.attendance_fee_verified) {
-        return jsonResponse({ error: 'This fine has already been paid' }, 400)
-      }
-      if (Math.abs(amount - enrollment.attendance_fee) > 0.01) {
-        log({ level: 'WARN', fn: 'create-razorpay-order', action: 'amount_mismatch', userId: user.id, meta: { requested: amount, actual: enrollment.attendance_fee } })
-        return jsonResponse({ error: `Amount ₹${amount} does not match fine ₹${enrollment.attendance_fee}` }, 400)
-      }
-    } else if (due_type === 'college_fee') {
-      const { data: dues } = await adminClient
-        .from('student_dues')
-        .select('fine_amount, paid_amount, status')
-        .eq('student_id', user.id)
-        .eq('status', 'pending')
-
-      const totalDue = (dues || []).reduce((sum: number, d: any) => sum + (d.fine_amount - (d.paid_amount || 0)), 0)
-      if (totalDue <= 0) {
-        return jsonResponse({ error: 'No pending dues found' }, 400)
-      }
-      if (Math.abs(amount - totalDue) > 0.01) {
-        log({ level: 'WARN', fn: 'create-razorpay-order', action: 'amount_mismatch', userId: user.id, meta: { requested: amount, actual: totalDue } })
-        return jsonResponse({ error: `Amount ₹${amount} does not match outstanding dues ₹${totalDue}` }, 400)
-      }
-    }
-
-    // 4. Create Razorpay order
+    // 4. Create Razorpay order FIRST (external API call)
     const authHeaderRazorpay = `Basic ${btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`)}`
 
     const response = await fetch('https://api.razorpay.com/v1/orders', {
@@ -119,20 +87,32 @@ serve(async (req) => {
     const data = await response.json()
 
     if (!response.ok) {
-      console.error('Razorpay error:', data)
+      log({ level: 'ERROR', fn: 'create-razorpay-order', action: 'razorpay_error', userId: user.id, meta: data })
       throw new Error(data.error?.description || 'Failed to create Razorpay order')
     }
 
-    // 5. Record the order in our database for webhook reconciliation
-    await adminClient.from('payment_orders').insert({
-      razorpay_order_id: data.id,
-      student_id: user.id,
-      enrollment_id: enrollment_id || null,
-      due_type: due_type || 'attendance_fine',
-      amount: amount,
-      status: 'created',
-      tenant_id: profile.tenant_id,
+    // 5. Record order atomically — this RPC locks the enrollment row,
+    //    verifies the amount matches, checks for duplicates, and inserts
+    //    all in a single transaction. Prevents double-spend attacks.
+    const { data: orderId, error: rpcError } = await adminClient.rpc('create_payment_order_atomic', {
+      p_student_id: user.id,
+      p_enrollment_id: enrollment_id || null,
+      p_amount: amount,
+      p_due_type: due_type || 'attendance_fine',
+      p_razorpay_order_id: data.id,
+      p_tenant_id: profile.tenant_id,
     })
+
+    if (rpcError) {
+      log({ level: 'WARN', fn: 'create-razorpay-order', action: 'atomic_order_failed', userId: user.id, error: rpcError.message })
+      // Return user-friendly error messages based on the RPC exception
+      const msg = rpcError.message
+      if (msg.includes('already exists')) return jsonResponse({ error: 'An unpaid order already exists for this fine' }, 409)
+      if (msg.includes('already been paid')) return jsonResponse({ error: 'This fine has already been paid' }, 400)
+      if (msg.includes('does not match')) return jsonResponse({ error: msg }, 400)
+      if (msg.includes('not found')) return jsonResponse({ error: 'Enrollment not found or does not belong to you' }, 404)
+      return jsonResponse({ error: 'Failed to create payment order' }, 500)
+    }
 
     log({ level: 'INFO', fn: 'create-razorpay-order', action: 'created', userId: user.id, duration: elapsed(), meta: { order_id: data.id, amount } })
     return jsonResponse(data)

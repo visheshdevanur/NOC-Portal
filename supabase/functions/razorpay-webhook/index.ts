@@ -38,8 +38,10 @@ async function verifyWebhookSignature(body: string, signature: string): Promise<
   return timingSafeCompare(expectedSignature, signature)
 }
 
+import { getCorsHeaders, validateOrigin } from '../_shared/utils.ts'
+
 const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || '*',
+  ...getCorsHeaders(),
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-razorpay-signature',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
