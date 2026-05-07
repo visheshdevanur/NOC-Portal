@@ -1150,14 +1150,13 @@ export const clearStudentFine = async (enrollmentId: string) => {
 
 /** Create a bulk Razorpay order for Pay All (total of multiple enrollments) */
 export const createBulkRazorpayOrder = async (totalAmount: number, enrollmentIds: string[]) => {
-  const response = await fetch('/api/create-razorpay-order', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount: totalAmount, receipt: `bulk_${enrollmentIds.length}_${Date.now()}` }),
+  const { invokeWithRetry } = await import('./invokeWithRetry');
+  return invokeWithRetry('create-razorpay-order', {
+    amount: totalAmount,
+    receipt: `bulk_${enrollmentIds.length}_${Date.now()}`,
+    enrollment_ids: enrollmentIds,
+    due_type: 'attendance_fine_bulk',
   });
-  const data = await response.json();
-  if (!response.ok || data?.error) throw new Error(data?.error || 'Failed to create bulk order');
-  return data;
 };
 
 /** Verify bulk Razorpay payment and mark ALL enrollments as paid */
@@ -1167,37 +1166,17 @@ export const verifyAndProcessBulkRazorpayPayment = async (
   razorpay_payment_id: string,
   razorpay_signature: string
 ) => {
-  // 1. Verify signature
-  const response = await fetch('/api/verify-razorpay-payment', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ razorpay_order_id, razorpay_payment_id, razorpay_signature }),
+  const { invokeWithRetry } = await import('./invokeWithRetry');
+  const result = await invokeWithRetry('verify-razorpay-payment', {
+    razorpay_order_id,
+    razorpay_payment_id,
+    razorpay_signature,
+    enrollment_ids: enrollmentIds,
+    is_bulk: true,
   });
-  const verification = await response.json();
-  if (!response.ok || !verification?.verified) throw new Error(verification?.error || 'Payment verification failed');
 
-  // 2. Update all enrollments
-  const results = [];
-  for (const eid of enrollmentIds) {
-    const { data, error } = await supabase
-      .from('subject_enrollment')
-      .update({
-        attendance_fee_verified: true,
-        status: 'completed',
-        remarks: 'Cleared via Online Payment (Bulk)',
-        razorpay_order_id,
-        razorpay_payment_id,
-        razorpay_signature,
-        payment_date: new Date().toISOString()
-      })
-      .eq('id', eid)
-      .select('*, subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
-      .single();
-    if (!error && data) results.push(data);
-  }
-
-  logActivity('Bulk Attendance Payment', `Paid fines for ${results.length} subjects via Razorpay (ID: ${razorpay_payment_id})`);
-  return results;
+  logActivity('Bulk Attendance Payment', `Paid fines for ${enrollmentIds.length} subjects via Razorpay (ID: ${razorpay_payment_id})`);
+  return result;
 };
 
 /** Get all fines for HOD tracking (both paid and unpaid) */

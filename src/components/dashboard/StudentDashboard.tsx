@@ -235,7 +235,7 @@ export default function StudentDashboard() {
       const { createBulkRazorpayOrder, verifyAndProcessBulkRazorpayPayment } = await import('../../lib/api');
       const enrollmentIds = pendingAttendanceDues.map((d: any) => d.id);
       
-      const order = await createBulkRazorpayOrder(totalAmount, enrollmentIds);
+      const order = await createBulkRazorpayOrder(totalAmount, enrollmentIds) as any;
 
       const options = {
         key: razorpayKey,
