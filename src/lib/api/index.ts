@@ -1,15 +1,16 @@
 /**
- * API Domain Module Index
- * FIX #7: Barrel file re-exporting all domain modules.
+ * API Barrel Export
  * 
- * New code should import from specific domain modules:
- *   import { getStudentDues } from '@/lib/api/students';
- * 
- * Or from this barrel:
- *   import { getStudentDues } from '@/lib/api';
+ * All domain modules re-exported from a single entry point.
+ * Existing imports from '../../lib/api' continue to work unchanged.
  */
-export * from './students';
+
+export * from './shared';
+export * from './student';
 export * from './faculty';
-export * from './clearance';
-export * from './payments';
+export * from './accounts';
+export * from './hod';
 export * from './admin';
+export * from './payment';
+export * from './library';
+export * from './promotion';
