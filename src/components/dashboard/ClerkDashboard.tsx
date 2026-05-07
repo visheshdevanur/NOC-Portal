@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import {
   getUsersByDeptAndRoles,
@@ -56,10 +57,7 @@ const isFirstYearSem = (name: string) => {
 export default function ClerkDashboard() {
   const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('users');
-  const [deptName, setDeptName] = useState<string>('');
-
-  // Branch (Department) selector Ã¢â‚¬â€ clerk is global, not dept-scoped
-  const [allDepartments, setAllDepartments] = useState<any[]>([]);
+  // Branch (Department) selector
   const [selectedDeptId, setSelectedDeptId] = useState<string>('');
 
   // Users State
@@ -154,37 +152,28 @@ export default function ClerkDashboard() {
   const [studentDuesSearch, setStudentDuesSearch] = useState('');
   const [csvSemFilter, setCsvSemFilter] = useState<string>('all');
 
-  // Fetch all departments on mount
-  useEffect(() => {
-    const loadDepts = async () => {
-      try {
-        const data = await getAllDepartments();
-        setAllDepartments(data || []);
-        // If clerk still has a legacy department_id, pre-select it
-        if (profile?.department_id) {
-          setSelectedDeptId(profile.department_id);
-        } else if (data && data.length > 0) {
-          setSelectedDeptId(data[0].id);
-        }
-      } catch (err) { console.error(err); }
-    };
-    loadDepts();
+  // React Query: load departments on mount
+  const { data: deptsData } = useQuery({
+    queryKey: ['allDepartments'],
+    queryFn: () => getAllDepartments(),
+  });
+  const allDepartments = deptsData || [];
 
-    // FIX #21: Replace Realtime WebSocket with interval polling (30s)
-    const interval = setInterval(() => {
-      if (activeTab === 'users') fetchUsers();
-    }, 30_000);
-    return () => { clearInterval(interval); }
-  }, [profile]);
-
-  // Update dept name when branch changes
+  // Auto-select department on first load
   useEffect(() => {
-    if (selectedDeptId) {
-      const dept = allDepartments.find(d => d.id === selectedDeptId);
-      setDeptName(dept?.name || selectedDeptId);
+    if (allDepartments.length > 0 && !selectedDeptId) {
+      if (profile?.department_id) {
+        setSelectedDeptId(profile.department_id);
+      } else {
+        setSelectedDeptId(allDepartments[0].id);
+      }
     }
-  }, [selectedDeptId, allDepartments]);
+  }, [allDepartments, profile]);
 
+  // Derive dept name from selected ID
+  const deptName = allDepartments.find((d: any) => d.id === selectedDeptId)?.name || selectedDeptId;
+
+  // Tab-aware data fetching via useEffect (ClerkDashboard has too many interdependent fetches for pure useQuery)
   useEffect(() => {
     if (!selectedDeptId) return;
     if (activeTab === 'users' || activeTab === 'sections') { fetchUsers(); fetchSemesters(); }
