@@ -18,6 +18,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const superAdminSupabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storageKey: 'sb-superadmin-auth',
+    flowType: 'pkce',
     autoRefreshToken: true,
     persistSession: true,
   },

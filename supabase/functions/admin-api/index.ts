@@ -2,7 +2,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 
-import { getCorsHeaders, validateOrigin, log, checkRateLimit } from '../_shared/utils.ts'
+import { getCorsHeaders, validateOrigin, log, checkRateLimit, sanitize, isValidUUID } from '../_shared/utils.ts'
 
 const corsHeaders = getCorsHeaders()
 
@@ -121,6 +121,24 @@ serve(async (req) => {
         const { name, slug, adminEmail, adminPassword, plan, maxUsers } = params
         if (!name || !slug || !adminEmail || !adminPassword) {
           return jsonResponse({ error: 'Missing required fields' }, 400)
+        }
+
+        // Input validation
+        const cleanName = sanitize(name, 100)
+        if (cleanName.length < 2) return jsonResponse({ error: 'Tenant name must be at least 2 characters' }, 400)
+
+        const cleanSlug = slug.toLowerCase().trim()
+        if (!/^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/.test(cleanSlug)) {
+          return jsonResponse({ error: 'Slug must be 3-50 chars: lowercase letters, numbers, and hyphens only' }, 400)
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(adminEmail)) {
+          return jsonResponse({ error: 'Invalid admin email format' }, 400)
+        }
+
+        if (adminPassword.length < 8 || !/[a-zA-Z]/.test(adminPassword) || !/[0-9]/.test(adminPassword)) {
+          return jsonResponse({ error: 'Password must be 8+ chars with at least one letter and one number' }, 400)
         }
 
         // Check uniqueness

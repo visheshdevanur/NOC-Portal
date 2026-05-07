@@ -12,7 +12,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // FIX #29: Database types generated at src/lib/database.types.ts
 // TODO: Wire into createClient<Database> once dashboard local types are aligned
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    flowType: 'pkce',       // OAuth 2.1 standard — prevents token interception
+    autoRefreshToken: true,
+    persistSession: true,
+  },
+});
 
 // ─── Secure User Creation via Edge Function ───
 // Replaces the old tempSupabase.auth.signUp() pattern which was insecure.
