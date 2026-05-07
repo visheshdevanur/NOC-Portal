@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { useAuth } from '../lib/useAuth';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import TabErrorBoundary from '../components/TabErrorBoundary';
 
 const StudentDashboard = lazy(() => import('../components/dashboard/StudentDashboard'));
 const FacultyDashboard = lazy(() => import('../components/dashboard/FacultyDashboard'));
@@ -37,6 +38,8 @@ const DashboardRouter = () => {
     return <DashboardFallback />;
   }
 
+  const roleName = profile.role.charAt(0).toUpperCase() + profile.role.slice(1);
+
   const getDashboard = () => {
     switch (profile.role) {
       case 'student': return <StudentDashboard />;
@@ -58,7 +61,9 @@ const DashboardRouter = () => {
   return (
     <ErrorBoundary dashboardName={profile.role}>
       <Suspense fallback={<DashboardFallback />}>
-        {getDashboard()}
+        <TabErrorBoundary tabName={`${roleName} Dashboard`}>
+          {getDashboard()}
+        </TabErrorBoundary>
       </Suspense>
     </ErrorBoundary>
   );
