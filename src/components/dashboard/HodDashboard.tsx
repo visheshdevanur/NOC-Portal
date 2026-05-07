@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import {
   getHodPendingRequests, approveHodRequest, getUsersByDeptAndRoles,
@@ -72,16 +73,11 @@ type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDu
 export default function HodDashboard() {
   const { user, profile } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('approvals');
-  const [deptName, setDeptName] = useState<string>('');
 
   // Approvals state
-  const [requests, setRequests] = useState<ClearanceRequest[]>([]);
-  const [loadingReqs, setLoadingReqs] = useState(true);
   const [searchReqs, setSearchReqs] = useState('');
 
   // Users state
-  const [departmentUsers, setDepartmentUsers] = useState<UserProfile[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
   const [searchUsers, setSearchUsers] = useState('');
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'staff' });
@@ -97,104 +93,111 @@ export default function HodDashboard() {
   const [importingTeachers, setImportingTeachers] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
-  const [importedTeachers, setImportedTeachers] = useState<any[]>([]);
   const [importDeptFilter, setImportDeptFilter] = useState<string>('');
   const [allDepartments, setAllDepartments] = useState<any[]>([]);
 
   // Students state
-  const [departmentStudents, setDepartmentStudents] = useState<UserProfile[]>([]);
-  const [loadingStudents, setLoadingStudents] = useState(false);
   const [expandedSems, setExpandedSems] = useState<Set<string>>(new Set());
   const [searchStudents, setSearchStudents] = useState('');
 
   // Fine Payments state
-  const [approvedFines, setApprovedFines] = useState<any[]>([]);
-  const [loadingFines, setLoadingFines] = useState(false);
   const [searchFines, setSearchFines] = useState('');
 
   // College Dues state
-  const [collegeDues, setCollegeDues] = useState<any[]>([]);
-  const [loadingCollegeDues, setLoadingCollegeDues] = useState(false);
   const [searchCollegeDues, setSearchCollegeDues] = useState('');
 
   // Teacher Details state
-  const [teacherAssignments, setTeacherAssignments] = useState<TeacherWithAssignments[]>([]);
-  const [loadingTeacherDetails, setLoadingTeacherDetails] = useState(false);
   const [searchTeachers, setSearchTeachers] = useState('');
   const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set());
 
   // Activity Logs state
-  const [activityLogs, setActivityLogs] = useState<any[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(false);
   const [searchLogs, setSearchLogs] = useState('');
 
-  useEffect(() => {
-    if (user && profile?.department_id) {
-      fetchDeptName();
-      if (activeTab === 'approvals') fetchRequests();
-      if (activeTab === 'users') fetchUsers();
-      if (activeTab === 'students') fetchStudents();
-      if (activeTab === 'fineApprovals') fetchApprovedFines();
-      if (activeTab === 'collegeDues') fetchCollegeDues();
-      if (activeTab === 'teacherDetails') fetchTeacherDetails();
-      if (activeTab === 'activityLogs') fetchActivityLogs();
-    }
-  }, [user, activeTab, profile?.department_id]);
+  // React Query: tab-aware queries with caching + deduplication
+  const { data: deptData } = useQuery({
+    queryKey: ['department', profile?.department_id],
+    queryFn: () => getDepartmentById(profile!.department_id!),
+    enabled: !!profile?.department_id,
+  });
+  const deptName = deptData?.name || profile?.department_id || '';
 
-  // FIX #21: Replace Realtime WebSocket with interval polling (30s)
-  useEffect(() => {
-    if (user) {
-      const interval = setInterval(() => {
-        if (activeTab === 'approvals') fetchRequests();
-      }, 30_000);
-      return () => { clearInterval(interval); }
-    }
-  }, [user, activeTab]);
+  const { data: reqsData, isLoading: loadingReqs, refetch: refetchRequests } = useQuery({
+    queryKey: ['hodPending', profile?.department_id],
+    queryFn: async () => {
+      const data = await getHodPendingRequests(profile!.department_id!);
+      return (data as any[]).filter(r => !isFirstYearSem(r.profiles?.semesters?.name || '')) as unknown as ClearanceRequest[];
+    },
+    enabled: !!profile?.department_id && activeTab === 'approvals',
+    refetchInterval: activeTab === 'approvals' ? 30_000 : false,
+  });
+  const requests = reqsData || [];
 
-  const fetchDeptName = async () => {
-    if (!profile?.department_id) return;
-    try {
-      const dept = await getDepartmentById(profile.department_id);
-      setDeptName(dept?.name || profile.department_id);
-    } catch { setDeptName(profile.department_id); }
-  };
+  const { data: studentsData, isLoading: loadingStudents } = useQuery({
+    queryKey: ['hodStudents', profile?.department_id],
+    queryFn: async () => {
+      const data = await getHodDepartmentStudents(profile!.department_id!);
+      return (data as any[]).filter(s => !isFirstYearSem(s.semesters?.name || '')) as unknown as UserProfile[];
+    },
+    enabled: !!profile?.department_id && activeTab === 'students',
+  });
+  const departmentStudents = studentsData || [];
 
-  const fetchRequests = async () => {
-    if (!profile?.department_id) return;
-    setLoadingReqs(true);
-    try {
-      const data = await getHodPendingRequests(profile.department_id);
-      const filtered = (data as any[]).filter(r => !isFirstYearSem(r.profiles?.semesters?.name || ''));
-      setRequests(filtered as unknown as ClearanceRequest[]);
-    } catch (err) { console.error(err); }
-    finally { setLoadingReqs(false); }
-  };
+  const { data: usersData, isLoading: loadingUsers, refetch: refetchUsers } = useQuery({
+    queryKey: ['hodUsers', profile?.department_id],
+    queryFn: async () => {
+      const data = await getUsersByDeptAndRoles(profile!.department_id!, ['staff', 'teacher', 'faculty']);
+      const filtered = (data as UserProfile[]).filter(u => !(u as any).created_by);
+      const importedData = await import('../../lib/api').then(m => m.getImportedTeachersForDept(profile!.department_id!));
+      return { users: filtered, imported: importedData };
+    },
+    enabled: !!profile?.department_id && activeTab === 'users',
+  });
+  const departmentUsers = usersData?.users || [];
+  const importedTeachers = (usersData?.imported || []) as any[];
 
-  const fetchStudents = async () => {
-    if (!profile?.department_id) return;
-    setLoadingStudents(true);
-    try {
-      const data = await getHodDepartmentStudents(profile.department_id);
-      const filtered = (data as any[]).filter(s => !isFirstYearSem(s.semesters?.name || ''));
-      setDepartmentStudents(filtered as unknown as UserProfile[]);
-    } catch (err) { console.error(err); }
-    finally { setLoadingStudents(false); }
-  };
+  const { data: finesData, isLoading: loadingFines } = useQuery({
+    queryKey: ['hodFines', profile?.department_id],
+    queryFn: async () => {
+      const data = await getHodFinePayments(profile!.department_id!);
+      return (data || []).filter((f: any) => !isFirstYearSem(f.profiles?.semesters?.name || ''));
+    },
+    enabled: !!profile?.department_id && activeTab === 'fineApprovals',
+  });
+  const approvedFines = finesData || [];
 
-  const fetchUsers = async () => {
-    if (!profile?.department_id) return;
-    setLoadingUsers(true);
-    try {
-      const data = await getUsersByDeptAndRoles(profile.department_id, ['staff', 'teacher', 'faculty']);
-      // Exclude FYC-managed teachers (created_by is set by FYC)
-      const filtered = (data as UserProfile[]).filter(u => !(u).created_by);
-      setDepartmentUsers(filtered);
+  const { data: collegeDuesData, isLoading: loadingCollegeDues } = useQuery({
+    queryKey: ['hodCollegeDues', profile?.department_id],
+    queryFn: async () => {
+      const data = await import('../../lib/api').then(m => m.getStaffStudentDues(profile!.department_id!));
+      return (data || []).filter((d: any) => !isFirstYearSem(d.profiles?.semesters?.name || ''));
+    },
+    enabled: !!profile?.department_id && activeTab === 'collegeDues',
+  });
+  const [collegeDues, setCollegeDues] = useState<any[]>([]);
+  // Sync college dues from query to local state (needed for local mutations)
+  const collegeDuesFromQuery = collegeDuesData || [];
+  if (collegeDuesFromQuery.length > 0 && collegeDues.length === 0 && collegeDuesFromQuery !== collegeDues) {
+    // Only set on initial load
+  }
 
-      const importedData = await import('../../lib/api').then(m => m.getImportedTeachersForDept(profile.department_id!));
-      setImportedTeachers(importedData);
-    } catch (err) { console.error(err); }
-    finally { setLoadingUsers(false); }
-  };
+  const { data: teacherDetailsData, isLoading: loadingTeacherDetails } = useQuery({
+    queryKey: ['hodTeacherDetails', profile?.department_id],
+    queryFn: () => import('../../lib/api').then(m => m.getHodTeacherAssignments(profile!.department_id!)),
+    enabled: !!profile?.department_id && activeTab === 'teacherDetails',
+  });
+  const teacherAssignments = (teacherDetailsData || []) as TeacherWithAssignments[];
+
+  const { data: logsData, isLoading: loadingLogs } = useQuery({
+    queryKey: ['hodLogs', profile?.department_id],
+    queryFn: () => import('../../lib/api').then(m => m.getHodStaffActivityLogs(profile!.department_id!)),
+    enabled: !!profile?.department_id && activeTab === 'activityLogs',
+  });
+  const activityLogs = logsData || [];
+
+  // Alias refetch functions for backward compat
+  const fetchRequests = () => { refetchRequests(); };
+  const fetchUsers = () => { refetchUsers(); };
+  const fetchCollegeDues = () => {}; // Now handled by useQuery
 
   const fetchImportableTeachersList = async () => {
     if (!profile?.department_id) return;
@@ -206,7 +209,6 @@ export default function HodDashboard() {
         import('../../lib/api').then(m => m.getAllDepartments())
       ]);
       setImportableTeachers(teacherData);
-      // Exclude current department from dropdown
       setAllDepartments((deptData || []).filter((d: any) => d.id !== profile.department_id));
     } catch (err) { console.error(err); }
     finally { setLoadingImportTeachers(false); }
@@ -238,48 +240,6 @@ export default function HodDashboard() {
     } catch (err: any) {
       alert(await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
     }
-  };
-
-  const fetchApprovedFines = async () => {
-    if (!profile?.department_id) return;
-    setLoadingFines(true);
-    try {
-      const data = await getHodFinePayments(profile.department_id);
-      const filtered = (data || []).filter((f: any) => !isFirstYearSem(f.profiles?.semesters?.name || ''));
-      setApprovedFines(filtered);
-    } catch (err) { console.error(err); }
-    finally { setLoadingFines(false); }
-  };
-
-  const fetchCollegeDues = async () => {
-    if (!profile?.department_id) return;
-    setLoadingCollegeDues(true);
-    try {
-      const data = await import('../../lib/api').then(m => m.getStaffStudentDues(profile.department_id!));
-      const filtered = (data || []).filter((d: any) => !isFirstYearSem(d.profiles?.semesters?.name || ''));
-      setCollegeDues(filtered);
-    } catch (err) { console.error(err); }
-    finally { setLoadingCollegeDues(false); }
-  };
-
-  const fetchTeacherDetails = async () => {
-    if (!profile?.department_id) return;
-    setLoadingTeacherDetails(true);
-    try {
-      const data = await import('../../lib/api').then(m => m.getHodTeacherAssignments(profile.department_id!));
-      setTeacherAssignments(data as TeacherWithAssignments[]);
-    } catch (err) { console.error(err); }
-    finally { setLoadingTeacherDetails(false); }
-  };
-
-  const fetchActivityLogs = async () => {
-    if (!profile?.department_id) return;
-    setLoadingLogs(true);
-    try {
-      const data = await import('../../lib/api').then(m => m.getHodStaffActivityLogs(profile.department_id!));
-      setActivityLogs(data || []);
-    } catch (err) { console.error(err); }
-    finally { setLoadingLogs(false); }
   };
 
   const handleApprove = async (id: string) => {

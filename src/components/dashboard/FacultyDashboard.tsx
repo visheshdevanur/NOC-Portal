@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
 import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Edit } from 'lucide-react';
@@ -50,8 +51,6 @@ export default function FacultyDashboard() {
   const [activeTab, setActiveTab] = useState<'clearance' | 'manage-ia'>('clearance');
 
   // === Clearance Tab State (existing) ===
-  const [students, setStudents] = useState<SubjectEnrollment[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null);
@@ -83,11 +82,50 @@ export default function FacultyDashboard() {
   // IA limits validation for clearance
   const [teacherIAs, setTeacherIAs] = useState<any[]>([]);
 
+  // React Query: primary data fetch with caching + deduplication
+  const { data: facultyData, isLoading: loading, refetch: refetchData } = useQuery({
+    queryKey: ['facultyClearance', user?.id],
+    queryFn: async () => {
+      const [data, ias, subjects] = await Promise.all([
+        getFacultyPendingStudents(user!.id),
+        getTeacherIAAttendance(user!.id),
+        getTeacherSubjectsList(user!.id),
+      ]);
+      return { students: data as unknown as SubjectEnrollment[], ias: ias || [], subjects: subjects as TeacherSubject[] };
+    },
+    enabled: !!user,
+  });
+
+  // Derive state from query data
+  const studentsFromQuery = facultyData?.students || [];
+  const [students, setStudents] = useState<SubjectEnrollment[]>([]);
+
+  // Sync query data to local state (needed for local attendance edits)
   useEffect(() => {
-    if (user) {
-      fetchData();
+    if (studentsFromQuery.length > 0) {
+      setStudents(studentsFromQuery);
+      setTeacherIAs(facultyData?.ias || []);
+      setTeacherSubjects(facultyData?.subjects || []);
+
+      // Auto-select initial semester/section
+      const semsMap = new Map();
+      studentsFromQuery.forEach(s => {
+        const id = s.profiles?.semester_id;
+        const name = s.profiles?.semesters?.name || 'Unassigned Semester';
+        if (id && !semsMap.has(id)) semsMap.set(id, { id, name });
+      });
+      const semsList = Array.from(semsMap.values());
+      const initialSem = semsList.length > 0 ? semsList[0].id : null;
+      if (!selectedSemester && initialSem) setSelectedSemester(initialSem);
+      const activeSem = selectedSemester || initialSem;
+      if (activeSem) {
+        const secs = Array.from(new Set(studentsFromQuery.filter(s => s.profiles?.semester_id === activeSem).map(s => s.profiles?.section || 'Unassigned'))).sort();
+        if (secs.length > 0 && !selectedSection) setSelectedSection(secs[0] as string);
+      }
     }
-  }, [user]);
+  }, [studentsFromQuery]);
+
+  const fetchData = () => { refetchData(); };
 
   // Load IA data when subject changes
   useEffect(() => {
@@ -95,49 +133,6 @@ export default function FacultyDashboard() {
       loadIAData(selectedSubjectId);
     }
   }, [selectedSubjectId]);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const [data, ias] = await Promise.all([
-        getFacultyPendingStudents(user!.id),
-        getTeacherIAAttendance(user!.id)
-      ]);
-      const typedData = data as unknown as SubjectEnrollment[];
-      setStudents(typedData);
-      setTeacherIAs(ias || []);
-      
-      const semsMap = new Map();
-      typedData.forEach(s => {
-          const id = s.profiles?.semester_id;
-          const name = s.profiles?.semesters?.name || 'Unassigned Semester';
-          if (id && !semsMap.has(id)) semsMap.set(id, { id, name });
-      });
-      const semsList = Array.from(semsMap.values());
-      const initialSem = semsList.length > 0 ? semsList[0].id : null;
-
-      if (!selectedSemester && initialSem) {
-        setSelectedSemester(initialSem);
-      }
-      
-      const activeSem = selectedSemester || initialSem;
-      if (activeSem) {
-        const secs = Array.from(new Set(typedData.filter(s => s.profiles?.semester_id === activeSem).map(s => s.profiles?.section || 'Unassigned'))).sort();
-        if (secs.length > 0 && !selectedSection) {
-          setSelectedSection(secs[0] as string);
-        }
-      }
-
-      // Also load teacher subjects for IA tab
-      const subjects = await getTeacherSubjectsList(user!.id);
-      setTeacherSubjects(subjects as TeacherSubject[]);
-
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadIAData = async (subjectId: string) => {
     if (!user) return;
