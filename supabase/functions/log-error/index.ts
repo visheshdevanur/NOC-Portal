@@ -30,7 +30,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
  * does NOT need the service key.
  */
 
-import { getCorsHeaders, validateOrigin } from '../_shared/utils.ts'
+import { getCorsHeaders, validateOrigin, checkRateLimit, log as fnLog } from '../_shared/utils.ts'
 
 const corsHeaders = getCorsHeaders()
 
@@ -75,6 +75,16 @@ serve(async (req) => {
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Rate limit: 20 error logs per minute per user to prevent log flooding
+    const rl = checkRateLimit(`log-error:${user.id}`, 20, 60_000)
+    if (!rl.allowed) {
+      fnLog({ level: 'WARN', fn: 'log-error', action: 'rate_limited', userId: user.id })
+      return new Response(JSON.stringify({ error: 'Too many error reports. Please wait.' }), {
+        status: 429,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }

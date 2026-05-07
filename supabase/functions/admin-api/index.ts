@@ -2,7 +2,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 
-import { getCorsHeaders, validateOrigin } from '../_shared/utils.ts'
+import { getCorsHeaders, validateOrigin, log, checkRateLimit } from '../_shared/utils.ts'
 
 const corsHeaders = getCorsHeaders()
 
@@ -58,7 +58,15 @@ serve(async (req) => {
   if (originError) return originError
 
   try {
-    const { adminClient } = await validateSuperAdmin(req)
+    const { user, adminClient } = await validateSuperAdmin(req)
+
+    // Rate limit: 10 admin API calls per minute per super admin
+    const rl = checkRateLimit(`admin-api:${user.id}`, 10, 60_000)
+    if (!rl.allowed) {
+      log({ level: 'WARN', fn: 'admin-api', action: 'rate_limited', userId: user.id })
+      return jsonResponse({ error: 'Too many requests. Please wait.' }, 429)
+    }
+
     const { action, ...params } = await req.json()
 
     switch (action) {
@@ -169,6 +177,28 @@ serve(async (req) => {
       case 'edit-tenant': {
         const { tenant_id, ...updates } = params
         if (!tenant_id) return jsonResponse({ error: 'tenant_id required' }, 400)
+
+        // Validate slug uniqueness if slug is being changed
+        if (updates.slug) {
+          const { data: existingSlug } = await adminClient
+            .from('tenants')
+            .select('id')
+            .eq('slug', updates.slug)
+            .neq('id', tenant_id)
+            .maybeSingle()
+          if (existingSlug) return jsonResponse({ error: 'Slug already in use by another tenant' }, 400)
+        }
+
+        // Validate admin_email uniqueness if being changed
+        if (updates.admin_email) {
+          const { data: existingEmail } = await adminClient
+            .from('tenants')
+            .select('id')
+            .eq('admin_email', updates.admin_email)
+            .neq('id', tenant_id)
+            .maybeSingle()
+          if (existingEmail) return jsonResponse({ error: 'Admin email already in use by another tenant' }, 400)
+        }
 
         const allowedFields = ['name', 'slug', 'plan', 'max_users', 'admin_email', 'status']
         const cleanUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() }

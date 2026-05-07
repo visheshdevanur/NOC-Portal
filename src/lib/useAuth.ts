@@ -1,13 +1,74 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Database } from './database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
+/** Inactivity timeout in milliseconds (15 minutes) */
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+/** Warning before timeout in milliseconds (2 minutes before) */
+const WARNING_BEFORE_MS = 2 * 60 * 1000;
+
 export function useAuth() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionWarning, setSessionWarning] = useState(false);
+
+  // Inactivity timer refs
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Sign out due to inactivity */
+  const inactivitySignOut = useCallback(async () => {
+    setSessionWarning(false);
+    setUser(null);
+    setProfile(null);
+    await supabase.auth.signOut();
+  }, []);
+
+  /** Reset the inactivity timer on user interaction */
+  const resetInactivityTimer = useCallback(() => {
+    // Clear existing timers
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (warningRef.current) clearTimeout(warningRef.current);
+
+    // Don't set timers if no user is logged in
+    if (!user) return;
+
+    // Dismiss any active warning
+    setSessionWarning(false);
+
+    // Set warning timer (fires 2 minutes before logout)
+    warningRef.current = setTimeout(() => {
+      setSessionWarning(true);
+    }, INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_MS);
+
+    // Set logout timer
+    timeoutRef.current = setTimeout(() => {
+      inactivitySignOut();
+    }, INACTIVITY_TIMEOUT_MS);
+  }, [user, inactivitySignOut]);
+
+  // Set up inactivity listeners
+  useEffect(() => {
+    if (!user) {
+      setSessionWarning(false);
+      return;
+    }
+
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'] as const;
+    const handler = () => resetInactivityTimer();
+
+    events.forEach(e => window.addEventListener(e, handler, { passive: true }));
+    resetInactivityTimer(); // Start the timer
+
+    return () => {
+      events.forEach(e => window.removeEventListener(e, handler));
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (warningRef.current) clearTimeout(warningRef.current);
+    };
+  }, [user, resetInactivityTimer]);
 
   useEffect(() => {
     // Check active sessions and sets the user
@@ -73,5 +134,11 @@ export function useAuth() {
     }
   };
 
-  return { user, profile, loading };
+  /** Dismiss the session warning and reset the timer */
+  const dismissSessionWarning = useCallback(() => {
+    setSessionWarning(false);
+    resetInactivityTimer();
+  }, [resetInactivityTimer]);
+
+  return { user, profile, loading, sessionWarning, dismissSessionWarning };
 }

@@ -12,7 +12,7 @@ import { ThemeProvider } from './components/ThemeProvider';
 const SuperAdminApp = lazy(() => import('./pages/superadmin/SuperAdminApp'));
 
 function App() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, sessionWarning, dismissSessionWarning } = useAuth();
 
   if (loading) {
     return (
@@ -55,6 +55,28 @@ function App() {
   return (
     <ThemeProvider remoteTheme={profile?.theme} userId={user?.id} storageKey={`noc-theme-${user ? user.id : 'guest'}`}>
       <BrowserRouter>
+        {/* Session inactivity warning banner */}
+        {sessionWarning && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+            background: 'linear-gradient(90deg, #f59e0b, #d97706)',
+            color: '#1a1a1a', padding: '10px 20px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px',
+            fontSize: '14px', fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          }}>
+            <span>⚠️ You will be signed out in 2 minutes due to inactivity.</span>
+            <button
+              onClick={dismissSessionWarning}
+              style={{
+                background: 'rgba(0,0,0,0.15)', border: 'none', borderRadius: '6px',
+                padding: '4px 14px', cursor: 'pointer', color: '#1a1a1a',
+                fontWeight: 700, fontSize: '13px',
+              }}
+            >
+              Stay Signed In
+            </button>
+          </div>
+        )}
         <Routes>
           {/* Super Admin Portal — independent of NOC auth */}
           <Route path="/superadmin/*" element={
