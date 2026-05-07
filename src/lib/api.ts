@@ -4,18 +4,23 @@ import { supabase } from './supabase';
 // SYSTEM LOGS
 // =======================
 export const logActivity = async (action: string, details?: string) => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  const { data: profile } = await supabase.from('profiles').select('full_name, role, department_id').eq('id', user.id).single();
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: profile } = await supabase.from('profiles').select('full_name, role, department_id').eq('id', user.id).single();
 
-  await supabase.from('activity_logs').insert([{
-    user_id: user.id,
-    user_role: profile?.role,
-    department_id: profile?.department_id,
-    user_name: profile?.full_name,
-    action,
-    details
-  }]);
+    await supabase.from('activity_logs').insert([{
+      user_id: user.id,
+      user_role: profile?.role,
+      department_id: profile?.department_id,
+      user_name: profile?.full_name,
+      action,
+      details
+    }]);
+  } catch (err) {
+    // Logging failure should never break the main operation
+    console.error('[logActivity] Failed to write audit log:', err);
+  }
 };
 
 /** Helper to detect 1st/2nd year semesters by name */
@@ -309,59 +314,14 @@ export const removeImportedTeacher = async (departmentId: string, teacherId: str
 };
 
 export const assignTeacherToSection = async (subjectId: string, section: string, teacherId: string, semesterId: string) => {
-
-  // 1. Find students in this section + semester
-  const { data: students, error: studentError } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('role', 'student')
-    .eq('section', section)
-    .eq('semester_id', semesterId);
-    
-  if (studentError) {
-    console.error('[assignTeacherToSection] Student query failed:', studentError);
-    throw studentError;
-  }
-  if (!students || students.length === 0) return [];
-  
-  const studentIds = students.map(s => s.id);
-  
-  // 2. Check which students already have enrollment for this subject
-  const { data: existing } = await supabase
-    .from('subject_enrollment')
-    .select('id, student_id')
-    .eq('subject_id', subjectId)
-    .in('student_id', studentIds);
-    
-  const existingSet = new Set(existing?.map((e: any) => e.student_id));
-  
-  // 3. Insert new enrollment records for students not yet enrolled
-  const newEnrollments = students
-    .filter(s => !existingSet.has(s.id))
-    .map(s => ({
-       student_id: s.id,
-       subject_id: subjectId,
-       teacher_id: teacherId,
-    }));
-
-  if (newEnrollments.length > 0) {
-     const { error: insertErr } = await supabase.from('subject_enrollment').insert(newEnrollments);
-     if (insertErr) {
-       throw new Error(`Failed to create enrollments: ${insertErr.message}. Code: ${insertErr.code}`);
-     }
-  }
-
-  // 4. Update all matching enrollments with the teacher_id
-  const { data, error } = await supabase
-    .from('subject_enrollment')
-    .update({ teacher_id: teacherId })
-    .eq('subject_id', subjectId)
-    .in('student_id', studentIds)
-    .select();
-    
-  if (error) {
-    throw error;
-  }
+  // Use the atomic RPC which handles upserts + tenant isolation in a single transaction
+  const { data, error } = await supabase.rpc('assign_teacher_to_section_rpc', {
+    p_subject_id: subjectId,
+    p_section: section,
+    p_teacher_id: teacherId,
+    p_semester_id: semesterId,
+  });
+  if (error) throw error;
 
   const { data: tProfile } = await supabase.from('profiles').select('full_name').eq('id', teacherId).single();
   const { data: sInfo } = await supabase.from('subjects').select('subject_name').eq('id', subjectId).single();
@@ -1133,64 +1093,21 @@ export const deleteAttendanceCategory = async (id: string) => {
   logActivity('Deleted Fine Category', `Removed category ${id}`);
 };
 
-/** Apply mass fines: match attendance_pct against categories, set attendance_fee on rejected enrollments */
+/** Apply mass fines: server-side batch operation via RPC */
 export const applyMassFines = async (departmentId: string, isFirstYear: boolean) => {
-  // 1. Get categories for this department
+  // Verify categories exist first (fast client-side check)
   const categories = await getAttendanceCategories(departmentId);
   if (categories.length === 0) throw new Error('No attendance fine categories configured. Please create categories first.');
 
-  // 2. Get all rejected enrollments for this department
-  const fines = await getStaffAttendanceFines(departmentId);
-  
-  // 3. Filter by first year or not
-  const filtered = (fines || []).filter((item: any) => {
-    const semName = item.profiles?.semesters?.name || '';
-    return isFirstYear ? isFirstYearSem(semName) : !isFirstYearSem(semName);
+  // Execute as a single server-side batch operation
+  const { data, error } = await supabase.rpc('rpc_apply_mass_fines', {
+    p_department_id: departmentId,
+    p_is_first_year: isFirstYear,
   });
+  if (error) throw error;
 
-  let updated = 0;
-  let skipped = 0;
-
-  for (const enrollment of filtered) {
-    const pct = enrollment.attendance_pct || 0;
-    
-    // Already has a fee assigned and verified â€” skip
-    if (enrollment.attendance_fee > 0 && enrollment.attendance_fee_verified) {
-      skipped++;
-      continue;
-    }
-    
-    // Find matching category
-    const match = categories.find((c: any) => pct >= c.min_pct && pct <= c.max_pct);
-    if (!match) {
-      skipped++;
-      continue;
-    }
-
-    const newFee = Number(match.fine_amount);
-    // Skip if same fine already applied
-    if (enrollment.attendance_fee === newFee) {
-      skipped++;
-      continue;
-    }
-
-    const { data: updatedRow, error } = await supabase
-      .from('subject_enrollment')
-      .update({ attendance_fee: newFee, attendance_fee_verified: false })
-      .eq('id', enrollment.id)
-      .select('id, attendance_fee')
-      .single();
-    
-    if (!error && updatedRow && updatedRow.attendance_fee === newFee) {
-      updated++;
-    } else {
-      console.warn(`Failed to update enrollment ${enrollment.id}:`, error?.message || 'RLS blocked or no rows matched');
-      skipped++;
-    }
-  }
-
-  logActivity('Applied Mass Fines', `Auto-assigned fines to ${updated} students (${skipped} skipped) based on ${categories.length} categories.`);
-  return { updated, skipped, total: filtered.length };
+  const result = data as { updated?: number; skipped?: number; total?: number } | null;
+  return { updated: result?.updated || 0, skipped: result?.skipped || 0, total: result?.total || 0 };
 };
 
 /** Reduce (modify) a specific student's attendance fine */
@@ -1475,59 +1392,27 @@ export const getStudentsNeedingSections = async (departmentId: string) => {
   return data;
 };
 
-/** Bulk assign sections to students */
+/** Bulk assign sections to students — batch RPC */
 export const bulkAssignSections = async (assignments: { student_id: string; section: string }[]) => {
-  let updated = 0;
-  for (const a of assignments) {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ section: a.section.toUpperCase() })
-      .eq('id', a.student_id);
-    if (error) throw error;
-    updated++;
-  }
-  logActivity('Bulk Assigned Sections', `Assigned sections to ${updated} students`);
-  return updated;
+  const { data, error } = await supabase.rpc('rpc_bulk_assign_sections', {
+    p_assignments: assignments,
+  });
+  if (error) throw error;
+  const result = data as { updated?: number } | null;
+  return result?.updated || 0;
 };
 
-/** Bulk assign sections via CSV (matching by roll_number/USN) */
+/** Bulk assign sections via CSV — batch RPC */
 export const bulkAssignSectionsCSV = async (departmentId: string, rows: { roll_number: string; section: string }[]) => {
-  const rollNumbers = rows.map(r => r.roll_number.trim().toUpperCase());
+  const { data, error } = await supabase.rpc('rpc_bulk_assign_sections_csv', {
+    p_department_id: departmentId,
+    p_rows: rows,
+  });
+  if (error) throw error;
 
-  const { data: students, error: studentError } = await supabase
-    .from('profiles')
-    .select('id, roll_number')
-    .eq('role', 'student')
-    .eq('department_id', departmentId)
-    .in('roll_number', rollNumbers);
-
-  if (studentError) throw studentError;
-  if (!students || students.length === 0) {
-    throw new Error('No matching students found for the provided USNs.');
-  }
-
-  const studentMap = new Map(students.map(s => [s.roll_number?.toUpperCase(), s.id]));
-  let updated = 0;
-  const errors: string[] = [];
-
-  for (const row of rows) {
-    const studentId = studentMap.get(row.roll_number.trim().toUpperCase());
-    if (!studentId) {
-      errors.push(`USN "${row.roll_number}" not found`);
-      continue;
-    }
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ section: row.section.trim().toUpperCase() })
-      .eq('id', studentId);
-
-    if (error) {
-      errors.push(`USN "${row.roll_number}": ${error.message}`);
-    } else {
-      updated++;
-    }
-  }
+  const result = data as { updated?: number; errors?: string[] } | null;
+  const updated = result?.updated || 0;
+  const errors = result?.errors || [];
 
   logActivity('CSV Section Assignment', `Assigned sections to ${updated}/${rows.length} students in department`);
   return { updated, errors };
