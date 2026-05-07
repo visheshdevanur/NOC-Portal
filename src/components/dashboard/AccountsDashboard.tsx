@@ -1,6 +1,7 @@
-﻿import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
-import { getAllStudentDues, getAllDepartments, getSemestersByDepartment, updateStudentDueFee, logActivity } from '../../lib/api';
+import { updateStudentDueFee, logActivity } from '../../lib/api';
 import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -24,15 +25,10 @@ type StudentDues = {
 
 export default function AccountsDashboard() {
   const { profile } = useAuth();
-  const [dues, setDues] = useState<StudentDues[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [uploadingCSV, setUploadingCSV] = useState(false);
-  
-  const [departmentsList, setDepartmentsList] = useState<any[]>([]);
-  const [semestersList, setSemestersList] = useState<any[]>([]);
 
   // Hierarchical State
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
@@ -41,59 +37,28 @@ export default function AccountsDashboard() {
   const [selectedSemesterName, setSelectedSemesterName] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
 
+  // React Query: auto-caching, background refresh every 30s, deduplication
+  const { data: duesData, isLoading: loading, refetch: refetchDues } = useQuery({
+    queryKey: ['allStudentDues'],
+    queryFn: () => import('../../lib/api').then(m => m.getAllStudentDues()),
+    refetchInterval: 30_000,
+  });
+  const dues = (duesData || []) as unknown as StudentDues[];
 
+  const { data: departmentsData } = useQuery({
+    queryKey: ['allDepartments'],
+    queryFn: () => import('../../lib/api').then(m => m.getAllDepartments()),
+  });
+  const departmentsList = departmentsData || [];
 
+  const { data: semestersData } = useQuery({
+    queryKey: ['semesters', selectedDeptId],
+    queryFn: () => import('../../lib/api').then(m => m.getSemestersByDepartment(selectedDeptId!)),
+    enabled: !!selectedDeptId,
+  });
+  const semestersList = semestersData || [];
 
-
-  useEffect(() => {
-    fetchDues();
-    fetchDepartments();
-
-    // FIX #21: Replace Realtime WebSocket with interval polling (30s)
-    const interval = setInterval(() => { fetchDues(); }, 30_000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (selectedDeptId) {
-      fetchSemesters(selectedDeptId);
-    } else {
-      setSemestersList([]);
-    }
-  }, [selectedDeptId]);
-
-  const fetchDepartments = async () => {
-    try {
-      const data = await getAllDepartments();
-      setDepartmentsList(data || []);
-    } catch (err: any) {
-      setError(`Departments: ${err?.message || 'Unknown error'}`);
-    }
-  };
-
-  const fetchSemesters = async (deptId: string) => {
-    try {
-      const data = await getSemestersByDepartment(deptId);
-      setSemestersList(data || []);
-    } catch (err: any) {
-      setError(`Semesters: ${err?.message || 'Unknown error'}`);
-    }
-  };
-
-  const fetchDues = async () => {
-    setLoading(true);
-    try {
-      const data = await getAllStudentDues();
-      setDues(data as unknown as StudentDues[]);
-    } catch (err: any) {
-      setError(`Dues: ${err?.message || 'Unknown error'}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fetchDues = () => { refetchDues(); };
 
 
 
@@ -116,14 +81,8 @@ export default function AccountsDashboard() {
       } else {
         await logActivity('Updated Due Amount', `Set due amount to â‚¹${fineAmount} (Paid: â‚¹${paidAmount}) for ${profileName}`);
       }
-      // Update local state
-      setDues(prev => prev.map(d => {
-        if (d.id === dueId) {
-          const remaining = fineAmount - paidAmount;
-          return { ...d, fine_amount: fineAmount, paid_amount: paidAmount, status: remaining > 0 ? 'pending' : 'completed' };
-        }
-        return d;
-      }));
+      // Refetch to get updated state from server
+      refetchDues();
       setSuccess(`Due amount updated. Fine: â‚¹${fineAmount}, Paid: â‚¹${paidAmount}.`);
     } catch (err: any) {
       setError('Failed to update due amount: ' + (err?.message || 'Unknown'));

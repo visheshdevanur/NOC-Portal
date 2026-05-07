@@ -1,13 +1,12 @@
-import { useState, useEffect } from 'react';
-import { getLibraryDues, bulkProcessLibraryDues, getAllDepartments, getSemestersByDepartment, setLibraryDue, permitLibraryDue, clearLibraryDue } from '../lib/api';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { bulkProcessLibraryDues, setLibraryDue, permitLibraryDue, clearLibraryDue } from '../lib/api';
 import { BookOpen, UserCheck, AlertCircle, Search, Upload, Download, RefreshCw, X, Building2, GraduationCap, CornerUpLeft, Users, ShieldCheck, ShieldOff, ShieldAlert } from 'lucide-react';
 import Papa from 'papaparse';
 import { getFriendlyErrorMessage } from '../lib/errorHandler';
 import { validateCsvFileSize } from '../lib/csvSanitizer';
 
 export default function LibraryDashboard() {
-  const [libraryDues, setLibraryDues] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
   // CSV Upload States
@@ -22,56 +21,32 @@ export default function LibraryDashboard() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Hierarchical State
-  const [departmentsList, setDepartmentsList] = useState<any[]>([]);
-  const [semestersList, setSemestersList] = useState<any[]>([]);
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
   const [selectedDeptName, setSelectedDeptName] = useState<string | null>(null);
   const [selectedSemesterId, setSelectedSemesterId] = useState<string | null>(null);
   const [selectedSemesterName, setSelectedSemesterName] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchDues();
-    fetchDepartments();
-  }, []);
+  // React Query: auto-caching, background refresh, deduplication
+  const { data: libraryDuesData, isLoading: loading, refetch: refetchDues } = useQuery({
+    queryKey: ['libraryDues'],
+    queryFn: () => import('../lib/api').then(m => m.getLibraryDues()),
+  });
+  const libraryDues = libraryDuesData || [];
 
-  useEffect(() => {
-    if (selectedDeptId) {
-      fetchSemesters(selectedDeptId);
-    } else {
-      setSemestersList([]);
-    }
-  }, [selectedDeptId]);
+  const { data: departmentsData } = useQuery({
+    queryKey: ['allDepartments'],
+    queryFn: () => import('../lib/api').then(m => m.getAllDepartments()),
+  });
+  const departmentsList = departmentsData || [];
 
-  const fetchDepartments = async () => {
-    try {
-      const data = await getAllDepartments();
-      setDepartmentsList(data || []);
-    } catch (err: any) {
-      setErrorMsg('Failed to load departments');
-    }
-  };
+  const { data: semestersData } = useQuery({
+    queryKey: ['semesters', selectedDeptId],
+    queryFn: () => import('../lib/api').then(m => m.getSemestersByDepartment(selectedDeptId!)),
+    enabled: !!selectedDeptId,
+  });
+  const semestersList = semestersData || [];
 
-  const fetchSemesters = async (deptId: string) => {
-    try {
-      const data = await getSemestersByDepartment(deptId);
-      setSemestersList(data || []);
-    } catch (err: any) {
-      setErrorMsg('Failed to load semesters');
-    }
-  };
-
-  const fetchDues = async () => {
-    setLoading(true);
-    try {
-      const data = await getLibraryDues();
-      setLibraryDues(data || []);
-    } catch (err: any) {
-      console.error(err);
-      setErrorMsg('Failed to load library dues');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fetchDues = () => { refetchDues(); };
 
   const handleSetDue = async (due: any) => {
     setActionLoading(due.id);
@@ -420,7 +395,7 @@ export default function LibraryDashboard() {
             {selectedDeptId && !selectedSemesterId && (
               <div className="space-y-4 animate-in fade-in duration-300">
                 <button
-                  onClick={() => { setSelectedDeptId(null); setSelectedDeptName(null); setSemestersList([]); }}
+                  onClick={() => { setSelectedDeptId(null); setSelectedDeptName(null); }}
                   className="flex items-center text-sm font-bold text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <CornerUpLeft className="w-4 h-4 mr-2" /> Back to Branches
