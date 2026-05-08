@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import {
   getUsersByDeptAndRoles,
@@ -57,7 +58,6 @@ const isFirstYearSem = (name: string) => {
 export default function StaffDashboard() {
   const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('users');
-  const [deptName, setDeptName] = useState<string>('');
 
   // Users State
   const [departmentUsers, setDepartmentUsers] = useState<UserProfile[]>([]);
@@ -167,18 +167,13 @@ export default function StaffDashboard() {
   const [mgAssignments, setMgAssignments] = useState<Record<string, string>>({});
   const [mgSaving, setMgSaving] = useState(false);
 
-  useEffect(() => {
-    if (profile?.department_id) {
-      fetchDeptName();
-      fetchData();
-
-      // FIX #21: Replace Realtime WebSocket with interval polling (30s)
-      const interval = setInterval(() => {
-        if (activeTab === 'users') fetchUsers();
-      }, 30_000);
-      return () => { clearInterval(interval); }
-    }
-  }, [profile]);
+  // React Query: department name with caching
+  const { data: deptData } = useQuery({
+    queryKey: ['department', profile?.department_id],
+    queryFn: () => getDepartmentById(profile!.department_id!),
+    enabled: !!profile?.department_id,
+  });
+  const deptName = deptData?.name || profile?.department_id || '';
 
   useEffect(() => {
     if (activeTab === 'users' || activeTab === 'sections') { fetchUsers(); fetchSemesters(); }
@@ -227,20 +222,11 @@ export default function StaffDashboard() {
     }
   };
 
-  const fetchDeptName = async () => {
-    if (!profile?.department_id) return;
-    try {
-      const dept = await getDepartmentById(profile.department_id);
-      setDeptName(dept?.name || profile.department_id);
-    } catch { setDeptName(profile.department_id); }
-  };
-
   // ==================== ACTIVITY LOGS ======================
   const fetchStaffLogs = async () => {
     if (!profile?.department_id) return;
     setLogsLoading(true);
     try {
-      // Fetch logs for faculty/teacher roles in this department
       const { data, error } = await supabase
         .from('activity_logs')
         .select('*')
@@ -250,7 +236,7 @@ export default function StaffDashboard() {
         .limit(300);
       if (error) throw error;
       setStaffLogs(data || []);
-    } catch (err: any) { console.error('Failed to fetch faculty logs:', err); }
+    } catch (err: any) { console.error('Failed to fetch staff logs:', err); }
     finally { setLogsLoading(false); }
   };
 
@@ -265,7 +251,6 @@ export default function StaffDashboard() {
     if (!profile?.department_id) return;
     setStudentDuesLoading(true);
     try {
-      // Fetch students in department
       const { data: allStudents, error: studErr } = await supabase
         .from('profiles')
         .select('id, full_name, roll_number, section, semester_id, semesters(name)')
@@ -274,7 +259,6 @@ export default function StaffDashboard() {
         .order('full_name');
       if (studErr) throw studErr;
 
-      // Staff only sees higher semester students (not 1st/2nd)
       const students = (allStudents || []).filter((s: any) => {
         const semName = s.semesters?.name;
         if (!semName) return true;
@@ -284,28 +268,24 @@ export default function StaffDashboard() {
       const studentIds = students.map((s: any) => s.id);
       if (studentIds.length === 0) { setStudentDuesOverview([]); setStudentDuesLoading(false); return; }
 
-      // Fetch library dues for these students
       const { data: libDues, error: libErr } = await supabase
         .from('library_dues')
         .select('student_id, has_dues, fine_amount, paid_amount, remarks')
         .in('student_id', studentIds);
       if (libErr) throw libErr;
 
-      // Fetch college fee dues for these students
       const { data: collegeDues, error: colErr } = await supabase
         .from('student_dues')
         .select('student_id, fine_amount, status, paid_amount')
         .in('student_id', studentIds);
       if (colErr) throw colErr;
 
-      // Fetch attendance fines for these students
       const { data: attendanceData, error: attErr } = await supabase
         .from('subject_enrollment')
         .select('student_id, attendance_fee, attendance_fee_verified')
         .in('student_id', studentIds);
       if (attErr) throw attErr;
 
-      // Build maps
       const libMap = new Map((libDues || []).map((d: any) => [d.student_id, d]));
       const colMap = new Map((collegeDues || []).map((d: any) => [d.student_id, d]));
       const attMapUnpaid = new Map();
@@ -321,7 +301,6 @@ export default function StaffDashboard() {
         }
       });
 
-      // Merge into combined records
       const combined = students.map((s: any) => ({
         ...s,
         library: libMap.get(s.id) || null,
@@ -343,10 +322,6 @@ export default function StaffDashboard() {
     s.roll_number?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
     s.section?.toLowerCase().includes(studentDuesSearch.toLowerCase())
   );
-
-  const fetchData = async () => {
-    // Legacy Dues fetch disabled
-  };
 
   // ==================== ATTENDANCES ======================
   const fetchAttendances = async () => {
