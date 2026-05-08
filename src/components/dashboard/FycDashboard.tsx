@@ -378,7 +378,7 @@ export default function FycDashboard() {
       return;
     }
 
-    // Clerk is global (not department-scoped) â€” no department_id needed
+    // Clerk is global (not department-scoped) — no department_id needed
 
     if (newUser.role === 'teacher' && !newUser.teacher_id) {
       setUserError('Teacher ID is required for Teachers.');
@@ -784,7 +784,7 @@ export default function FycDashboard() {
         <div className="space-y-6">
           {userSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>âœ“ {userSuccess}</span>
+              <span>✓ {userSuccess}</span>
               <button onClick={() => setUserSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -840,7 +840,7 @@ export default function FycDashboard() {
                 )}
                 {importSuccess && (
                   <div className="p-3 mb-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-                    <span>âœ“ {importSuccess}</span>
+                    <span>✓ {importSuccess}</span>
                     <button onClick={() => setImportSuccess(null)}><X className="w-4 h-4" /></button>
                   </div>
                 )}
@@ -977,7 +977,7 @@ export default function FycDashboard() {
                       <option value="teacher">Teacher</option>
                     </select>
                   </div>
-                  {/* Clerk is global â€” no department selector needed */}
+                  {/* Clerk is global — no department selector needed */}
                   {newUser.role === 'teacher' && (
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-1">Teacher ID</label>
@@ -1033,7 +1033,7 @@ export default function FycDashboard() {
                               )}
                             </div>
                           </td>
-                          <td className="p-4 text-muted-foreground">{u.departments?.name || 'â€”'}</td>
+                          <td className="p-4 text-muted-foreground">{u.departments?.name || '—'}</td>
                           <td className="p-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${roleColors[u.role] || 'bg-secondary text-foreground'}`}>
                               {u.role}
@@ -1144,7 +1144,7 @@ export default function FycDashboard() {
                                      return (
                                        <tr key={s.id} className="hover:bg-secondary/10 transition-colors bg-background">
                                          <td className="p-3 font-medium text-foreground">{s.full_name}</td>
-                                         <td className="p-3 text-muted-foreground text-sm font-mono">{(s).roll_number || 'â€”'}</td>
+                                         <td className="p-3 text-muted-foreground text-sm font-mono">{(s).roll_number || '—'}</td>
                                          <td className="p-3">
                                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${
                                               !req ? 'bg-secondary text-muted-foreground' : 
@@ -1155,7 +1155,7 @@ export default function FycDashboard() {
                                               {!req ? 'NOT APPLIED' : req.status.toUpperCase()}
                                            </span>
                                          </td>
-                                         <td className="p-3 text-xs font-medium text-muted-foreground">{req ? req.current_stage : 'â€”'}</td>
+                                         <td className="p-3 text-xs font-medium text-muted-foreground">{req ? req.current_stage : '—'}</td>
                                        </tr>
                                      )
                                   })}
@@ -1225,7 +1225,7 @@ export default function FycDashboard() {
                         <th className="p-4 font-semibold">Department</th>
                         <th className="p-4 font-semibold">Subject</th>
                         <th className="p-4 font-semibold text-center">Attendance %</th>
-                        <th className="p-4 font-semibold text-center">Paid Fine (â‚¹)</th>
+                        <th className="p-4 font-semibold text-center">Paid Fine (₹)</th>
                         <th className="p-4 font-semibold">Status</th>
                       </tr>
                     </thead>
@@ -1233,8 +1233,8 @@ export default function FycDashboard() {
                       {filtered.map(item => (
                         <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
                           <td className="p-4 font-medium text-foreground">{item.profiles?.full_name}</td>
-                          <td className="p-4 text-muted-foreground font-mono text-sm">{item.profiles?.roll_number || 'â€”'}</td>
-                          <td className="p-4 text-sm">{item.profiles?.departments?.name || 'â€”'}</td>
+                          <td className="p-4 text-muted-foreground font-mono text-sm">{item.profiles?.roll_number || '—'}</td>
+                          <td className="p-4 text-sm">{item.profiles?.departments?.name || '—'}</td>
                           <td className="p-4">
                             <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
                             <div className="text-xs text-muted-foreground">{item.subjects?.subject_code}</div>
@@ -1243,7 +1243,7 @@ export default function FycDashboard() {
                             <span className="text-amber-600 dark:text-amber-400 font-bold">{item.attendance_pct}%</span>
                           </td>
                           <td className="p-4 text-center font-bold text-foreground">
-                            {item.attendance_fee ? `â‚¹${item.attendance_fee}` : 'â€”'}
+                            {item.attendance_fee ? `₹${item.attendance_fee}` : '—'}
                           </td>
                           <td className="p-4">
                             <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
@@ -1489,7 +1489,7 @@ export default function FycDashboard() {
                             </span>
                             {hasAssignments ? (
                               <span className="text-xs text-muted-foreground">
-                                {teacher.assignments.length} subject{teacher.assignments.length !== 1 ? 's' : ''} Â· {[...new Set(teacher.assignments.flatMap(a => a.sections))].length} section{[...new Set(teacher.assignments.flatMap(a => a.sections))].length !== 1 ? 's' : ''}
+                                {teacher.assignments.length} subject{teacher.assignments.length !== 1 ? 's' : ''} · {[...new Set(teacher.assignments.flatMap(a => a.sections))].length} section{[...new Set(teacher.assignments.flatMap(a => a.sections))].length !== 1 ? 's' : ''}
                               </span>
                             ) : (
                               <span className="text-xs text-amber-500 font-medium">No sections assigned</span>
@@ -1642,7 +1642,7 @@ export default function FycDashboard() {
                               {log.action}
                             </span>
                           </td>
-                          <td className="p-4 text-sm text-muted-foreground">{log.details || 'â€”'}</td>
+                          <td className="p-4 text-sm text-muted-foreground">{log.details || '—'}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -73,17 +73,17 @@ export default function AccountsDashboard() {
       await updateStudentDueFee(dueId, fineAmount, paidAmount);
       
       if (fineAmount === 0 && previousAmount > 0) {
-        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName} (Paid: â‚¹${previousAmount})`);
+        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName} (Paid: ₹${previousAmount})`);
       } else if (fineAmount === 0 && previousAmount === 0) {
         await logActivity('Cleared Due Amount', `Cleared dues for ${profileName}`);
       } else if (diff > 0) {
-        await logActivity('Updated Due Amount', `Set due amount to â‚¹${fineAmount} for ${profileName} (Paid: â‚¹${diff})`);
+        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} for ${profileName} (Paid: ₹${diff})`);
       } else {
-        await logActivity('Updated Due Amount', `Set due amount to â‚¹${fineAmount} (Paid: â‚¹${paidAmount}) for ${profileName}`);
+        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} (Paid: ₹${paidAmount}) for ${profileName}`);
       }
       // Refetch to get updated state from server
       refetchDues();
-      setSuccess(`Due amount updated. Fine: â‚¹${fineAmount}, Paid: â‚¹${paidAmount}.`);
+      setSuccess(`Due amount updated. Fine: ₹${fineAmount}, Paid: ₹${paidAmount}.`);
     } catch (err: any) {
       setError('Failed to update due amount: ' + (err?.message || 'Unknown'));
     }
@@ -256,7 +256,7 @@ export default function AccountsDashboard() {
         </div>
       )}
 
-      {/* Breadcrumb Bar â€” hidden during global search */}
+      {/* Breadcrumb Bar — hidden during global search */}
       {!isGlobalSearch && (
       <div className="flex bg-card p-4 rounded-2xl items-center text-sm font-medium text-muted-foreground overflow-x-auto whitespace-nowrap shadow-sm border border-border">
         <button 
@@ -329,11 +329,11 @@ export default function AccountsDashboard() {
                         <td className="p-5 font-medium text-foreground text-sm sm:text-base">{d.profiles?.full_name || 'Unknown'}</td>
                         <td className="p-5 text-sm text-muted-foreground font-bold tracking-widest">{d.profiles?.roll_number || 'N/A'}</td>
                         <td className="p-5 text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">{d.profiles?.departments?.name || 'â€”'}</span>
-                          <span className="mx-1">Â·</span>
-                          <span>{d.profiles?.semesters?.name || 'â€”'}</span>
-                          <span className="mx-1">Â·</span>
-                          <span>Sec {d.profiles?.section || 'â€”'}</span>
+                          <span className="font-medium text-foreground">{d.profiles?.departments?.name || '—'}</span>
+                          <span className="mx-1">·</span>
+                          <span>{d.profiles?.semesters?.name || '—'}</span>
+                          <span className="mx-1">·</span>
+                          <span>Sec {d.profiles?.section || '—'}</span>
                         </td>
                         <td className="p-5">
                           {(() => {

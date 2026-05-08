@@ -159,7 +159,7 @@ export default function AdminDashboard() {
 
   // ==================== SYSTEM LOGS ====================
   // Admin should only see logs from Librarian, HOD, and Accounts
-  const ADMIN_VISIBLE_ROLES = ['librarian', 'hod', 'accounts'];
+  const ADMIN_VISIBLE_ROLES = ['librarian', 'hod', 'accounts', 'fyc'];
   const fetchAdminLogs = async () => {
     setLogsLoading(true);
     try {
@@ -236,7 +236,7 @@ export default function AdminDashboard() {
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'principal', 'librarian']).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'principal', 'librarian', 'fyc']).order('created_at', { ascending: false });
       if (error) throw error;
       setUsers(data || []);
     } catch (err: any) { console.error('Failed to fetch users:', err); }
@@ -750,7 +750,7 @@ export default function AdminDashboard() {
                     {u.role}
                   </span>
                 </td>
-                <td className="p-3 text-muted-foreground">{u.section || u.semesters?.name ? `${u.semesters?.name ? `Sem ${u.semesters.name} ` : ''}${u.section || ''}` : 'â€”'}</td>
+                <td className="p-3 text-muted-foreground">{u.section || u.semesters?.name ? `${u.semesters?.name ? `Sem ${u.semesters.name} ` : ''}${u.section || ''}` : '—'}</td>
                 <td className="p-3 text-muted-foreground">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
               </tr>
             ))}
@@ -879,7 +879,7 @@ export default function AdminDashboard() {
                         return numA - numB;
                       }).map(([sem, count]) => {
                         const semNum = parseInt(sem);
-                        const arrow = semNum === 8 ? 'â†’ Graduated' : isNaN(semNum) ? '' : `â†’ Sem ${semNum + 1}`;
+                        const arrow = semNum === 8 ? '→ Graduated' : isNaN(semNum) ? '' : `→ Sem ${semNum + 1}`;
                         return (
                           <div key={sem} className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">
@@ -902,14 +902,14 @@ export default function AdminDashboard() {
               <div className="space-y-4">
                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
                   <p className="text-amber-600 dark:text-amber-400 font-medium text-sm">
-                    âš ï¸ This action will promote ALL students across ALL departments to their next semester.
+                    ⚠️ This action will promote ALL students across ALL departments to their next semester.
                   </p>
                 </div>
                 <div className="text-sm text-muted-foreground space-y-2">
-                  <p>â€¢ Semesters 1â†’2, 2â†’3, ... 7â†’8</p>
-                  <p>â€¢ <strong>8th Sem</strong> students will be moved to <strong>Graduated</strong></p>
-                  <p>â€¢ <strong>2ndâ†’3rd Sem</strong> students will have sections cleared for reassignment</p>
-                  <p>â€¢ All old clearance data, enrollments, IA attendance will be cleared</p>
+                  <p>• Semesters 1→2, 2→3, ... 7→8</p>
+                  <p>• <strong>8th Sem</strong> students will be moved to <strong>Graduated</strong></p>
+                  <p>• <strong>2nd→3rd Sem</strong> students will have sections cleared for reassignment</p>
+                  <p>• All old clearance data, enrollments, IA attendance will be cleared</p>
                 </div>
                 <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl">
                   <p className="text-foreground text-sm font-medium">
@@ -983,7 +983,7 @@ export default function AdminDashboard() {
                           {isDeptExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
                           <div>
                             <h3 className="text-lg font-bold text-foreground">{dept}</h3>
-                            <p className="text-sm text-muted-foreground">{deptStudents.length} students â€¢ {Object.keys(batches).length} semester(s)</p>
+                            <p className="text-sm text-muted-foreground">{deptStudents.length} students • {Object.keys(batches).length} semester(s)</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -1016,7 +1016,7 @@ export default function AdminDashboard() {
                                         {students.map((s: any) => (
                                           <tr key={s.id} className="hover:bg-secondary/10 transition-colors">
                                             <td className="p-3 font-medium text-foreground">{s.full_name}</td>
-                                            <td className="p-3 text-muted-foreground font-mono text-sm">{s.roll_number || 'â€”'}</td>
+                                            <td className="p-3 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
                                             <td className="p-3 text-muted-foreground text-sm">{new Date(s.created_at).toLocaleDateString()}</td>
                                           </tr>
                                         ))}
@@ -1242,7 +1242,7 @@ export default function AdminDashboard() {
                             {u.role}
                           </span>
                         </td>
-                        <td className="p-4 text-muted-foreground">{departments.find(d => d.hod_id === u.id)?.name || 'â€”'}</td>
+                        <td className="p-4 text-muted-foreground">{departments.find(d => d.hod_id === u.id)?.name || '—'}</td>
                         <td className="p-4 text-right">
                           {u.role !== 'admin' && (
                             <>
@@ -1354,7 +1354,7 @@ export default function AdminDashboard() {
 
                {/* Mass Create Semester Modal (no dept selected) */}
                {showCreateSemester && !selectedDeptSubjects && (
-                 <Modal title="Mass Create Semesters â€” All Departments" icon={<Plus className="w-5 h-5 text-primary" />} onClose={() => setShowCreateSemester(false)}>
+                 <Modal title="Mass Create Semesters — All Departments" icon={<Plus className="w-5 h-5 text-primary" />} onClose={() => setShowCreateSemester(false)}>
                    {semesterError && <div className="mb-4"><AlertBanner type="error" message={semesterError} onClose={() => setSemesterError(null)} /></div>}
                    <div className="space-y-4">
                      <FormField label="Semester Names (comma-separated)">
@@ -1490,13 +1490,13 @@ export default function AdminDashboard() {
                     <ShieldCheck className="w-6 h-6 text-amber-500" />
                     <div>
                       <h3 className="text-lg font-bold text-foreground">Global Users</h3>
-                      <p className="text-sm text-muted-foreground">Accounts, Librarian, Admin, Principal</p>
+                      <p className="text-sm text-muted-foreground">Accounts, Librarian, FYC, Admin, Principal</p>
                     </div>
                   </div>
                 </button>
                 {expandedAllUsersSections.has('global') && (
                   <div className="border-t border-border p-4 bg-background/50">
-                     {renderUsersTable(filteredAllUsers.filter(u => ['admin', 'principal', 'accounts', 'librarian'].includes(u.role) || (!u.department_id && u.role !== 'student')))}
+                     {renderUsersTable(filteredAllUsers.filter(u => ['admin', 'principal', 'accounts', 'librarian', 'fyc'].includes(u.role) || (!u.department_id && u.role !== 'student')))}
                   </div>
                 )}
               </div>
@@ -1597,10 +1597,11 @@ export default function AdminDashboard() {
                 disabled={['accounts', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all'}
               >
                 <option value="all">All Roles</option>
-
-                <option value="librarian">Librarian</option>
+                {/* Show context-appropriate roles based on dept filter */}
+                {(logsDeptFilter === 'all' || logsDeptFilter === 'library') && <option value="librarian">Librarian</option>}
                 <option value="hod">HODs</option>
-                <option value="accounts">Accounts</option>
+                {(logsDeptFilter === 'all' || logsDeptFilter === 'accounts') && <option value="accounts">Accounts</option>}
+                <option value="fyc">First Year Coordinator</option>
               </select>
               {['accounts', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all' && (
                 <p className="text-xs text-muted-foreground mt-1">Role is implicitly set by department.</p>
@@ -1702,7 +1703,7 @@ function AlertBanner({ type, message, onClose }: { type: 'error' | 'success'; me
     : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400';
   return (
     <div className={`p-4 border rounded-xl text-sm flex justify-between items-center ${cls}`}>
-      <span>{type === 'error' ? <strong>Error: </strong> : 'âœ“ '}{message}</span>
+      <span>{type === 'error' ? <strong>Error: </strong> : '✓ '}{message}</span>
       <button onClick={onClose}><X className="w-4 h-4" /></button>
     </div>
   );

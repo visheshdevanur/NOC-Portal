@@ -187,7 +187,7 @@ export default function StudentDashboard() {
               isBulk: false
             });
             if ((result)?.pending_confirmation) {
-              setLocalErrorMsg("Payment received â€” confirmation may take a moment. Refreshing...");
+              setLocalErrorMsg("Payment received — confirmation may take a moment. Refreshing...");
             }
             refetch();
           } catch (err: any) {
@@ -513,7 +513,7 @@ export default function StudentDashboard() {
             </p>
             {!canDownloadHallTicket && (
               <p className="text-xs text-destructive mt-1 font-medium">
-                âš  {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : `Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval.`}
+                ⚠ {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : `Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval.`}
               </p>
             )}
           </div>
@@ -655,7 +655,7 @@ export default function StudentDashboard() {
 
                     {!isEligible && (
                       <p className="mt-3 text-xs text-destructive font-medium bg-destructive/10 px-3 py-2 rounded-lg border border-destructive/20">
-                        âš  Insufficient IA Attendance â€” Need {2 - presentCount} more IA{2 - presentCount > 1 ? 's' : ''}
+                        ⚠ Insufficient IA Attendance — Need {2 - presentCount} more IA{2 - presentCount > 1 ? 's' : ''}
                       </p>
                     )}
                   </div>
@@ -678,7 +678,7 @@ export default function StudentDashboard() {
             </h2>
             {pendingAttendanceDues.length > 0 && (
               <span className="bg-amber-500/10 text-amber-600 font-bold text-sm px-4 py-2 rounded-full">
-                {pendingAttendanceDues.length} Pending Â· â‚¹{pendingAttendanceDues.reduce((s: number, d: any) => s + (d.attendance_fee || 0), 0)}
+                {pendingAttendanceDues.length} Pending · ₹{pendingAttendanceDues.reduce((s: number, d: any) => s + (d.attendance_fee || 0), 0)}
               </span>
             )}
           </div>
@@ -712,17 +712,17 @@ export default function StudentDashboard() {
                       <td className="p-4 text-center">
                         {hasFine ? (
                           <span className={`px-3 py-1 rounded-lg font-bold ${isPaid ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
-                            â‚¹{enr.attendance_fee}
+                            ₹{enr.attendance_fee}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground text-sm">â€”</span>
+                          <span className="text-muted-foreground text-sm">—</span>
                         )}
                       </td>
                       <td className="p-4 text-center">
                         {isPaid ? (
-                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">âœ… Paid</span>
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">✅ Paid</span>
                         ) : hasFine ? (
-                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">â³ Pending</span>
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">⏳ Pending</span>
                         ) : (
                           <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
                         )}
@@ -751,7 +751,7 @@ export default function StudentDashboard() {
           {pendingAttendanceDues.length > 1 && (
             <div className="mt-6 pt-6 border-t-2 border-amber-500/20 flex flex-col md:flex-row justify-between items-center gap-4">
               <div>
-                <p className="text-lg font-bold text-foreground">Total Due: <span className="text-amber-600">â‚¹{pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)}</span></p>
+                <p className="text-lg font-bold text-foreground">Total Due: <span className="text-amber-600">₹{pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)}</span></p>
                 <p className="text-sm text-muted-foreground">{pendingAttendanceDues.length} subjects with pending fines</p>
               </div>
               <button
@@ -759,7 +759,7 @@ export default function StudentDashboard() {
                 disabled={payingAll || !!payingEnrollmentId}
                 className="px-8 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-md text-lg disabled:opacity-50"
               >
-                {payingAll ? 'Initiating...' : `Pay All (â‚¹${pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)})`}
+                {payingAll ? 'Initiating...' : `Pay All (₹${pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0)})`}
               </button>
             </div>
           )}
@@ -788,9 +788,9 @@ export default function StudentDashboard() {
                   <div>
                     <h3 className="font-semibold text-foreground text-lg group-hover:text-primary transition-colors">{enr.subjects?.subject_name || 'Unknown Subject'}</h3>
                     {enr.teacher_id ? (
-                      <p className="text-sm text-muted-foreground font-medium">{enr.subjects?.subject_code || 'N/A'} â€¢ Teacher: {enr.profiles?.full_name || 'N/A'}</p>
+                      <p className="text-sm text-muted-foreground font-medium">{enr.subjects?.subject_code || 'N/A'} • Teacher: {enr.profiles?.full_name || 'N/A'}</p>
                     ) : (
-                      <p className="text-sm text-amber-500 font-medium">{enr.subjects?.subject_code || 'N/A'} â€¢ Waiting for Teacher Assignment</p>
+                      <p className="text-sm text-amber-500 font-medium">{enr.subjects?.subject_code || 'N/A'} • Waiting for Teacher Assignment</p>
                     )}
                     <div className="mt-2 flex items-center gap-2">
                        <span className="text-xs text-foreground bg-background px-2 py-1 rounded-md border border-border">
@@ -837,7 +837,7 @@ export default function StudentDashboard() {
                 <div className="mb-3 sm:mb-0">
                   <h3 className="font-semibold text-foreground capitalize text-lg">Central College Dues</h3>
                   {dept.fine_amount && dept.fine_amount > 0 ? (
-                     <p className={`text-sm font-medium mt-1 inline-block px-2 py-1 rounded-md ${isPermitActive ? 'text-amber-600 bg-amber-500/10' : 'text-destructive bg-destructive/10'}`}>Pending Dues: â‚¹{dept.fine_amount}</p>
+                     <p className={`text-sm font-medium mt-1 inline-block px-2 py-1 rounded-md ${isPermitActive ? 'text-amber-600 bg-amber-500/10' : 'text-destructive bg-destructive/10'}`}>Pending Dues: ₹{dept.fine_amount}</p>
                   ) : (
                      <p className="text-sm text-muted-foreground mt-1">No outstanding dues</p>
                   )}
@@ -893,7 +893,7 @@ export default function StudentDashboard() {
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
                    <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
-                   <p className="text-sm text-amber-600 font-medium mt-1 inline-block bg-amber-500/10 px-2 py-1 rounded-md">Pending Dues: â‚¹{libraryDue.fine_amount || 0}</p>
+                   <p className="text-sm text-amber-600 font-medium mt-1 inline-block bg-amber-500/10 px-2 py-1 rounded-md">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
                    {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
                    <p className="text-xs text-amber-600 font-bold mt-2 flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" /> Temporarily Permitted
@@ -910,7 +910,7 @@ export default function StudentDashboard() {
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-destructive/20 bg-destructive/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
                    <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
-                   <p className="text-sm text-destructive font-medium mt-1 inline-block bg-destructive/10 px-2 py-1 rounded-md">Pending Dues: â‚¹{libraryDue.fine_amount || 0}</p>
+                   <p className="text-sm text-destructive font-medium mt-1 inline-block bg-destructive/10 px-2 py-1 rounded-md">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
                    {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
                  </div>
                  <div className="flex items-center gap-3">
@@ -1048,19 +1048,19 @@ export default function StudentDashboard() {
                   {paymentReceipt.subjects.map((sub: any, i: number) => (
                     <div key={i} className="flex justify-between mt-2">
                       <span className="text-sm">{sub.name} <span className="text-muted-foreground">({sub.code})</span></span>
-                      <span className="font-bold text-sm">â‚¹{sub.amount}</span>
+                      <span className="font-bold text-sm">₹{sub.amount}</span>
                     </div>
                   ))}
                 </div>
                 {paymentReceipt.subjects.length > 1 && (
                   <div className="pt-3 mt-3 border-t border-border flex justify-between">
                     <span className="font-bold">Total Paid:</span>
-                    <span className="font-bold text-emerald-600">â‚¹{paymentReceipt.amount}</span>
+                    <span className="font-bold text-emerald-600">₹{paymentReceipt.amount}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground text-sm">Amount Paid:</span>
-                  <span className="font-bold">â‚¹{paymentReceipt.amount}</span>
+                  <span className="font-bold">₹{paymentReceipt.amount}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground text-sm">Date & Time:</span>
@@ -1068,7 +1068,7 @@ export default function StudentDashboard() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground text-sm">Status:</span>
-                  <span className="px-2 py-1 bg-emerald-500/10 text-emerald-600 rounded-full text-xs font-bold">âœ… Success</span>
+                  <span className="px-2 py-1 bg-emerald-500/10 text-emerald-600 rounded-full text-xs font-bold">✅ Success</span>
                 </div>
                 <div className="pt-3 mt-3 border-t border-border flex justify-between">
                   <span className="text-muted-foreground text-sm">Transaction ID:</span>
@@ -1091,7 +1091,7 @@ export default function StudentDashboard() {
   );
 }
 
-// Stepper Component â€” memoized to prevent unnecessary re-renders
+// Stepper Component — memoized to prevent unnecessary re-renders
 const Step = memo(function Step({ title, description, isComplete, isPermitted, isActive, icon }: any) {
   return (
     <div className="relative flex flex-col items-center">

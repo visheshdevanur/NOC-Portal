@@ -480,7 +480,7 @@ export default function HodDashboard() {
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
             <UserCog className="w-8 h-8 mr-3 text-emerald-500" />
-            HOD â€” {deptName}
+            HOD — {deptName}
           </h1>
           <p className="text-muted-foreground">Manage clearances, staff, teachers, and subjects.</p>
         </div>
@@ -579,7 +579,7 @@ export default function HodDashboard() {
         <div className="space-y-6">
           {userSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>âœ“ {userSuccess}</span>
+              <span>✓ {userSuccess}</span>
               <button onClick={() => setUserSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -946,7 +946,7 @@ export default function HodDashboard() {
                                      return (
                                        <tr key={s.id} className="hover:bg-secondary/10 transition-colors bg-background">
                                          <td className="p-3 font-medium text-foreground">{s.full_name}</td>
-                                         <td className="p-3 text-muted-foreground text-sm font-mono">{(s).roll_number || 'â€”'}</td>
+                                         <td className="p-3 text-muted-foreground text-sm font-mono">{(s).roll_number || '—'}</td>
                                          <td className="p-3">
                                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${
                                               !req ? 'bg-secondary text-muted-foreground' : 
@@ -957,7 +957,7 @@ export default function HodDashboard() {
                                               {!req ? 'NOT APPLIED' : req.status.toUpperCase()}
                                            </span>
                                          </td>
-                                         <td className="p-3 text-xs font-medium text-muted-foreground">{req ? req.current_stage : 'â€”'}</td>
+                                         <td className="p-3 text-xs font-medium text-muted-foreground">{req ? req.current_stage : '—'}</td>
                                        </tr>
                                      )
                                   })}
@@ -984,7 +984,7 @@ export default function HodDashboard() {
               Attendance Fine Payments
             </h2>
             <p className="text-muted-foreground text-sm">
-              Track all student attendance fines â€” pending, paid, and verified.
+              Track all student attendance fines — pending, paid, and verified.
             </p>
           </div>
 
@@ -1332,7 +1332,7 @@ export default function HodDashboard() {
                             </span>
                             {hasAssignments ? (
                               <span className="text-xs text-muted-foreground">
-                                {teacher.assignments.length} subject{teacher.assignments.length !== 1 ? 's' : ''} Â· {[...new Set(teacher.assignments.flatMap(a => a.sections))].length} section{[...new Set(teacher.assignments.flatMap(a => a.sections))].length !== 1 ? 's' : ''}
+                                {teacher.assignments.length} subject{teacher.assignments.length !== 1 ? 's' : ''} · {[...new Set(teacher.assignments.flatMap(a => a.sections))].length} section{[...new Set(teacher.assignments.flatMap(a => a.sections))].length !== 1 ? 's' : ''}
                               </span>
                             ) : (
                               <span className="text-xs text-amber-500 font-medium">No sections assigned</span>
@@ -1470,7 +1470,7 @@ export default function HodDashboard() {
                               {log.action}
                             </span>
                           </td>
-                          <td className="p-4 text-sm text-muted-foreground">{log.details || 'â€”'}</td>
+                          <td className="p-4 text-sm text-muted-foreground">{log.details || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
