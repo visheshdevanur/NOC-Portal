@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 
 import {
@@ -44,6 +44,7 @@ type Subject = {
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const queryClient = useQueryClient();
 
 
   // User Management State (HODs only for creation)
@@ -228,7 +229,7 @@ export default function AdminDashboard() {
   });
 
   // ==================== ANALYTICS ====================
-  const fetchAnalytics = () => {}; // Now handled by useQuery
+  const fetchAnalytics = () => { queryClient.invalidateQueries({ queryKey: ['adminAnalytics'] }); };
 
 
   // ==================== USER MANAGEMENT (HODs) ====================

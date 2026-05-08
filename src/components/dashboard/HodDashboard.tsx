@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import {
   getHodPendingRequests, approveHodRequest, getUsersByDeptAndRoles,
@@ -113,6 +113,8 @@ export default function HodDashboard() {
   // Activity Logs state
   const [searchLogs, setSearchLogs] = useState('');
 
+  const queryClient = useQueryClient();
+
   // React Query: tab-aware queries with caching + deduplication
   const { data: deptData } = useQuery({
     queryKey: ['department', profile?.department_id],
@@ -173,12 +175,7 @@ export default function HodDashboard() {
     },
     enabled: !!profile?.department_id && activeTab === 'collegeDues',
   });
-  const [collegeDues, setCollegeDues] = useState<any[]>([]);
-  // Sync college dues from query to local state (needed for local mutations)
-  const collegeDuesFromQuery = collegeDuesData || [];
-  if (collegeDuesFromQuery.length > 0 && collegeDues.length === 0 && collegeDuesFromQuery !== collegeDues) {
-    // Only set on initial load
-  }
+  const collegeDues = collegeDuesData || [];
 
   const { data: teacherDetailsData, isLoading: loadingTeacherDetails } = useQuery({
     queryKey: ['hodTeacherDetails', profile?.department_id],
@@ -197,7 +194,7 @@ export default function HodDashboard() {
   // Alias refetch functions for backward compat
   const fetchRequests = () => { refetchRequests(); };
   const fetchUsers = () => { refetchUsers(); };
-  const fetchCollegeDues = () => {}; // Now handled by useQuery
+  const fetchCollegeDues = () => { queryClient.invalidateQueries({ queryKey: ['hodCollegeDues', profile?.department_id] }); };
 
   const fetchImportableTeachersList = async () => {
     if (!profile?.department_id) return;
@@ -262,19 +259,13 @@ export default function HodDashboard() {
 
   const handleManualFeeUpdate = async (dueId: string, _fineAmount: number, _paidAmount: number = 0, profileName: string = 'Student') => {
     try {
-      // Directly mark as completed (cleared)
       const { error } = await supabase
         .from('student_dues')
         .update({ status: 'completed', updated_at: new Date().toISOString() })
         .eq('id', dueId);
       if (error) throw error;
       
-      setCollegeDues(prev => prev.map(d => {
-        if (d.id === dueId) {
-          return { ...d, status: 'completed' };
-        }
-        return d;
-      }));
+      queryClient.invalidateQueries({ queryKey: ['hodCollegeDues', profile?.department_id] });
       alert(`Dues cleared for ${profileName}.`);
     } catch (err: any) {
       alert('Failed to clear dues: ' + (err?.message || 'Unknown'));
