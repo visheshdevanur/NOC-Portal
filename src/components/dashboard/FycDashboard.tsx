@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import { approveHodRequest, getAllDepartments, getFycStaffActivityLogs, isFirstYearSem } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
@@ -67,7 +68,6 @@ type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDu
 export default function FycDashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('approvals');
-  const [departments, setDepartments] = useState<any[]>([]);
 
   // Approvals state
   const [requests, setRequests] = useState<ClearanceRequest[]>([]);
@@ -122,9 +122,12 @@ export default function FycDashboard() {
   const [searchLogs, setSearchLogs] = useState('');
   const [logRoleFilter, setLogRoleFilter] = useState('all');
 
-  useEffect(() => {
-    fetchDepartments();
-  }, []);
+  // React Query: departments cache
+  const { data: deptsData } = useQuery({
+    queryKey: ['allDepartments'],
+    queryFn: () => getAllDepartments(),
+  });
+  const departments = deptsData || [];
 
   useEffect(() => {
     if (user) {
@@ -137,23 +140,6 @@ export default function FycDashboard() {
       if (activeTab === 'activityLogs') fetchActivityLogs();
     }
   }, [user, activeTab]);
-
-  // FIX #21: Replace Realtime WebSocket with interval polling (30s)
-  useEffect(() => {
-    if (user) {
-      const interval = setInterval(() => {
-        if (activeTab === 'approvals') fetchRequests();
-      }, 30_000);
-      return () => { clearInterval(interval); }
-    }
-  }, [user, activeTab]);
-
-  const fetchDepartments = async () => {
-    try {
-      const data = await getAllDepartments();
-      setDepartments(data || []);
-    } catch (err) { console.error(err); }
-  };
 
   const fetchRequests = async () => {
     setLoadingReqs(true);

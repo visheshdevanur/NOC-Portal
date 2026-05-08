@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 
 import {
@@ -43,15 +44,7 @@ type Subject = {
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [stats, setStats] = useState({
-    totalStudents: 0,
-    totalFaculty: 0,
-    pendingFaculty: 0,
-    pendingDept: 0,
-    pendingHod: 0,
-    cleared: 0,
-    rejected: 0
-  });
+
 
   // User Management State (HODs only for creation)
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -125,16 +118,40 @@ export default function AdminDashboard() {
   const [exportingPreData, setExportingPreData] = useState(false);
 
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, []);
+  // React Query: analytics with caching
+  const { data: analyticsData } = useQuery({
+    queryKey: ['adminAnalytics'],
+    queryFn: async () => {
+      const [studentsRes, facultyRes, reqsRes] = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'student'),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).in('role', ['faculty', 'teacher']),
+        supabase.from('clearance_requests').select('status, current_stage'),
+      ]);
+      let pendF = 0, pendD = 0, pendH = 0, clr = 0, rej = 0;
+      if (reqsRes?.data) {
+        (reqsRes.data as any[]).forEach((r: any) => {
+          if (r.current_stage === 'cleared') clr++;
+          else if (r.status === 'rejected') rej++;
+          else if (r.current_stage === 'faculty_review') pendF++;
+          else if (r.current_stage === 'department_review') pendD++;
+          else if (r.current_stage === 'hod_review') pendH++;
+        });
+      }
+      return {
+        totalStudents: studentsRes.count || 0,
+        totalFaculty: facultyRes.count || 0,
+        pendingFaculty: pendF, pendingDept: pendD, pendingHod: pendH,
+        cleared: clr, rejected: rej
+      };
+    },
+  });
+  const stats = analyticsData || { totalStudents: 0, totalFaculty: 0, pendingFaculty: 0, pendingDept: 0, pendingHod: 0, cleared: 0, rejected: 0 };
 
   useEffect(() => {
     if (activeTab === 'hods') fetchUsers();
     if (activeTab === 'subjects') { fetchSubjects(); fetchDepartments(); }
     if (activeTab === 'departments') { fetchDepartments(); fetchUsers(); }
     if (activeTab === 'allusers') { fetchAllUsers(); fetchDepartments(); }
-
     if (activeTab === 'logs') fetchAdminLogs();
     if (activeTab === 'academic') { fetchPromotionPreview(); fetchGraduatedStudents(); fetchDepartments(); }
   }, [activeTab]);
@@ -211,34 +228,8 @@ export default function AdminDashboard() {
   });
 
   // ==================== ANALYTICS ====================
-  const fetchAnalytics = async () => {
-    const [studentsRes, facultyRes, reqsRes] = await Promise.all([
-      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'student'),
-      supabase.from('profiles').select('*', { count: 'exact', head: true }).in('role', ['faculty', 'teacher']),
-      supabase.from('clearance_requests').select('status, current_stage'),
-    ]);
+  const fetchAnalytics = () => {}; // Now handled by useQuery
 
-    let pendF = 0, pendD = 0, pendH = 0, clr = 0, rej = 0;
-    if (reqsRes?.data) {
-      (reqsRes.data as any[]).forEach((r: any) => {
-        if (r.current_stage === 'cleared') clr++;
-        else if (r.status === 'rejected') rej++;
-        else if (r.current_stage === 'faculty_review') pendF++;
-        else if (r.current_stage === 'department_review') pendD++;
-        else if (r.current_stage === 'hod_review') pendH++;
-      });
-    }
-
-    setStats({
-      totalStudents: studentsRes.count || 0,
-      totalFaculty: facultyRes.count || 0,
-      pendingFaculty: pendF,
-      pendingDept: pendD,
-      pendingHod: pendH,
-      cleared: clr,
-      rejected: rej
-    });
-  };
 
   // ==================== USER MANAGEMENT (HODs) ====================
   const fetchUsers = async () => {
