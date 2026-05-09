@@ -5,6 +5,18 @@ import { logActivity } from './shared';
 // ACCOUNTS SPECIFIC
 // =======================
 export const getAllStudentDues = async () => {
+  // First, ensure every student has a student_dues record
+  const { data: allStudents } = await supabase.from('profiles').select('id').eq('role', 'student');
+  if (allStudents && allStudents.length > 0) {
+    // Batch upsert missing records (won't affect existing ones)
+    const BATCH = 500;
+    for (let i = 0; i < allStudents.length; i += BATCH) {
+      const batch = allStudents.slice(i, i + BATCH).map(s => ({ student_id: s.id }));
+      await supabase.from('student_dues').upsert(batch, { onConflict: 'student_id', ignoreDuplicates: true });
+    }
+  }
+
+  // Now fetch all dues with profile data
   const PAGE_SIZE = 1000;
   let allData: any[] = [];
   let from = 0;

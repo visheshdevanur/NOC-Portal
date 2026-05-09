@@ -5,6 +5,17 @@ import { logActivity } from './shared';
 // LIBRARY DUES MANAGEMENT
 // =======================
 export const getLibraryDues = async () => {
+  // First, ensure every student has a library_dues record
+  const { data: allStudents } = await supabase.from('profiles').select('id').eq('role', 'student');
+  if (allStudents && allStudents.length > 0) {
+    const BATCH = 500;
+    for (let i = 0; i < allStudents.length; i += BATCH) {
+      const batch = allStudents.slice(i, i + BATCH).map(s => ({ student_id: s.id, has_dues: false, fine_amount: 0 }));
+      await supabase.from('library_dues').upsert(batch, { onConflict: 'student_id', ignoreDuplicates: true });
+    }
+  }
+
+  // Now fetch all library dues with profile data
   const PAGE_SIZE = 1000;
   let allData: any[] = [];
   let from = 0;
