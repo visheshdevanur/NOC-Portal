@@ -16,13 +16,13 @@ export async function superAdminLogin(email: string, password: string) {
   if (!data.user) throw new Error('Login failed');
 
   // Verify this user is actually a platform admin
-  const { data: profile, error: profileError } = await superAdminSupabase
-    .from('profiles')
-    .select('id, role, is_platform_admin')
-    .eq('id', data.user.id)
-    .single();
+  // Uses SECURITY DEFINER RPC to bypass tenant RLS (superadmin has no tenant_id)
+  const { data: rpcResult, error: rpcError } = await superAdminSupabase
+    .rpc('get_my_profile_for_auth');
 
-  if (profileError || !profile) {
+  const profile = rpcResult?.[0] || rpcResult;
+
+  if (rpcError || !profile) {
     await superAdminSupabase.auth.signOut();
     throw new Error('Profile not found');
   }
@@ -42,12 +42,10 @@ export async function isSuperAdminLoggedIn(): Promise<boolean> {
   const { data: { session } } = await superAdminSupabase.auth.getSession();
   if (!session) return false;
 
-  const { data: profile } = await superAdminSupabase
-    .from('profiles')
-    .select('role, is_platform_admin')
-    .eq('id', session.user.id)
-    .single();
+  const { data: rpcResult } = await superAdminSupabase
+    .rpc('get_my_profile_for_auth');
 
+  const profile = rpcResult?.[0] || rpcResult;
   return !!(profile?.is_platform_admin || profile?.role === 'super_admin');
 }
 
