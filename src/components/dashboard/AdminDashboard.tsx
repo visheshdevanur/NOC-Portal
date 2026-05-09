@@ -544,7 +544,7 @@ export default function AdminDashboard() {
   const fetchAllUsers = async () => {
     setAllUsersLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('profiles').select('*, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)').order('created_at', { ascending: false }).limit(10000);
       if (error) throw error;
       setAllUsers((data || []) as UserProfile[]);
 
