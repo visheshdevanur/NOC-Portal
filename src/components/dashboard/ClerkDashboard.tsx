@@ -493,16 +493,16 @@ export default function ClerkDashboard() {
         u.semester_id ? firstYearSemIds.has(u.semester_id) : true
       );
 
-      // Teachers: ALL FYC/clerk-created teachers across all branches
-      const { data: fycClerkUsers } = await supabase.from('profiles').select('id').in('role', ['fyc', 'clerk']);
-      const fycClerkIds = (fycClerkUsers || []).map(f => f.id);
+      // Teachers: ALL clerk-created teachers in the tenant (no branch at creation)
+      const { data: allClerks } = await supabase.from('profiles').select('id').eq('role', 'clerk');
+      const clerkIds = (allClerks || []).map(c => c.id);
       let allTeachers: UserProfile[] = [];
-      if (fycClerkIds.length > 0) {
+      if (clerkIds.length > 0) {
         const { data: teachers } = await supabase
           .from('profiles')
           .select('*, departments!profiles_department_id_fkey(name)')
           .in('role', ['teacher', 'faculty'])
-          .in('created_by', fycClerkIds)
+          .in('created_by', clerkIds)
           .order('full_name');
         allTeachers = (teachers || []) as UserProfile[];
       }
@@ -716,7 +716,7 @@ export default function ClerkDashboard() {
         password: newUser.password,
         full_name: newUser.full_name,
         role: newUser.role,
-        department_id: selectedDeptId,
+        department_id: newUser.role === 'student' ? selectedDeptId : undefined,
         roll_number: newUser.role === 'student' ? newUser.roll_number : undefined,
         section: newUser.role === 'student' ? newUser.section?.toUpperCase() : undefined,
         semester_id: newUser.role === 'student' ? newUser.semester_id : undefined,

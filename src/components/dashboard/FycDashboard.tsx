@@ -188,25 +188,33 @@ export default function FycDashboard() {
     if (!user?.id) return;
     setLoadingUsers(true);
     try {
-      // Get clerk IDs created by this FYC
-      const { data: myClerkIds } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('role', 'clerk')
-        .eq('created_by', user.id);
-      const clerkIds = (myClerkIds || []).map(c => c.id);
+      // Get ALL clerk IDs in the tenant
+      const { data: allClerks } = await supabase.from('profiles').select('id').eq('role', 'clerk');
+      const allClerkIds = (allClerks || []).map(c => c.id);
       
-      // Build OR filter: created by FYC OR created by FYC's clerks
-      const creatorFilter = [`created_by.eq.${user.id}`, ...clerkIds.map(id => `created_by.eq.${id}`)].join(',');
-      
-      const { data, error } = await supabase
+      // Clerks: only ones created by this FYC
+      const { data: myClerks, error: clerkErr } = await supabase
         .from('profiles')
         .select('*, departments!profiles_department_id_fkey(name)')
-        .in('role', ['clerk', 'teacher', 'faculty'])
-        .or(creatorFilter)
+        .eq('role', 'clerk')
+        .eq('created_by', user.id)
         .order('created_at', { ascending: false });
-      if (error) throw error;
-      setDepartmentUsers(data as UserProfile[]);
+      if (clerkErr) throw clerkErr;
+
+      // Teachers: ALL created by ANY clerk in the tenant
+      let allTeachers: any[] = [];
+      if (allClerkIds.length > 0) {
+        const { data: teachers, error: tErr } = await supabase
+          .from('profiles')
+          .select('*, departments!profiles_department_id_fkey(name)')
+          .in('role', ['teacher', 'faculty'])
+          .in('created_by', allClerkIds)
+          .order('created_at', { ascending: false });
+        if (tErr) throw tErr;
+        allTeachers = teachers || [];
+      }
+
+      setDepartmentUsers([...(myClerks || []), ...allTeachers] as UserProfile[]);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
   };
@@ -269,18 +277,21 @@ export default function FycDashboard() {
     if (!user?.id) return;
     setLoadingTeacherDetails(true);
     try {
-      // Get clerk IDs created by this FYC
-      const { data: myClerkIds } = await supabase.from('profiles').select('id').eq('role', 'clerk').eq('created_by', user.id);
-      const clerkIds = (myClerkIds || []).map(c => c.id);
-      const creatorFilter = [`created_by.eq.${user.id}`, ...clerkIds.map(id => `created_by.eq.${id}`)].join(',');
+      // Get ALL clerk IDs in the tenant
+      const { data: allClerks } = await supabase.from('profiles').select('id').eq('role', 'clerk');
+      const allClerkIds = (allClerks || []).map(c => c.id);
 
-      const { data: teachers, error: tErr } = await supabase
-        .from('profiles')
-        .select('id, full_name, role, section, email, created_at')
-        .in('role', ['teacher', 'faculty'])
-        .or(creatorFilter)
-        .order('full_name');
-      if (tErr) throw tErr;
+      let teachers: any[] = [];
+      if (allClerkIds.length > 0) {
+        const { data, error: tErr } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, section, email, created_at')
+          .in('role', ['teacher', 'faculty'])
+          .in('created_by', allClerkIds)
+          .order('full_name');
+        if (tErr) throw tErr;
+        teachers = data || [];
+      }
 
       const teacherIds = (teachers || []).map(t => t.id);
       if (teacherIds.length === 0) {
@@ -410,12 +421,6 @@ export default function FycDashboard() {
 
     // Clerk is global (not department-scoped) — no department_id needed
 
-    if (newUser.role === 'teacher' && !newUser.teacher_id) {
-      setUserError('Teacher ID is required for Teachers.');
-      setUserCreating(false);
-      return;
-    }
-
     try {
       const { createUserSecure } = await import('../../lib/supabase');
 
@@ -423,9 +428,8 @@ export default function FycDashboard() {
         email: newUser.email,
         password: newUser.password,
         full_name: newUser.full_name,
-        role: newUser.role,
+        role: 'clerk',
         department_id: newUser.department_id || undefined,
-        teacher_id: newUser.role === 'teacher' ? newUser.teacher_id : undefined,
       });
 
       await supabase.from('activity_logs').insert([{
@@ -433,10 +437,10 @@ export default function FycDashboard() {
         user_role: 'fyc',
         user_name: user?.email,
         action: 'User Created',
-        details: `Created ${newUser.role} profile for ${newUser.full_name}`
+        details: `Created clerk profile for ${newUser.full_name}`
       }]);
 
-      setUserSuccess(`${newUser.role === 'clerk' ? 'Clerk' : 'Teacher'} "${newUser.full_name}" created!`);
+      setUserSuccess(`Clerk "${newUser.full_name}" created!`);
       setNewUser({ email: '', password: '', full_name: '', role: 'clerk', department_id: '', teacher_id: '' });
       setShowCreateUser(false);
       fetchUsers();
@@ -989,22 +993,9 @@ export default function FycDashboard() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">Role</label>
-                    <select
-                      className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
-                      value={newUser.role}
-                      onChange={e => setNewUser({ ...newUser, role: e.target.value })}
-                    >
-                      <option value="clerk">Clerk</option>
-                      <option value="teacher">Teacher</option>
-                    </select>
+                    <input type="text" className="w-full px-4 py-2 bg-background border border-border rounded-xl text-muted-foreground" value="Clerk" disabled />
                   </div>
                   {/* Clerk is global — no department selector needed */}
-                  {newUser.role === 'teacher' && (
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">Teacher ID</label>
-                      <input type="text" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 uppercase" placeholder="e.g. FAC001" value={newUser.teacher_id} onChange={e => setNewUser({ ...newUser, teacher_id: e.target.value })} />
-                    </div>
-                  )}
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">Password</label>
                     <input type="password" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
