@@ -92,7 +92,7 @@ export default function AdminDashboard() {
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [allUsersLoading, setAllUsersLoading] = useState(false);
   const [allUsersSearch, setAllUsersSearch] = useState('');
-  const [teacherCreatorRoles, setTeacherCreatorRoles] = useState<Record<string, string>>({});
+  const [_teacherCreatorRoles, setTeacherCreatorRoles] = useState<Record<string, string>>({});
   // Hierarchy state for All Users
   const [expandedAllUsersSections, setExpandedAllUsersSections] = useState<Set<string>>(new Set(['global', 'first_year']));
 
@@ -544,15 +544,22 @@ export default function AdminDashboard() {
   const fetchAllUsers = async () => {
     setAllUsersLoading(true);
     try {
-      // Supabase max_rows is 1000 — split into two queries to ensure all roles are fetched
+      // Supabase max_rows is 1000 — split queries and paginate students
       const selectFields = '*, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)';
-      const [staffRes, studentRes] = await Promise.all([
-        supabase.from('profiles').select(selectFields).neq('role', 'student').order('created_at', { ascending: false }).limit(1000),
-        supabase.from('profiles').select(selectFields).eq('role', 'student').order('created_at', { ascending: false }).limit(1000),
-      ]);
+      // 1. Fetch all non-student users (< 200, fits in one query)
+      const staffRes = await supabase.from('profiles').select(selectFields).neq('role', 'student').order('created_at', { ascending: false }).limit(1000);
       if (staffRes.error) throw staffRes.error;
-      if (studentRes.error) throw studentRes.error;
-      const combined = [...(staffRes.data || []), ...(studentRes.data || [])];
+      // 2. Paginate students in batches of 1000
+      let allStudents: any[] = [];
+      let offset = 0;
+      while (true) {
+        const batch = await supabase.from('profiles').select(selectFields).eq('role', 'student').order('created_at', { ascending: false }).range(offset, offset + 999);
+        if (batch.error) throw batch.error;
+        allStudents = [...allStudents, ...(batch.data || [])];
+        if (!batch.data || batch.data.length < 1000) break;
+        offset += 1000;
+      }
+      const combined = [...(staffRes.data || []), ...allStudents];
       setAllUsers(combined as UserProfile[]);
 
       // Fetch imported teachers mapping to know who created them
@@ -1503,7 +1510,7 @@ export default function AdminDashboard() {
                 </button>
                 {expandedAllUsersSections.has('global') && (
                   <div className="border-t border-border p-4 bg-background/50">
-                     {renderUsersTable(filteredAllUsers.filter(u => ['admin', 'principal', 'accounts', 'librarian', 'fyc'].includes(u.role) || (!u.department_id && u.role !== 'student')))}
+                     {renderUsersTable(filteredAllUsers.filter(u => ['admin', 'principal', 'accounts', 'librarian', 'fyc', 'clerk'].includes(u.role)))}
                   </div>
                 )}
               </div>
@@ -1524,7 +1531,7 @@ export default function AdminDashboard() {
                   <div className="border-t border-border p-4 bg-background/50 space-y-4">
                     {renderUserGroup("First Year Coordinator (FYC)", filteredAllUsers.filter(u => u.role === 'fyc'))}
                     {renderUserGroup("Clerks", filteredAllUsers.filter(u => u.role === 'clerk'))}
-                    {renderUserGroup("Teachers (Created by FYC/Clerk)", filteredAllUsers.filter(u => ['faculty', 'teacher'].includes(u.role) && ['fyc', 'clerk'].includes(teacherCreatorRoles[u.id] || '')))}
+                    {renderUserGroup("Teachers", filteredAllUsers.filter(u => ['faculty', 'teacher'].includes(u.role) && !u.department_id))}
                     {renderUserGroup("Students (Semesters 1 & 2)", filteredAllUsers.filter(u => u.role === 'student' && ['1', '2'].includes(u.semesters?.name || '')))}
                   </div>
                 )}
@@ -1548,8 +1555,7 @@ export default function AdminDashboard() {
                        <div className="border-t border-border p-4 bg-background/50 space-y-4">
                          {renderUserGroup("HOD (Head of Department)", filteredAllUsers.filter(u => u.department_id === dept.id && u.role === 'hod'))}
                          {renderUserGroup("Staff", filteredAllUsers.filter(u => u.department_id === dept.id && u.role === 'staff'))}
-                         {renderUserGroup("Teachers (Created by HOD/Staff)", filteredAllUsers.filter(u => u.department_id === dept.id && ['faculty', 'teacher'].includes(u.role) && ['hod', 'staff'].includes(teacherCreatorRoles[u.id] || '')))}
-                         {renderUserGroup("Other Teachers", filteredAllUsers.filter(u => u.department_id === dept.id && ['faculty', 'teacher'].includes(u.role) && !['hod', 'staff', 'fyc', 'clerk'].includes(teacherCreatorRoles[u.id] || '')))}
+                         {renderUserGroup("Teachers", filteredAllUsers.filter(u => u.department_id === dept.id && ['faculty', 'teacher'].includes(u.role)))}
                          {renderUserGroup("Students (Semesters 3 to 8)", filteredAllUsers.filter(u => u.department_id === dept.id && u.role === 'student' && !['1', '2'].includes(u.semesters?.name || '')))}
                        </div>
                      )}
