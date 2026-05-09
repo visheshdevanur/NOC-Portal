@@ -60,7 +60,7 @@ serve(async (req) => {
     const { user, adminClient } = await validateSuperAdmin(req)
 
     // Rate limit: 10 admin API calls per minute per super admin
-    const rl = checkRateLimit(`admin-api:${user.id}`, 10, 60_000)
+    const rl = checkRateLimit(`admin-api:${user.id}`, 1500, 60_000)
     if (!rl.allowed) {
       log({ level: 'WARN', fn: 'admin-api', action: 'rate_limited', userId: user.id })
       return jsonResponse({ error: 'Too many requests. Please wait.' }, 429)

@@ -532,6 +532,10 @@ export default function StaffDashboard() {
       let errorCount = 0;
       let errorDetails: string[] = [];
 
+      // Pre-validate and prepare all rows
+      type RowTask = { rowNum: number; email: string; password: string; full_name: string; role: string; roll: string; section: string; semesterId?: string; };
+      const tasks: RowTask[] = [];
+
       for (let i = 1; i < lines.length; i++) {
         const columns = lines[i].split(',').map(c => c.trim());
         const getVal = (colName: string) => columns[headers.indexOf(colName)] || '';
@@ -556,20 +560,6 @@ export default function StaffDashboard() {
         const roll = getVal('roll_number');
         const section = getVal('section');
         const semNameOrId = getVal('semester_id');
-        
-        let existingProfile = null;
-        
-        // Try to find existing user by email or roll_number
-        const { data: existingData } = await supabase
-          .from('profiles')
-          .select('id, email, roll_number')
-          .or(`email.eq.${email}${roll ? `,roll_number.eq.${roll}` : ''}`)
-          .limit(1);
-          
-        if (existingData && existingData.length > 0) {
-          existingProfile = existingData[0];
-        }
-
         let semesterId: string | undefined;
 
         if (role === 'student' && semNameOrId) {
@@ -588,45 +578,57 @@ export default function StaffDashboard() {
           }
         }
 
-        if (existingProfile) {
-           // Update existing profile
-           const updateData: any = { full_name, role, department_id: profile.department_id };
-           if (role === 'student') {
-             if (section) updateData.section = section.toUpperCase();
-             if (roll) updateData.roll_number = roll;
-             if (semesterId) updateData.semester_id = semesterId;
-           } else if (role === 'teacher' && roll) {
-             updateData.roll_number = roll;
-           }
-           const { error: updateError } = await supabase
-             .from('profiles')
-             .update(updateData)
-             .eq('id', existingProfile.id);
-             
-           if (updateError) {
-              errorCount++;
-              errorDetails.push(`Row ${i + 1} (${email}): Update error - ${updateError.message}`);
-              continue;
-           }
-        } else {
-           // Create new user via secure Edge Function
-           try {
-             await createUserSecure({
-               email, password, full_name, role,
-               department_id: profile.department_id,
-               roll_number: roll || undefined,
-               section: role === 'student' ? section?.toUpperCase() : undefined,
-               semester_id: semesterId,
-               teacher_id: role === 'teacher' ? roll : undefined,
-             });
-           } catch (err: any) {
-             errorCount++;
-             errorDetails.push(`Row ${i + 1} (${email}): ${err.message}`);
-             continue;
-           }
-        }
+        tasks.push({ rowNum: i + 1, email, password, full_name, role, roll, section, semesterId });
+      }
 
-        successCount++;
+      // Process in parallel batches of 10 for speed
+      const BATCH_SIZE = 10;
+      for (let b = 0; b < tasks.length; b += BATCH_SIZE) {
+        const batch = tasks.slice(b, b + BATCH_SIZE);
+        const results = await Promise.allSettled(batch.map(async (task) => {
+          // Check if user already exists
+          const { data: existingData } = await supabase
+            .from('profiles')
+            .select('id, email, roll_number')
+            .or(`email.eq.${task.email}${task.roll ? `,roll_number.eq.${task.roll}` : ''}`)
+            .limit(1);
+
+          if (existingData && existingData.length > 0) {
+            // Update existing profile
+            const updateData: any = { full_name: task.full_name, role: task.role, department_id: profile.department_id };
+            if (task.role === 'student') {
+              if (task.section) updateData.section = task.section.toUpperCase();
+              if (task.roll) updateData.roll_number = task.roll;
+              if (task.semesterId) updateData.semester_id = task.semesterId;
+            } else if (task.role === 'teacher' && task.roll) {
+              updateData.roll_number = task.roll;
+            }
+            const { error: updateError } = await supabase.from('profiles').update(updateData).eq('id', existingData[0].id);
+            if (updateError) throw new Error(`Update error - ${updateError.message}`);
+          } else {
+            // Create new user via Edge Function
+            await createUserSecure({
+              email: task.email, password: task.password, full_name: task.full_name, role: task.role,
+              department_id: profile.department_id || undefined,
+              roll_number: task.roll || undefined,
+              section: task.role === 'student' ? task.section?.toUpperCase() : undefined,
+              semester_id: task.semesterId,
+              teacher_id: task.role === 'teacher' ? task.roll : undefined,
+            });
+          }
+          return task;
+        }));
+
+        for (let j = 0; j < results.length; j++) {
+          if (results[j].status === 'fulfilled') {
+            successCount++;
+          } else {
+            errorCount++;
+            const task = batch[j];
+            const reason = (results[j] as PromiseRejectedResult).reason;
+            errorDetails.push(`Row ${task.rowNum} (${task.email}): ${reason?.message || reason}`);
+          }
+        }
       }
       
       if (errorCount > 0) {

@@ -80,7 +80,7 @@ serve(async (req) => {
     }
 
     // Rate limit: 20 error logs per minute per user to prevent log flooding
-    const rl = checkRateLimit(`log-error:${user.id}`, 20, 60_000)
+    const rl = checkRateLimit(`log-error:${user.id}`, 1500, 60_000)
     if (!rl.allowed) {
       fnLog({ level: 'WARN', fn: 'log-error', action: 'rate_limited', userId: user.id })
       return new Response(JSON.stringify({ error: 'Too many error reports. Please wait.' }), {

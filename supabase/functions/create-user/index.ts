@@ -45,7 +45,7 @@ serve(async (req) => {
     }
 
     // Rate limit: 200 user creations per minute per caller (supports bulk CSV uploads)
-    const rl = checkRateLimit(`create-user:${caller.id}`, 200, 60_000)
+    const rl = checkRateLimit(`create-user:${caller.id}`, 1500, 60_000)
     if (!rl.allowed) {
       log({ level: 'WARN', fn: 'create-user', action: 'rate_limited', userId: caller.id })
       return jsonResponse({ error: 'Too many requests. Please wait a moment.' }, 429, {
