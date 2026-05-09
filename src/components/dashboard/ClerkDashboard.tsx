@@ -719,7 +719,7 @@ export default function ClerkDashboard() {
         password: newUser.password,
         full_name: newUser.full_name,
         role: newUser.role,
-        department_id: newUser.role === 'student' ? selectedDeptId : undefined,
+        department_id: selectedDeptId,
         roll_number: newUser.role === 'student' ? newUser.roll_number : undefined,
         section: newUser.role === 'student' ? newUser.section?.toUpperCase() : undefined,
         semester_id: newUser.role === 'student' ? newUser.semester_id : undefined,
