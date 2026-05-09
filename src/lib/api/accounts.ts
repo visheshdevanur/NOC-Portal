@@ -5,12 +5,21 @@ import { logActivity } from './shared';
 // ACCOUNTS SPECIFIC
 // =======================
 export const getAllStudentDues = async () => {
-  const { data, error } = await supabase
-    .from('student_dues')
-    .select('*, profiles!student_dues_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name))')
-    .limit(5000);
-  if (error) throw error;
-  return data;
+  const PAGE_SIZE = 1000;
+  let allData: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('student_dues')
+      .select('*, profiles!student_dues_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name))')
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return allData;
 };
 
 export const markStudentDues = async (duesModuleId: string, status: string, fineAmount: number) => {
