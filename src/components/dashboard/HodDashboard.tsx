@@ -148,8 +148,10 @@ export default function HodDashboard() {
     queryKey: ['hodUsers', profile?.department_id],
     queryFn: async () => {
       const data = await getUsersByDeptAndRoles(profile!.department_id!, ['staff', 'teacher', 'faculty']);
-      const filtered = (data as UserProfile[]).filter(u => !(u as any).created_by);
       const importedData = await import('../../lib/api').then(m => m.getImportedTeachersForDept(profile!.department_id!));
+      const importedIds = new Set((importedData || []).map((i: any) => i.teacher_id));
+      // Show native department users (exclude imported ones which are shown separately)
+      const filtered = (data as UserProfile[]).filter(u => !importedIds.has(u.id));
       return { users: filtered, imported: importedData };
     },
     enabled: !!profile?.department_id && activeTab === 'users',

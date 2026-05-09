@@ -178,7 +178,7 @@ export default function FycDashboard() {
         .from('profiles')
         .select('*, departments!profiles_department_id_fkey(name)')
         .in('role', ['clerk', 'teacher', 'faculty'])
-        .eq('created_by', user.id)
+        .or(`created_by.eq.${user.id},department_id.is.null`)
         .order('created_at', { ascending: false });
       if (error) throw error;
       setDepartmentUsers(data as UserProfile[]);
