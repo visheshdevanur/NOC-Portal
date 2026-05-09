@@ -144,7 +144,7 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
       const section = item.section || 'N/A';
       const semester = item.semesters?.name || 'N/A';
       const libDues = (!item.library || item.library.has_dues !== false) ? 'Pending' : 'Clear';
-      const colStatus = item.college?.status === 'pending' ? 'Pending' : (item.college?.status === 'completed' ? 'Completed' : 'N/A');
+      const colStatus = (!item.college || item.college.status !== 'completed') ? 'Pending' : 'Clear';
       const attFineUnpaid = item.attendance_fine_unpaid || 0;
       const attFinePaid = item.attendance_fine_paid || 0;
       
@@ -209,7 +209,7 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
       <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
         {!studentDuesLoading && studentDuesOverview.length > 0 && (() => {
           const libPending = studentDuesOverview.filter(s => !s.library || s.library.has_dues !== false).length;
-          const colPending = studentDuesOverview.filter(s => s.college?.status === 'pending').length;
+          const colPending = studentDuesOverview.filter(s => !s.college || s.college.status !== 'completed').length;
           const totalStudents = studentDuesOverview.length;
           return (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-6 border-b border-border bg-secondary/10">
@@ -262,7 +262,9 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
                 filteredStudentDuesOverview.map((s, idx) => {
                   const libRecord = s.library;
                   const libStatus = !libRecord ? 'pending' : (libRecord.has_dues === false ? 'clear' : 'pending');
-                  const colStatus = s.college?.status || 'N/A';
+                  // College fee: no record = pending, completed = clear, pending = due
+                  const colRecord = s.college;
+                  const colStatus = !colRecord ? 'pending' : (colRecord.status === 'completed' ? 'clear' : 'pending');
                   const attFineUnpaid = Number(s.attendance_fine_unpaid) || 0;
                   const attFinePaid = Number(s.attendance_fine_paid) || 0;
 
@@ -286,15 +288,13 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
                       </td>
                       <td className="p-4 text-center">
                         {colStatus === 'pending' ? (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-red-500/15 text-red-600 dark:text-red-400">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">
                             Pending
                           </span>
-                        ) : colStatus === 'completed' ? (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                            Completed
-                          </span>
                         ) : (
-                          <span className="text-xs text-muted-foreground">N/A</span>
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                            Clear
+                          </span>
                         )}
                       </td>
                       <td className="p-4 font-bold text-sm">
