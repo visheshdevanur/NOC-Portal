@@ -573,13 +573,15 @@ export default function ClerkDashboard() {
         if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}. Expected columns: name, roll_number, email, password, role, section, semester, branch`);
       }
 
-      const { createUserSecure } = await import('../../lib/supabase');
+
       
       const { data: fetchedSemesters } = await supabase.from('semesters').select('*');
 
       let successCount = 0;
+      let updatedCount = 0;
       let errorCount = 0;
       let errorDetails: string[] = [];
+      const validUsers: any[] = [];
 
       for (let i = 1; i < lines.length; i++) {
         const columns = lines[i].split(',').map(c => c.trim());
@@ -592,7 +594,7 @@ export default function ClerkDashboard() {
         
         if (!email || !password || !full_name || !['student', 'teacher'].includes(role)) {
           errorCount++;
-          errorDetails.push(`Row ${i + 1} (${email || 'Unknown'}): Missing email, password, full_name or invalid role.`);
+          errorDetails.push(`Row ${i + 1} (${email || 'Unknown'}): Missing required fields or invalid role.`);
           continue; 
         }
 
@@ -618,19 +620,6 @@ export default function ClerkDashboard() {
             continue;
           }
         }
-        
-        let existingProfile = null;
-        
-        // Try to find existing user by email or roll_number
-        const { data: existingData } = await supabase
-          .from('profiles')
-          .select('id, email, roll_number')
-          .or(`email.eq.${email}${roll ? `,roll_number.eq.${roll}` : ''}`)
-          .limit(1);
-          
-        if (existingData && existingData.length > 0) {
-          existingProfile = existingData[0];
-        }
 
         let semesterId: string | undefined;
 
@@ -640,65 +629,60 @@ export default function ClerkDashboard() {
             s.department_id === targetDeptId
           );
           if (matchedSem) {
-            // Clerk can only create 1st/2nd sem students
             if (!isFirstYearSem(matchedSem.name)) {
               errorCount++;
-              errorDetails.push(`Row ${i + 1} (${email}): these(3,4,5,6,7,8) sem students cannot be inserted`);
+              errorDetails.push(`Row ${i + 1} (${email}): Sem 3-8 students cannot be inserted by clerk`);
               continue;
             }
             semesterId = matchedSem.id;
           } else {
             errorCount++;
-            errorDetails.push(`Row ${i + 1} (${email}): Target semester "${semNameOrId}" not found in database.`);
+            errorDetails.push(`Row ${i + 1} (${email}): Semester "${semNameOrId}" not found.`);
             continue;
           }
         }
 
-        if (existingProfile) {
-           // Update existing profile
-           const updateData: any = { full_name, role, department_id: role === 'student' ? targetDeptId : null };
-           if (role === 'student') {
-             if (section) updateData.section = section.toUpperCase();
-             if (roll) updateData.roll_number = roll;
-             if (semesterId) updateData.semester_id = semesterId;
-           } else if (role === 'teacher' && roll) {
-             updateData.roll_number = roll;
-           }
-           const { error: updateError } = await supabase
-             .from('profiles')
-             .update(updateData)
-             .eq('id', existingProfile.id);
-             
-           if (updateError) {
-              errorCount++;
-              errorDetails.push(`Row ${i + 1} (${email}): Update error - ${updateError.message}`);
-              continue;
-           }
-        } else {
-           // Create new user via secure Edge Function
-           try {
-             await createUserSecure({
-               email, password, full_name, role,
-               department_id: role === 'student' ? targetDeptId : undefined,
-               roll_number: roll || undefined,
-               section: role === 'student' ? section?.toUpperCase() : undefined,
-               semester_id: semesterId,
-               teacher_id: role === 'teacher' ? roll : undefined,
-             });
-           } catch (err: any) {
-             errorCount++;
-             errorDetails.push(`Row ${i + 1} (${email}): ${err.message}`);
-             continue;
-           }
-        }
-
-        successCount++;
+        validUsers.push({
+          email, password, full_name, role,
+          department_id: role === 'student' ? targetDeptId : undefined,
+          roll_number: roll || undefined,
+          section: role === 'student' ? section?.toUpperCase() : undefined,
+          semester_id: semesterId,
+          teacher_id: role === 'teacher' ? roll : undefined,
+        });
       }
-      
+
+      // Send to bulk Edge Function in chunks of 500
+      const CHUNK_SIZE = 500;
+      for (let c = 0; c < validUsers.length; c += CHUNK_SIZE) {
+        const chunk = validUsers.slice(c, c + CHUNK_SIZE);
+        try {
+          const { data, error } = await supabase.functions.invoke('bulk-create-users', {
+            body: { users: chunk },
+          });
+          if (error) throw new Error(error.message || 'Bulk upload failed');
+          if (data?.error) throw new Error(data.error);
+
+          const result = data?.data || data;
+          successCount += (result?.created || 0);
+          updatedCount += (result?.updated || 0);
+          errorCount += (result?.errors || 0);
+
+          if (data?.errorDetails) {
+            for (const e of data.errorDetails) {
+              errorDetails.push(`Row ${e.row + 1 + c} (${e.email}): ${e.error}`);
+            }
+          }
+        } catch (err: any) {
+          errorCount += chunk.length;
+          errorDetails.push(`Batch ${Math.floor(c / CHUNK_SIZE) + 1}: ${err.message}`);
+        }
+      }
+
       if (errorCount > 0) {
-        setUserError(`Uploaded ${successCount} users. Encountered errors on ${errorCount} rows. Details: ${errorDetails.slice(0, 3).join(' | ')}${errorDetails.length > 3 ? '...' : ''}`);
+        setUserError(`Created ${successCount}, Updated ${updatedCount}, Errors ${errorCount}. Details: ${errorDetails.slice(0, 5).join(' | ')}${errorDetails.length > 5 ? '...' : ''}`);
       } else {
-        setUserSuccess(`Successfully mass uploaded ${successCount} users!`);
+        setUserSuccess(`Successfully uploaded ${successCount} new + ${updatedCount} updated users!`);
       }
       fetchUsers();
     } catch (err: any) {

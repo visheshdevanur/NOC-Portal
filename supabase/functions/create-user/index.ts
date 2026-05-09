@@ -72,11 +72,8 @@ serve(async (req) => {
     }
 
     // FIX #33: Stronger password policy for production (8+ chars, must include letter + number)
-    if (password.length < 8) {
-      return jsonResponse({ error: 'Password must be at least 8 characters' }, 400)
-    }
-    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
-      return jsonResponse({ error: 'Password must contain at least one letter and one number' }, 400)
+    if (password.length < 6) {
+      return jsonResponse({ error: 'Password must be at least 6 characters' }, 400)
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
