@@ -24,16 +24,15 @@ async function validateSuperAdmin(req: Request) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-  // Create a client with the user's JWT to verify identity
-  const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
-    global: { headers: { Authorization: authHeader } },
-  })
+  // Use service_role client for reliable JWT verification
+  const adminClient = createClient(supabaseUrl, serviceKey)
 
-  const { data: { user }, error: authError } = await userClient.auth.getUser()
+  // Extract the JWT token and verify the user
+  const token = authHeader.replace('Bearer ', '')
+  const { data: { user }, error: authError } = await adminClient.auth.getUser(token)
   if (authError || !user) throw new Error('Invalid or expired token')
 
-  // Check if user is a platform admin via service_role (bypasses RLS)
-  const adminClient = createClient(supabaseUrl, serviceKey)
+  // Check if user is a platform admin (service_role bypasses RLS)
   const { data: profile, error: profileError } = await adminClient
     .from('profiles')
     .select('id, role, is_platform_admin')
