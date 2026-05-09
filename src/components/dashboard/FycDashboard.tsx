@@ -269,11 +269,16 @@ export default function FycDashboard() {
     if (!user?.id) return;
     setLoadingTeacherDetails(true);
     try {
+      // Get clerk IDs created by this FYC
+      const { data: myClerkIds } = await supabase.from('profiles').select('id').eq('role', 'clerk').eq('created_by', user.id);
+      const clerkIds = (myClerkIds || []).map(c => c.id);
+      const creatorFilter = [`created_by.eq.${user.id}`, ...clerkIds.map(id => `created_by.eq.${id}`)].join(',');
+
       const { data: teachers, error: tErr } = await supabase
         .from('profiles')
         .select('id, full_name, role, section, email, created_at')
         .in('role', ['teacher', 'faculty'])
-        .or(`created_by.eq.${user.id},department_id.is.null`)
+        .or(creatorFilter)
         .order('full_name');
       if (tErr) throw tErr;
 

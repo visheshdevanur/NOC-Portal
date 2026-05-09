@@ -485,26 +485,29 @@ export default function ClerkDashboard() {
     if (!selectedDeptId) return;
     setLoadingUsers(true);
     try {
-      const data = await getUsersByDeptAndRoles(selectedDeptId, ['teacher', 'faculty', 'student']);
+      // Students: only 1st/2nd sem from selected department
+      const studentData = await getUsersByDeptAndRoles(selectedDeptId, ['student']);
       const sems = await getSemestersByDepartment(selectedDeptId);
       const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
+      const students = (studentData as UserProfile[]).filter(u =>
+        u.semester_id ? firstYearSemIds.has(u.semester_id) : true
+      );
 
-      // Get FYC and clerk IDs to filter teachers
+      // Teachers: ALL FYC/clerk-created teachers across all branches
       const { data: fycClerkUsers } = await supabase.from('profiles').select('id').in('role', ['fyc', 'clerk']);
-      const fycClerkIds = new Set((fycClerkUsers || []).map(f => f.id));
+      const fycClerkIds = (fycClerkUsers || []).map(f => f.id);
+      let allTeachers: UserProfile[] = [];
+      if (fycClerkIds.length > 0) {
+        const { data: teachers } = await supabase
+          .from('profiles')
+          .select('*, departments!profiles_department_id_fkey(name)')
+          .in('role', ['teacher', 'faculty'])
+          .in('created_by', fycClerkIds)
+          .order('full_name');
+        allTeachers = (teachers || []) as UserProfile[];
+      }
 
-      const filtered = (data as UserProfile[]).filter(u => {
-        if (u.role === 'student') {
-          return u.semester_id ? firstYearSemIds.has(u.semester_id) : true;
-        }
-        // Teachers: only show if created by FYC or clerk
-        if (u.role === 'teacher' || u.role === 'faculty') {
-          return u.created_by ? fycClerkIds.has(u.created_by) : false;
-        }
-        return true;
-      });
-
-      setDepartmentUsers(filtered);
+      setDepartmentUsers([...students, ...allTeachers]);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
   };
