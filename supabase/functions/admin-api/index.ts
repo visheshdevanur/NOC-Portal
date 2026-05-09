@@ -87,7 +87,7 @@ serve(async (req) => {
           .select('*', { count: 'exact', head: true })
           .eq('tenant_id', tenant_id)
         if (error) throw error
-        return jsonResponse({ count })
+        return jsonResponse({ data: count || 0 })
       }
 
       // ─── GET TENANT DETAILS ───
@@ -282,12 +282,12 @@ serve(async (req) => {
           adminClient.from('clearance_requests').select('*', { count: 'exact', head: true }),
           adminClient.from('tenants').select('*', { count: 'exact', head: true }).eq('status', 'active'),
         ])
-        return jsonResponse({
+        return jsonResponse({ data: {
           totalTenants: tenantRes.count || 0,
           totalUsers: userRes.count || 0,
           totalClearances: clearanceRes.count || 0,
           activeTenants: activeRes.count || 0,
-        })
+        }})
       }
 
       // ─── ERROR LOGS ───
@@ -317,7 +317,7 @@ serve(async (req) => {
           WARNING: warnRes.count || 0,
           INFO: infoRes.count || 0,
         }
-        return jsonResponse({ stats, total: stats.CRITICAL + stats.WARNING + stats.INFO })
+        return jsonResponse({ data: { stats, total: stats.CRITICAL + stats.WARNING + stats.INFO } })
       }
 
       default:
