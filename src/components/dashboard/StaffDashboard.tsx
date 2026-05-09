@@ -478,7 +478,6 @@ export default function StaffDashboard() {
       const sems = await getSemestersByDepartment(profile.department_id);
       const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
       const filtered = (data as UserProfile[]).filter(u => {
-        if ((u.role === 'teacher' || u.role === 'faculty') && (u).created_by) return false;
         if (u.role === 'student') {
           // Exclude 1st/2nd sem students
           return u.semester_id ? !firstYearSemIds.has(u.semester_id) : true;

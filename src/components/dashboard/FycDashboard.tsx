@@ -158,14 +158,28 @@ export default function FycDashboard() {
   const fetchStudents = async () => {
     setLoadingStudents(true);
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*, semesters(name), clearance_requests(status, current_stage, created_at, updated_at), departments!profiles_department_id_fkey(name)')
-        .eq('role', 'student')
-        .order('full_name');
-      if (error) throw error;
-      const filtered = (data || []).filter((s: any) => isFirstYearSem(s.semesters?.name || ''));
-      setDepartmentStudents(filtered as unknown as UserProfile[]);
+      // 1. Get first-year semester IDs to filter server-side (avoids 1000-row limit)
+      const { data: allSemesters } = await supabase.from('semesters').select('id, name');
+      const fyIds = (allSemesters || []).filter(s => isFirstYearSem(s.name)).map(s => s.id);
+      if (fyIds.length === 0) { setDepartmentStudents([]); return; }
+
+      // 2. Paginate students filtered by first-year semesters
+      let allStudents: any[] = [];
+      let offset = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*, semesters(name), clearance_requests(status, current_stage, created_at, updated_at), departments!profiles_department_id_fkey(name)')
+          .eq('role', 'student')
+          .in('semester_id', fyIds)
+          .order('full_name')
+          .range(offset, offset + 999);
+        if (error) throw error;
+        allStudents = [...allStudents, ...(data || [])];
+        if (!data || data.length < 1000) break;
+        offset += 1000;
+      }
+      setDepartmentStudents(allStudents as unknown as UserProfile[]);
     } catch (err) { console.error(err); }
     finally { setLoadingStudents(false); }
   };
@@ -248,7 +262,7 @@ export default function FycDashboard() {
         .from('profiles')
         .select('id, full_name, role, section, email, created_at')
         .in('role', ['teacher', 'faculty'])
-        .eq('created_by', user.id)
+        .or(`created_by.eq.${user.id},department_id.is.null`)
         .order('full_name');
       if (tErr) throw tErr;
 
