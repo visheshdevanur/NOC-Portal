@@ -544,9 +544,16 @@ export default function AdminDashboard() {
   const fetchAllUsers = async () => {
     setAllUsersLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)').order('created_at', { ascending: false }).limit(10000);
-      if (error) throw error;
-      setAllUsers((data || []) as UserProfile[]);
+      // Supabase max_rows is 1000 — split into two queries to ensure all roles are fetched
+      const selectFields = '*, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)';
+      const [staffRes, studentRes] = await Promise.all([
+        supabase.from('profiles').select(selectFields).neq('role', 'student').order('created_at', { ascending: false }).limit(1000),
+        supabase.from('profiles').select(selectFields).eq('role', 'student').order('created_at', { ascending: false }).limit(1000),
+      ]);
+      if (staffRes.error) throw staffRes.error;
+      if (studentRes.error) throw studentRes.error;
+      const combined = [...(staffRes.data || []), ...(studentRes.data || [])];
+      setAllUsers(combined as UserProfile[]);
 
       // Fetch imported teachers mapping to know who created them
       const { data: imported } = await supabase.from('imported_teachers').select('teacher_id, created_by');
