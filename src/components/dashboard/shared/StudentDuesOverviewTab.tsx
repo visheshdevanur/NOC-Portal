@@ -38,29 +38,56 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
   const fetchStudentDuesOverview = async () => {
     setStudentDuesLoading(true);
     try {
-      let query = supabase
-        .from('profiles')
-        .select('id, full_name, roll_number, section, semester_id, semesters(name)')
-        .eq('role', 'student')
-        .order('full_name');
-      if (departmentId) query = query.eq('department_id', departmentId);
-      const { data: allStudents, error: studErr } = await query;
-      if (studErr) throw studErr;
-
-      const students = (allStudents || []).filter((s: any) => {
-        const semName = s.semesters?.name;
-        if (!semName) return true;
-        if (role === 'staff' || role === 'hod') return !isFirstYearSem(semName);
-        if (role === 'clerk' || role === 'fyc') return isFirstYearSem(semName);
+      // 1. Get semester IDs to filter server-side (avoids 1000-row limit)
+      const { data: allSems } = await supabase.from('semesters').select('id, name');
+      const relevantSemIds = (allSems || []).filter(s => {
+        if (role === 'staff' || role === 'hod') return !isFirstYearSem(s.name);
+        if (role === 'clerk' || role === 'fyc') return isFirstYearSem(s.name);
         return true;
-      });
+      }).map(s => s.id);
+
+      if (relevantSemIds.length === 0) { setStudentDuesOverview([]); setStudentDuesLoading(false); return; }
+
+      // 2. Paginate students filtered by relevant semesters
+      let students: any[] = [];
+      let offset = 0;
+      const baseQuery = () => {
+        let q = supabase.from('profiles')
+          .select('id, full_name, roll_number, section, semester_id, semesters(name)')
+          .eq('role', 'student')
+          .in('semester_id', relevantSemIds)
+          .order('full_name');
+        if (departmentId) q = q.eq('department_id', departmentId);
+        return q;
+      };
+      while (true) {
+        const { data, error } = await baseQuery().range(offset, offset + 999);
+        if (error) throw error;
+        students = [...students, ...(data || [])];
+        if (!data || data.length < 1000) break;
+        offset += 1000;
+      }
 
       const studentIds = students.map((s: any) => s.id);
       if (studentIds.length === 0) { setStudentDuesOverview([]); setStudentDuesLoading(false); return; }
 
-      const { data: libDues } = await supabase.from('library_dues').select('student_id, has_dues, fine_amount, paid_amount, remarks').in('student_id', studentIds);
-      const { data: collegeDues } = await supabase.from('student_dues').select('student_id, fine_amount, status, paid_amount').in('student_id', studentIds);
-      const { data: attendanceData } = await supabase.from('subject_enrollment').select('student_id, attendance_fee, attendance_fee_verified').in('student_id', studentIds);
+      // 3. Fetch all dues in parallel (much faster than sequential)
+      // Batch IN queries if > 1000 IDs
+      const batchIn = async (table: string, select: string, ids: string[]) => {
+        const results: any[] = [];
+        for (let i = 0; i < ids.length; i += 500) {
+          const batch = ids.slice(i, i + 500);
+          const { data } = await supabase.from(table).select(select).in('student_id', batch);
+          results.push(...(data || []));
+        }
+        return results;
+      };
+
+      const [libDues, collegeDues, attendanceData] = await Promise.all([
+        batchIn('library_dues', 'student_id, has_dues, fine_amount, paid_amount, remarks', studentIds),
+        batchIn('student_dues', 'student_id, fine_amount, status, paid_amount', studentIds),
+        batchIn('subject_enrollment', 'student_id, attendance_fee, attendance_fee_verified', studentIds),
+      ]);
 
       const libMap = new Map((libDues || []).map((d: any) => [d.student_id, d]));
       const colMap = new Map((collegeDues || []).map((d: any) => [d.student_id, d]));
