@@ -3,16 +3,42 @@ import { useAuth } from '../lib/useAuth';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import TabErrorBoundary from '../components/TabErrorBoundary';
 
-const StudentDashboard = lazy(() => import('../components/dashboard/StudentDashboard'));
-const FacultyDashboard = lazy(() => import('../components/dashboard/FacultyDashboard'));
-const HodDashboard = lazy(() => import('../components/dashboard/HodDashboard'));
-const StaffDashboard = lazy(() => import('../components/dashboard/StaffDashboard'));
-const ClerkDashboard = lazy(() => import('../components/dashboard/ClerkDashboard'));
-const AdminDashboard = lazy(() => import('../components/dashboard/AdminDashboard'));
-const AccountsDashboard = lazy(() => import('../components/dashboard/AccountsDashboard'));
+/**
+ * Retry dynamic import — if a chunk fails (e.g. after Vercel deploys new code),
+ * reload the page once to get fresh HTML pointing to correct chunk URLs.
+ * Uses sessionStorage to prevent infinite reload loops.
+ */
+function lazyRetry(factory: () => Promise<any>) {
+  return lazy(async () => {
+    const key = 'chunk_reload_' + factory.toString().slice(0, 60);
+    try {
+      const module = await factory();
+      // Successful load — clear any reload flag
+      sessionStorage.removeItem(key);
+      return module;
+    } catch (err) {
+      // If we haven't already reloaded for this chunk, do so
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        window.location.reload();
+        // Return a dummy to satisfy TS while reload happens
+        return { default: () => null };
+      }
+      throw err; // Already reloaded once, let error boundary handle it
+    }
+  });
+}
 
-const FycDashboard = lazy(() => import('../components/dashboard/FycDashboard'));
-const LibraryDashboard = lazy(() => import('../pages/LibraryDashboard'));
+const StudentDashboard = lazyRetry(() => import('../components/dashboard/StudentDashboard'));
+const FacultyDashboard = lazyRetry(() => import('../components/dashboard/FacultyDashboard'));
+const HodDashboard = lazyRetry(() => import('../components/dashboard/HodDashboard'));
+const StaffDashboard = lazyRetry(() => import('../components/dashboard/StaffDashboard'));
+const ClerkDashboard = lazyRetry(() => import('../components/dashboard/ClerkDashboard'));
+const AdminDashboard = lazyRetry(() => import('../components/dashboard/AdminDashboard'));
+const AccountsDashboard = lazyRetry(() => import('../components/dashboard/AccountsDashboard'));
+
+const FycDashboard = lazyRetry(() => import('../components/dashboard/FycDashboard'));
+const LibraryDashboard = lazyRetry(() => import('../pages/LibraryDashboard'));
 
 const DashboardFallback = () => (
   <div className="space-y-6 animate-pulse">
