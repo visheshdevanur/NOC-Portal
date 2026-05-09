@@ -39,12 +39,17 @@ export default function LibraryDashboard() {
   });
   const departmentsList = departmentsData || [];
 
-  const { data: semestersData } = useQuery({
-    queryKey: ['semesters', selectedDeptId],
-    queryFn: () => import('../lib/api').then(m => m.getSemestersByDepartment(selectedDeptId!)),
-    enabled: !!selectedDeptId,
-  });
-  const semestersList = semestersData || [];
+  // Semesters: derive from actual student data so promoted students always show
+  const semestersList = (() => {
+    if (!selectedDeptId) return [];
+    const semMap = new Map<string, string>();
+    libraryDues.forEach((d: any) => {
+      if (d.profiles?.department_id === selectedDeptId && d.profiles?.semester_id && d.profiles?.semesters?.name) {
+        semMap.set(d.profiles.semester_id, d.profiles.semesters.name);
+      }
+    });
+    return Array.from(semMap.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  })();
 
   const fetchDues = () => { refetchDues(); };
 

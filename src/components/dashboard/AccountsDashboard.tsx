@@ -51,12 +51,17 @@ export default function AccountsDashboard() {
   });
   const departmentsList = departmentsData || [];
 
-  const { data: semestersData } = useQuery({
-    queryKey: ['semesters', selectedDeptId],
-    queryFn: () => import('../../lib/api').then(m => m.getSemestersByDepartment(selectedDeptId!)),
-    enabled: !!selectedDeptId,
-  });
-  const semestersList = semestersData || [];
+  // Semesters: derive from actual student data so promoted students always show
+  const semestersList = (() => {
+    if (!selectedDeptId) return [];
+    const semMap = new Map<string, string>();
+    dues.forEach(d => {
+      if (d.profiles?.department_id === selectedDeptId && d.profiles?.semester_id && d.profiles?.semesters?.name) {
+        semMap.set(d.profiles.semester_id, d.profiles.semesters.name);
+      }
+    });
+    return Array.from(semMap.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  })();
 
   const fetchDues = () => { refetchDues(); };
 
@@ -160,8 +165,8 @@ export default function AccountsDashboard() {
   // 1. Fetch from Database to support empty departments
   const uniqueDepartments = departmentsList.map(d => ({ id: d.id, name: d.name }));
 
-  // 2. Fetch from Database to support empty semesters
-  const uniqueSemesters = semestersList.map(s => ({ id: s.id, name: s.name }));
+  // 2. Semesters derived from dues data above
+  const uniqueSemesters = semestersList;
 
   // 3. Derive Sections for selected Semester (sections are text fields on profiles)
   const sectionsSet = new Set<string>();
