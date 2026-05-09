@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import { updateStudentDueFee, logActivity } from '../../lib/api';
-import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft } from 'lucide-react';
+import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft, Download } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type StudentDues = {
@@ -214,7 +214,7 @@ export default function AccountsDashboard() {
               onClick={downloadTemplate}
               className="flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 px-4 py-3 rounded-xl font-medium transition-all shadow-sm"
             >
-              ðŸ“„ Not-Paid Template
+              <Download className="w-4 h-4" /> Not-Paid Template
             </button>
             <label className="flex items-center gap-2 bg-emerald-500 text-white hover:bg-emerald-600 px-4 py-3 rounded-xl font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50">
               {uploadingCSV ? "Processing..." : "Upload Not-Paid List"}
