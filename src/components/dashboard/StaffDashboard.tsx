@@ -173,7 +173,7 @@ export default function StaffDashboard() {
     queryFn: () => getDepartmentById(profile!.department_id!),
     enabled: !!profile?.department_id,
   });
-  const deptName = deptData?.name || profile?.department_id || '';
+  const deptName = deptData?.name || '';
 
   useEffect(() => {
     if (activeTab === 'users' || activeTab === 'sections') { fetchUsers(); fetchSemesters(); }

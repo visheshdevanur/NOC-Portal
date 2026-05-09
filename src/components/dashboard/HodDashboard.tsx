@@ -121,7 +121,7 @@ export default function HodDashboard() {
     queryFn: () => getDepartmentById(profile!.department_id!),
     enabled: !!profile?.department_id,
   });
-  const deptName = deptData?.name || profile?.department_id || '';
+  const deptName = deptData?.name || '';
 
   const { data: reqsData, isLoading: loadingReqs, refetch: refetchRequests } = useQuery({
     queryKey: ['hodPending', profile?.department_id],

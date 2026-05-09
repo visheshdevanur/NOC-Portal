@@ -143,7 +143,7 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
       const name = `"${(item.full_name || '').replace(/"/g, '""')}"`;
       const section = item.section || 'N/A';
       const semester = item.semesters?.name || 'N/A';
-      const libDues = item.library?.has_dues ? 'Pending' : 'Clear';
+      const libDues = (!item.library || item.library.has_dues !== false) ? 'Pending' : 'Clear';
       const colStatus = item.college?.status === 'pending' ? 'Pending' : (item.college?.status === 'completed' ? 'Completed' : 'N/A');
       const attFineUnpaid = item.attendance_fine_unpaid || 0;
       const attFinePaid = item.attendance_fine_paid || 0;
@@ -208,7 +208,7 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
 
       <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
         {!studentDuesLoading && studentDuesOverview.length > 0 && (() => {
-          const libPending = studentDuesOverview.filter(s => s.library?.has_dues).length;
+          const libPending = studentDuesOverview.filter(s => !s.library || s.library.has_dues !== false).length;
           const colPending = studentDuesOverview.filter(s => s.college?.status === 'pending').length;
           const totalStudents = studentDuesOverview.length;
           return (
@@ -260,7 +260,8 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
                 </tr>
               ) : (
                 filteredStudentDuesOverview.map((s, idx) => {
-                  const hasLibDues = s.library?.has_dues;
+                  const libRecord = s.library;
+                  const libStatus = !libRecord ? 'pending' : (libRecord.has_dues === false ? 'clear' : 'pending');
                   const colStatus = s.college?.status || 'N/A';
                   const attFineUnpaid = Number(s.attendance_fine_unpaid) || 0;
                   const attFinePaid = Number(s.attendance_fine_paid) || 0;
@@ -273,7 +274,7 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
                       <td className="p-4 text-muted-foreground">{s.section || '—'}</td>
                       <td className="p-4 text-muted-foreground text-sm">{s.semesters?.name || '—'}</td>
                       <td className="p-4 text-center">
-                        {hasLibDues ? (
+                        {libStatus === 'pending' ? (
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">
                             Pending
                           </span>
