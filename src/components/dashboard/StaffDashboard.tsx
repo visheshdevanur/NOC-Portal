@@ -524,17 +524,17 @@ export default function StaffDashboard() {
         if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}`);
       }
 
-      const { createUserSecure } = await import('../../lib/supabase');
-      
+
+
       const fetchedSemesters = await import('../../lib/api').then(m => m.getSemestersByDepartment(profile.department_id!));
 
       let successCount = 0;
+      let updatedCount = 0;
       let errorCount = 0;
       let errorDetails: string[] = [];
 
-      // Pre-validate and prepare all rows
-      type RowTask = { rowNum: number; email: string; password: string; full_name: string; role: string; roll: string; section: string; semesterId?: string; };
-      const tasks: RowTask[] = [];
+      // Pre-validate all rows client-side (instant, no network)
+      const validUsers: any[] = [];
 
       for (let i = 1; i < lines.length; i++) {
         const columns = lines[i].split(',').map(c => c.trim());
@@ -547,7 +547,7 @@ export default function StaffDashboard() {
         
         if (!email || !password || !full_name || !['student', 'teacher'].includes(role)) {
           errorCount++;
-          errorDetails.push(`Row ${i + 1} (${email || 'Unknown'}): Missing email, password, full_name or invalid role.`);
+          errorDetails.push(`Row ${i + 1} (${email || 'Unknown'}): Missing required fields or invalid role.`);
           continue; 
         }
 
@@ -567,74 +567,59 @@ export default function StaffDashboard() {
           if (matchedSem) {
             if (isFirstYearSem(matchedSem.name)) {
               errorCount++;
-              errorDetails.push(`Row ${i + 1} (${email}): these(1,2) sem students cannot be inserted`);
+              errorDetails.push(`Row ${i + 1} (${email}): Sem 1 & 2 students cannot be inserted here`);
               continue;
             }
             semesterId = matchedSem.id;
           } else {
             errorCount++;
-            errorDetails.push(`Row ${i + 1} (${email}): Target semester "${semNameOrId}" not found in database.`);
+            errorDetails.push(`Row ${i + 1} (${email}): Semester "${semNameOrId}" not found.`);
             continue;
           }
         }
 
-        tasks.push({ rowNum: i + 1, email, password, full_name, role, roll, section, semesterId });
+        validUsers.push({
+          email, password, full_name, role,
+          department_id: profile.department_id || undefined,
+          roll_number: roll || undefined,
+          section: role === 'student' ? section?.toUpperCase() : undefined,
+          semester_id: semesterId,
+          teacher_id: role === 'teacher' ? roll : undefined,
+        });
       }
 
-      // Process in parallel batches of 10 for speed
-      const BATCH_SIZE = 10;
-      for (let b = 0; b < tasks.length; b += BATCH_SIZE) {
-        const batch = tasks.slice(b, b + BATCH_SIZE);
-        const results = await Promise.allSettled(batch.map(async (task) => {
-          // Check if user already exists
-          const { data: existingData } = await supabase
-            .from('profiles')
-            .select('id, email, roll_number')
-            .or(`email.eq.${task.email}${task.roll ? `,roll_number.eq.${task.roll}` : ''}`)
-            .limit(1);
+      // Send to bulk Edge Function in chunks of 500
+      const CHUNK_SIZE = 500;
+      for (let c = 0; c < validUsers.length; c += CHUNK_SIZE) {
+        const chunk = validUsers.slice(c, c + CHUNK_SIZE);
+        try {
+          const { data, error } = await supabase.functions.invoke('bulk-create-users', {
+            body: { users: chunk },
+          });
+          if (error) throw new Error(error.message || 'Bulk upload failed');
+          if (data?.error) throw new Error(data.error);
 
-          if (existingData && existingData.length > 0) {
-            // Update existing profile
-            const updateData: any = { full_name: task.full_name, role: task.role, department_id: profile.department_id };
-            if (task.role === 'student') {
-              if (task.section) updateData.section = task.section.toUpperCase();
-              if (task.roll) updateData.roll_number = task.roll;
-              if (task.semesterId) updateData.semester_id = task.semesterId;
-            } else if (task.role === 'teacher' && task.roll) {
-              updateData.roll_number = task.roll;
+          const result = data?.data || data;
+          successCount += (result?.created || 0);
+          updatedCount += (result?.updated || 0);
+          errorCount += (result?.errors || 0);
+
+          // Collect error details from server
+          if (data?.errorDetails) {
+            for (const e of data.errorDetails) {
+              errorDetails.push(`Row ${e.row + 1 + c} (${e.email}): ${e.error}`);
             }
-            const { error: updateError } = await supabase.from('profiles').update(updateData).eq('id', existingData[0].id);
-            if (updateError) throw new Error(`Update error - ${updateError.message}`);
-          } else {
-            // Create new user via Edge Function
-            await createUserSecure({
-              email: task.email, password: task.password, full_name: task.full_name, role: task.role,
-              department_id: profile.department_id || undefined,
-              roll_number: task.roll || undefined,
-              section: task.role === 'student' ? task.section?.toUpperCase() : undefined,
-              semester_id: task.semesterId,
-              teacher_id: task.role === 'teacher' ? task.roll : undefined,
-            });
           }
-          return task;
-        }));
-
-        for (let j = 0; j < results.length; j++) {
-          if (results[j].status === 'fulfilled') {
-            successCount++;
-          } else {
-            errorCount++;
-            const task = batch[j];
-            const reason = (results[j] as PromiseRejectedResult).reason;
-            errorDetails.push(`Row ${task.rowNum} (${task.email}): ${reason?.message || reason}`);
-          }
+        } catch (err: any) {
+          errorCount += chunk.length;
+          errorDetails.push(`Batch ${Math.floor(c / CHUNK_SIZE) + 1}: ${err.message}`);
         }
       }
-      
+
       if (errorCount > 0) {
-        setUserError(`Uploaded ${successCount} users. Encountered errors on ${errorCount} rows. Details: ${errorDetails.slice(0, 3).join(' | ')}${errorDetails.length > 3 ? '...' : ''}`);
+        setUserError(`Created ${successCount}, Updated ${updatedCount}, Errors ${errorCount}. Details: ${errorDetails.slice(0, 5).join(' | ')}${errorDetails.length > 5 ? '...' : ''}`);
       } else {
-        setUserSuccess(`Successfully mass uploaded ${successCount} users!`);
+        setUserSuccess(`Successfully uploaded ${successCount} new + ${updatedCount} updated users!`);
       }
       fetchUsers();
     } catch (err: any) {
