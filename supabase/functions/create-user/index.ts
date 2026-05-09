@@ -30,25 +30,22 @@ serve(async (req) => {
     const elapsed = startTimer()
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
 
-    // 1. Validate the caller's JWT
+    // 1. Validate the caller's JWT using service_role (anon key validation is unreliable)
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return jsonResponse({ error: 'Missing Authorization header' }, 401)
     }
 
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-
-    const { data: { user: caller }, error: authError } = await userClient.auth.getUser()
+    const adminClient = createClient(supabaseUrl, serviceKey)
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(token)
     if (authError || !caller) {
       return jsonResponse({ error: 'Invalid or expired token' }, 401)
     }
 
-    // Rate limit: 10 user creations per minute per caller
-    const rl = checkRateLimit(`create-user:${caller.id}`, 10, 60_000)
+    // Rate limit: 200 user creations per minute per caller (supports bulk CSV uploads)
+    const rl = checkRateLimit(`create-user:${caller.id}`, 200, 60_000)
     if (!rl.allowed) {
       log({ level: 'WARN', fn: 'create-user', action: 'rate_limited', userId: caller.id })
       return jsonResponse({ error: 'Too many requests. Please wait a moment.' }, 429, {
@@ -57,7 +54,6 @@ serve(async (req) => {
     }
 
     // 2. Get caller's profile to check permissions
-    const adminClient = createClient(supabaseUrl, serviceKey)
     const { data: callerProfile, error: profileError } = await adminClient
       .from('profiles')
       .select('id, role, department_id, tenant_id')

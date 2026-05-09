@@ -57,7 +57,6 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const anonKey     = Deno.env.get('SUPABASE_ANON_KEY')!
 
     // Validate caller has a valid JWT (prevents anonymous log flooding)
     const authHeader = req.headers.get('Authorization')
@@ -68,10 +67,11 @@ serve(async (req) => {
       })
     }
 
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+    const adminClient = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
     })
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authError } = await adminClient.auth.getUser(token)
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401,
@@ -89,10 +89,6 @@ serve(async (req) => {
       })
     }
 
-    // Admin client — used for the INSERT (bypasses RLS)
-    const adminClient = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
 
     // Parse and validate the body
     const body = await req.json().catch(() => null)
