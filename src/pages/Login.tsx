@@ -111,6 +111,21 @@ const Login = () => {
     resetAllStates();
 
     try {
+      // Check if email is registered before sending OTP
+      const { data: existingUser, error: lookupError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', email.trim().toLowerCase())
+        .limit(1)
+        .maybeSingle();
+      
+      if (lookupError) throw lookupError;
+      if (!existingUser) {
+        setError('This email is not registered. Please check the email address or contact your administrator.');
+        setLoading(false);
+        return;
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(email);
       if (error) throw error;
 
