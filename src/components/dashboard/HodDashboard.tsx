@@ -13,7 +13,7 @@ import AttendanceFinesTab from './shared/AttendanceFinesTab';
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X, Import,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
-  GraduationCap, BookOpen, Eye, Clock, Banknote, FileWarning
+  GraduationCap, BookOpen, Eye, Clock, Banknote, FileWarning, Edit
 } from 'lucide-react';
 import { logAndFormatError } from '../../lib/errorHandler';
 
@@ -80,7 +80,8 @@ export default function HodDashboard() {
   // Users state
   const [searchUsers, setSearchUsers] = useState('');
   const [showCreateUser, setShowCreateUser] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'staff' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', full_name: '', role: 'staff', teacher_id: '' });
+  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [userCreating, setUserCreating] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
@@ -304,6 +305,11 @@ export default function HodDashboard() {
       setUserCreating(false);
       return;
     }
+    if (newUser.role === 'teacher' && !newUser.teacher_id) {
+      setUserError('Teacher ID is required for teachers.');
+      setUserCreating(false);
+      return;
+    }
 
     try {
       const { createUserSecure } = await import('../../lib/supabase');
@@ -314,11 +320,32 @@ export default function HodDashboard() {
         full_name: newUser.full_name,
         role: newUser.role,
         department_id: profile.department_id,
+        teacher_id: newUser.role === 'teacher' ? newUser.teacher_id : undefined,
       });
 
       setUserSuccess(`${newUser.role === 'staff' ? 'Staff' : 'Teacher'} "${newUser.full_name}" created!`);
-      setNewUser({ email: '', password: '', full_name: '', role: 'staff' });
+      setNewUser({ email: '', password: '', full_name: '', role: 'staff', teacher_id: '' });
       setShowCreateUser(false);
+      fetchUsers();
+    } catch (err: any) {
+      setUserError(await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
+    } finally {
+      setUserCreating(false);
+    }
+  };
+
+  const handleUpdateUser = async () => {
+    if (!editingUser) return;
+    setUserCreating(true);
+    setUserError(null);
+    try {
+      const { error } = await supabase.from('profiles').update({
+        full_name: editingUser.full_name,
+        roll_number: editingUser.roll_number,
+      }).eq('id', editingUser.id);
+      if (error) throw error;
+      setUserSuccess(`"${editingUser.full_name}" updated.`);
+      setEditingUser(null);
       fetchUsers();
     } catch (err: any) {
       setUserError(await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
@@ -782,6 +809,12 @@ export default function HodDashboard() {
                       <option value="teacher">Teacher</option>
                     </select>
                   </div>
+                  {newUser.role === 'teacher' && (
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1.5">Teacher ID</label>
+                      <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" value={newUser.teacher_id} onChange={e => setNewUser({ ...newUser, teacher_id: e.target.value })} placeholder="e.g. CS01" />
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1.5">Password</label>
                     <input type="password" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
@@ -793,6 +826,43 @@ export default function HodDashboard() {
                   <button onClick={() => setShowCreateUser(false)} className="flex-1 py-3 px-4 rounded-xl border border-border font-medium hover:bg-secondary">Cancel</button>
                   <button onClick={handleCreateUser} disabled={userCreating} className="flex-1 py-3 px-4 rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 disabled:opacity-50">
                     {userCreating ? 'Creating...' : 'Create'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Edit User Modal */}
+          {editingUser && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-card rounded-3xl p-8 shadow-2xl border border-border w-full max-w-lg">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
+                    <Edit className="w-5 h-5 text-emerald-500" />
+                    Edit User
+                  </h3>
+                  <button onClick={() => setEditingUser(null)} className="p-2 rounded-xl hover:bg-secondary transition-colors">
+                    <X className="w-5 h-5 text-muted-foreground" />
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Full Name</label>
+                    <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" value={editingUser.full_name} onChange={e => setEditingUser({ ...editingUser, full_name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">{editingUser.role === 'teacher' || editingUser.role === 'faculty' ? 'Teacher ID' : 'ID'}</label>
+                    <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" value={editingUser.roll_number || ''} onChange={e => setEditingUser({ ...editingUser, roll_number: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Role</label>
+                    <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl text-muted-foreground" value={editingUser.role} disabled />
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-8">
+                  <button onClick={() => setEditingUser(null)} className="flex-1 py-3 px-4 rounded-xl border border-border font-medium hover:bg-secondary">Cancel</button>
+                  <button onClick={handleUpdateUser} disabled={userCreating} className="flex-1 py-3 px-4 rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 disabled:opacity-50">
+                    {userCreating ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               </div>
@@ -811,6 +881,7 @@ export default function HodDashboard() {
                   <thead>
                     <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
                       <th className="p-4 font-semibold">Name</th>
+                      <th className="p-4 font-semibold">ID</th>
                       <th className="p-4 font-semibold">Role</th>
                       <th className="p-4 font-semibold text-right">Actions</th>
                     </tr>
@@ -819,12 +890,16 @@ export default function HodDashboard() {
                     {filteredUsers.map((u) => (
                       <tr key={u.id} className="hover:bg-secondary/20 transition-colors">
                         <td className="p-4 font-medium text-foreground">{u.full_name}</td>
+                        <td className="p-4 text-muted-foreground text-sm">{u.roll_number || '—'}</td>
                         <td className="p-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${roleColors[u.role] || 'bg-secondary text-foreground'}`}>
                             {u.role}
                           </span>
                         </td>
-                        <td className="p-4 text-right">
+                        <td className="p-4 text-right flex gap-2 justify-end">
+                          <button onClick={() => setEditingUser({ ...u })} className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-colors" title="Edit user">
+                            <Edit className="w-4 h-4" />
+                          </button>
                           <button onClick={() => handleDeleteUser(u.id, u.full_name)} className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors" title="Delete user">
                             <Trash2 className="w-4 h-4" />
                           </button>
