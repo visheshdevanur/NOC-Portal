@@ -907,17 +907,17 @@ export default function StudentDashboard() {
                  </div>
                </div>
             ) : libraryDue && libraryDue.has_dues ? (
-               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-destructive/20 bg-destructive/5 hover:shadow-md transition-shadow">
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-orange-500/20 bg-orange-500/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
                    <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
-                   <p className="text-sm text-destructive font-medium mt-1 inline-block bg-destructive/10 px-2 py-1 rounded-md">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
+                   <p className="text-sm text-orange-600 font-medium mt-1 inline-block bg-orange-500/10 px-2 py-1 rounded-md">Pending Dues: ₹{libraryDue.fine_amount || 0}</p>
                    {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
                  </div>
                  <div className="flex items-center gap-3">
-                   <div className="bg-background p-2 rounded-xl shadow-sm border border-destructive/20">
-                    <XCircle className="w-6 h-6 text-destructive" />
+                   <div className="bg-background p-2 rounded-xl shadow-sm border border-orange-500/20">
+                    <Clock className="w-6 h-6 text-orange-500" />
                    </div>
-                   <span className="text-sm font-bold text-destructive">Blocked</span>
+                   <span className="text-sm font-bold text-orange-500">Pending</span>
                  </div>
                </div>
             ) : libraryDue && !libraryDue.has_dues ? (
