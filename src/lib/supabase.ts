@@ -39,3 +39,8 @@ export async function createUserSecure(params: {
   const { invokeWithRetry } = await import('./invokeWithRetry');
   return invokeWithRetry<{ user_id: string; message: string }>('create-user', params);
 }
+
+export async function deleteUserSecure(user_id: string): Promise<{ success: boolean; message: string }> {
+  const { invokeWithRetry } = await import('./invokeWithRetry');
+  return invokeWithRetry<{ success: boolean; message: string }>('create-user', { action: 'delete', user_id });
+}

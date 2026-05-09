@@ -443,20 +443,11 @@ export default function FycDashboard() {
   };
 
   const handleDeleteUser = async (userId: string, userName: string) => {
-    if (!confirm(`Are you sure you want to delete "${userName}"?`)) return;
+    if (!confirm(`Are you sure you want to permanently delete "${userName}"? This cannot be undone.`)) return;
     try {
-      const { error } = await supabase.from('profiles').delete().eq('id', userId).eq('created_by', user.id);
-      if (error) throw error;
-      
-      await supabase.from('activity_logs').insert([{
-        user_id: user?.id,
-        user_role: 'fyc',
-        user_name: user?.email,
-        action: 'User Deleted',
-        details: `Deleted user ${userName}`
-      }]);
-
-      setUserSuccess(`"${userName}" deleted.`);
+      const { deleteUserSecure } = await import('../../lib/supabase');
+      await deleteUserSecure(userId);
+      setUserSuccess(`"${userName}" permanently deleted.`);
       fetchUsers();
     } catch (err: any) {
       setUserError(await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));

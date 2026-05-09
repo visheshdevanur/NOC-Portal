@@ -328,11 +328,11 @@ export default function HodDashboard() {
   };
 
   const handleDeleteUser = async (userId: string, userName: string) => {
-    if (!confirm(`Are you sure you want to delete "${userName}"?`)) return;
+    if (!confirm(`Are you sure you want to permanently delete "${userName}"? This cannot be undone.`)) return;
     try {
-      const { error } = await supabase.from('profiles').delete().eq('id', userId);
-      if (error) throw error;
-      setUserSuccess(`"${userName}" deleted.`);
+      const { deleteUserSecure } = await import('../../lib/supabase');
+      await deleteUserSecure(userId);
+      setUserSuccess(`"${userName}" permanently deleted.`);
       fetchUsers();
     } catch (err: any) {
       setUserError(await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));

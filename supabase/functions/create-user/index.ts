@@ -66,8 +66,66 @@ serve(async (req) => {
       return jsonResponse({ error: 'Caller profile not found' }, 403)
     }
 
-    // 3. Parse and validate the request
-    const { email, password, full_name, role, department_id, roll_number, teacher_id, section, semester_id } = await req.json()
+    // 3. Parse the request
+    const body = await req.json()
+    const { action } = body
+
+    // ─── DELETE USER ───
+    if (action === 'delete') {
+      const { user_id } = body
+      if (!user_id) {
+        return jsonResponse({ error: 'user_id is required for deletion' }, 400)
+      }
+
+      // Verify the target exists and caller can delete them
+      const { data: targetProfile } = await adminClient
+        .from('profiles')
+        .select('id, role, full_name, created_by')
+        .eq('id', user_id)
+        .single()
+
+      if (!targetProfile) {
+        return jsonResponse({ error: 'User not found' }, 404)
+      }
+
+      // Check role hierarchy — can only delete roles below you
+      const allowedRoles = ROLE_HIERARCHY[callerProfile.role]
+      if (!allowedRoles || !allowedRoles.includes(targetProfile.role)) {
+        return jsonResponse({ error: `Cannot delete user with role "${targetProfile.role}"` }, 403)
+      }
+
+      // Delete profile first (FK constraints)
+      const { error: profileDelError } = await adminClient.from('profiles').delete().eq('id', user_id)
+      if (profileDelError) {
+        return jsonResponse({ error: `Profile deletion failed: ${profileDelError.message}` }, 500)
+      }
+
+      // Delete auth user permanently
+      const { error: authDelError } = await adminClient.auth.admin.deleteUser(user_id)
+      if (authDelError) {
+        log({ level: 'WARN', fn: 'create-user', action: 'auth-delete-failed', meta: { user_id, error: authDelError.message } })
+      }
+
+      // Log
+      await adminClient.from('activity_logs').insert({
+        user_id: caller.id,
+        user_role: callerProfile.role,
+        user_name: caller.email,
+        action: 'User Deleted',
+        details: `Permanently deleted ${targetProfile.role} "${targetProfile.full_name}"`,
+        tenant_id: callerProfile.tenant_id,
+      })
+
+      log({ level: 'INFO', fn: 'create-user', action: 'deleted', userId: caller.id, duration: elapsed(), meta: { deleted_id: user_id, role: targetProfile.role } })
+
+      return jsonResponse({
+        success: true,
+        message: `User "${targetProfile.full_name}" permanently deleted`,
+      })
+    }
+
+    // ─── CREATE USER ───
+    const { email, password, full_name, role, department_id, roll_number, teacher_id, section, semester_id } = body
 
     if (!email || !password || !full_name || !role) {
       return jsonResponse({ error: 'email, password, full_name, and role are required' }, 400)

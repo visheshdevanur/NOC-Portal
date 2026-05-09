@@ -486,31 +486,25 @@ export default function ClerkDashboard() {
     setLoadingUsers(true);
     try {
       const data = await getUsersByDeptAndRoles(selectedDeptId, ['teacher', 'faculty', 'student']);
-      // Clerk only handles 1st/2nd sem students — filter out higher sem students
       const sems = await getSemestersByDepartment(selectedDeptId);
       const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
 
+      // Get FYC and clerk IDs to filter teachers
+      const { data: fycClerkUsers } = await supabase.from('profiles').select('id').in('role', ['fyc', 'clerk']);
+      const fycClerkIds = new Set((fycClerkUsers || []).map(f => f.id));
 
       const filtered = (data as UserProfile[]).filter(u => {
         if (u.role === 'student') {
           return u.semester_id ? firstYearSemIds.has(u.semester_id) : true;
         }
+        // Teachers: only show if created by FYC or clerk
+        if (u.role === 'teacher' || u.role === 'faculty') {
+          return u.created_by ? fycClerkIds.has(u.created_by) : false;
+        }
         return true;
       });
 
-      // Also fetch teachers without a department (first-year pool)
-      const { data: noDeptTeachers } = await supabase
-        .from('profiles')
-        .select('*, departments!profiles_department_id_fkey(name)')
-        .in('role', ['teacher', 'faculty'])
-        .is('department_id', null)
-        .order('full_name');
-
-      // Merge: native dept users + no-dept teachers (deduplicated)
-      const existingIds = new Set(filtered.map(u => u.id));
-      const extra = (noDeptTeachers || []).filter(t => !existingIds.has(t.id));
-
-      setDepartmentUsers([...filtered, ...extra as UserProfile[]]);
+      setDepartmentUsers(filtered);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
   };
