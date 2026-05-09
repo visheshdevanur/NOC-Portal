@@ -493,16 +493,16 @@ export default function ClerkDashboard() {
         u.semester_id ? firstYearSemIds.has(u.semester_id) : true
       );
 
-      // Teachers: ALL clerk-created teachers in the tenant (no branch at creation)
-      const { data: allClerks } = await supabase.from('profiles').select('id').eq('role', 'clerk');
-      const clerkIds = (allClerks || []).map(c => c.id);
+      // Teachers: created by ANY clerk OR any FYC (self-created + FYC-created + FYC-imported)
+      const { data: clerkFycUsers } = await supabase.from('profiles').select('id').in('role', ['clerk', 'fyc']);
+      const creatorIds = (clerkFycUsers || []).map(c => c.id);
       let allTeachers: UserProfile[] = [];
-      if (clerkIds.length > 0) {
+      if (creatorIds.length > 0) {
         const { data: teachers } = await supabase
           .from('profiles')
           .select('*, departments!profiles_department_id_fkey(name)')
           .in('role', ['teacher', 'faculty'])
-          .in('created_by', clerkIds)
+          .in('created_by', creatorIds)
           .order('full_name');
         allTeachers = (teachers || []) as UserProfile[];
       }

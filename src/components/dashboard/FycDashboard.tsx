@@ -201,20 +201,17 @@ export default function FycDashboard() {
         .order('created_at', { ascending: false });
       if (clerkErr) throw clerkErr;
 
-      // Teachers: ALL created by ANY clerk in the tenant
-      let allTeachers: any[] = [];
-      if (allClerkIds.length > 0) {
-        const { data: teachers, error: tErr } = await supabase
-          .from('profiles')
-          .select('*, departments!profiles_department_id_fkey(name)')
-          .in('role', ['teacher', 'faculty'])
-          .in('created_by', allClerkIds)
-          .order('created_at', { ascending: false });
-        if (tErr) throw tErr;
-        allTeachers = teachers || [];
-      }
+      // Teachers: created by ANY clerk OR by this FYC (self-created + imported)
+      const creatorIds = [...allClerkIds, user.id];
+      const { data: teachers, error: tErr } = await supabase
+        .from('profiles')
+        .select('*, departments!profiles_department_id_fkey(name)')
+        .in('role', ['teacher', 'faculty'])
+        .in('created_by', creatorIds)
+        .order('created_at', { ascending: false });
+      if (tErr) throw tErr;
 
-      setDepartmentUsers([...(myClerks || []), ...allTeachers] as UserProfile[]);
+      setDepartmentUsers([...(myClerks || []), ...(teachers || [])] as UserProfile[]);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
   };
