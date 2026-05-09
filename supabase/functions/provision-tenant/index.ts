@@ -43,7 +43,9 @@ serve(async (req) => {
     }
 
     // Verify caller is a platform admin
-    const adminClient = createClient(supabaseUrl, serviceKey)
+    const adminClient = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
     const { data: callerProfile } = await adminClient
       .from('profiles')
       .select('is_platform_admin')

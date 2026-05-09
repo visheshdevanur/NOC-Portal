@@ -32,7 +32,9 @@ serve(async (req) => {
       return jsonResponse({ error: 'Missing Authorization header' }, 401)
     }
 
-    const adminClient = createClient(supabaseUrl, serviceKey)
+    const adminClient = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
     const token = authHeader.replace('Bearer ', '')
     const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(token)
     if (authError || !caller) {

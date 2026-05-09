@@ -91,7 +91,9 @@ serve(async (req) => {
     // 3. Create admin client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const adminClient = createClient(supabaseUrl, serviceKey)
+    const adminClient = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
 
     // FIX #11: Process atomically via single RPC instead of 4 separate DB calls
     // This ensures all-or-nothing: payment_orders + enrollment + dues + activity log

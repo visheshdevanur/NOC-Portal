@@ -188,11 +188,22 @@ export default function FycDashboard() {
     if (!user?.id) return;
     setLoadingUsers(true);
     try {
+      // Get clerk IDs created by this FYC
+      const { data: myClerkIds } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'clerk')
+        .eq('created_by', user.id);
+      const clerkIds = (myClerkIds || []).map(c => c.id);
+      
+      // Build OR filter: created by FYC OR created by FYC's clerks
+      const creatorFilter = [`created_by.eq.${user.id}`, ...clerkIds.map(id => `created_by.eq.${id}`)].join(',');
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*, departments!profiles_department_id_fkey(name)')
         .in('role', ['clerk', 'teacher', 'faculty'])
-        .or(`created_by.eq.${user.id},department_id.is.null`)
+        .or(creatorFilter)
         .order('created_at', { ascending: false });
       if (error) throw error;
       setDepartmentUsers(data as UserProfile[]);

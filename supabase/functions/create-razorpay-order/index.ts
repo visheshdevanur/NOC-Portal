@@ -57,7 +57,9 @@ serve(async (req) => {
     }
 
     // 3. Verify the student actually has a pending fine
-    const adminClient = createClient(supabaseUrl, serviceKey)
+    const adminClient = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
     const { data: profile } = await adminClient
       .from('profiles')
       .select('id, role, tenant_id')

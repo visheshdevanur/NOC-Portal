@@ -1004,8 +1004,13 @@ export default function StaffDashboard() {
       ]);
       setSections(secs);
       setDeptSubjects(subs as Subject[]);
-      // Exclude FYC-managed teachers from section assignment dropdown
-      setDeptTeachers((allTeachers || []).filter((t: any) => !t.created_by));
+      // Include teachers without created_by (admin-created) and teachers created by any staff/hod
+      const { data: staffHodUsers } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('role', ['staff', 'hod']);
+      const staffHodIds = new Set((staffHodUsers || []).map(s => s.id));
+      setDeptTeachers((allTeachers || []).filter((t: any) => !t.created_by || staffHodIds.has(t.created_by)));
     } catch (err) { console.error(err); }
   };
 

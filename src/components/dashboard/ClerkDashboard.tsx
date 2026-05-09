@@ -1061,22 +1061,22 @@ export default function ClerkDashboard() {
       setSections(secs);
       setDeptSubjects(subs as Subject[]);
       
-      // Fetch all FYC user IDs
-      const { data: fycUsers } = await supabase
+      // Fetch all FYC and Clerk user IDs
+      const { data: fycClerkUsers } = await supabase
         .from('profiles')
         .select('id')
-        .eq('role', 'fyc');
-      const fycIds = new Set((fycUsers || []).map(f => f.id));
+        .in('role', ['fyc', 'clerk']);
+      const fycClerkIds = new Set((fycClerkUsers || []).map(f => f.id));
 
-      // Fetch all FYC-created teachers globally
-      const { data: fycTeachers } = await supabase
+      // Fetch all teachers created by FYC or Clerk users
+      const { data: managedTeachers } = await supabase
         .from('profiles')
         .select('*')
         .in('role', ['teacher', 'faculty'])
         .not('created_by', 'is', null)
         .order('full_name');
 
-      const validTeachers = (fycTeachers || []).filter(t => t.created_by && fycIds.has(t.created_by));
+      const validTeachers = (managedTeachers || []).filter(t => t.created_by && fycClerkIds.has(t.created_by));
       setDeptTeachers(validTeachers);
     } catch (err) { console.error(err); }
   };

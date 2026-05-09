@@ -25,7 +25,9 @@ async function validateSuperAdmin(req: Request) {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
   // Use service_role client for reliable JWT verification
-  const adminClient = createClient(supabaseUrl, serviceKey)
+  const adminClient = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 
   // Extract the JWT token and verify the user
   const token = authHeader.replace('Bearer ', '')
