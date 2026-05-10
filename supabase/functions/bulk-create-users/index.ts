@@ -93,23 +93,9 @@ serve(async (req) => {
           .limit(1)
 
         if (existing && existing.length > 0) {
-          // Update existing profile
-          const updateData: Record<string, unknown> = { full_name, role }
-          if (department_id) updateData.department_id = department_id
-          if (roll_number) updateData.roll_number = roll_number
-          if (teacher_id) updateData.roll_number = teacher_id
-          if (section) updateData.section = section
-          if (semester_id) updateData.semester_id = semester_id
-
-          const { error: updateError } = await adminClient
-            .from('profiles')
-            .update(updateData)
-            .eq('id', existing[0].id)
-
-          if (updateError) {
-            return { row: rowNum, email, status: 'error' as const, error: updateError.message }
-          }
-          return { row: rowNum, email, status: 'updated' as const }
+          // User already exists — DO NOT overwrite their data.
+          // Skip to prevent accidental semester/section/department changes.
+          return { row: rowNum, email, status: 'updated' as const, error: 'Already exists — skipped' }
         }
 
         // Create auth user
