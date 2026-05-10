@@ -29,6 +29,7 @@ export const getAllStudentStatuses = async () => {
     const { data, error } = await supabase
       .from('clearance_requests')
       .select('*, profiles!clearance_requests_student_id_fkey(full_name, department_id, section, departments(name))')
+      .order('id')
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;

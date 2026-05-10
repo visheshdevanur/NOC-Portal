@@ -14,6 +14,7 @@ export const getLibraryDues = async () => {
       .from('profiles')
       .select('id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)')
       .eq('role', 'student')
+      .order('id')
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -29,6 +30,7 @@ export const getLibraryDues = async () => {
     const { data, error } = await supabase
       .from('library_dues')
       .select('student_id, has_dues, fine_amount, paid_amount, remarks, updated_at')
+      .order('student_id')
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;

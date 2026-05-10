@@ -14,6 +14,7 @@ export const getAllStudentDues = async () => {
       .from('profiles')
       .select('id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)')
       .eq('role', 'student')
+      .order('id')
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -29,6 +30,7 @@ export const getAllStudentDues = async () => {
     const { data, error } = await supabase
       .from('student_dues')
       .select('student_id, fine_amount, status, updated_at')
+      .order('student_id')
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -127,6 +129,7 @@ export const getAccountsPendingFeeVerifications = async () => {
       .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
       .gt('attendance_fee', 0)
       .eq('attendance_fee_verified', false)
+      .order('id')
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -157,6 +160,7 @@ export const getAccountsVerifiedFees = async () => {
       .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
       .gt('attendance_fee', 0)
       .eq('attendance_fee_verified', true)
+      .order('id')
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -300,6 +304,7 @@ export const getStaffAttendanceFines = async (departmentId: string) => {
       .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
       .eq('status', 'rejected')
       .eq('profiles.department_id', departmentId)
+      .order('id')
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
