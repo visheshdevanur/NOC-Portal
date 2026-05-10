@@ -549,15 +549,15 @@ export default function AdminDashboard() {
       // 1. Fetch all non-student users (< 200, fits in one query)
       const staffRes = await supabase.from('profiles').select(selectFields).neq('role', 'student').order('created_at', { ascending: false }).limit(10000);
       if (staffRes.error) throw staffRes.error;
-      // 2. Paginate students in batches of 10000
+      // 2. Paginate students in batches of 1000 (Supabase server max)
       let allStudents: any[] = [];
       let offset = 0;
       while (true) {
-        const batch = await supabase.from('profiles').select(selectFields).eq('role', 'student').order('created_at', { ascending: false }).range(offset, offset + 9999);
+        const batch = await supabase.from('profiles').select(selectFields).eq('role', 'student').order('created_at', { ascending: false }).range(offset, offset + 999);
         if (batch.error) throw batch.error;
         allStudents = [...allStudents, ...(batch.data || [])];
-        if (!batch.data || batch.data.length < 10000) break;
-        offset += 10000;
+        if (!batch.data || batch.data.length < 1000) break;
+        offset += 1000;
       }
       const combined = [...(staffRes.data || []), ...allStudents];
       setAllUsers(combined as UserProfile[]);

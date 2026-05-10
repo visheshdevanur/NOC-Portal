@@ -5,8 +5,8 @@ import { logActivity } from './shared';
 // ACCOUNTS SPECIFIC
 // =======================
 export const getAllStudentDues = async () => {
-  // Fetch ALL students from profiles (paginated to bypass 1000 row limit)
-  const PAGE_SIZE = 10000;
+  // Supabase server returns max 1000 rows per request. Loop pages through ALL records.
+  const PAGE_SIZE = 1000;
   let allStudents: any[] = [];
   let from = 0;
   while (true) {

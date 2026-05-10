@@ -61,11 +61,11 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
         return q;
       };
       while (true) {
-        const { data, error } = await baseQuery().range(offset, offset + 9999);
+        const { data, error } = await baseQuery().range(offset, offset + 999);
         if (error) throw error;
         students = [...students, ...(data || [])];
-        if (!data || data.length < 10000) break;
-        offset += 10000;
+        if (!data || data.length < 1000) break;
+        offset += 1000;
       }
 
       const studentIds = students.map((s: any) => s.id);
