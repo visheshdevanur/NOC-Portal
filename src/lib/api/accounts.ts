@@ -6,7 +6,7 @@ import { logActivity } from './shared';
 // =======================
 export const getAllStudentDues = async () => {
   // Fetch ALL students from profiles (paginated to bypass 1000 row limit)
-  const PAGE_SIZE = 1000;
+  const PAGE_SIZE = 10000;
   let allStudents: any[] = [];
   let from = 0;
   while (true) {
