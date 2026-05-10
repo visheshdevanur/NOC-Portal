@@ -29,7 +29,7 @@ export const getAllStudentDues = async () => {
   while (true) {
     const { data, error } = await supabase
       .from('student_dues')
-      .select('student_id, fine_amount, status, updated_at')
+      .select('id, student_id, fine_amount, paid_amount, status, permitted_until, updated_at')
       .order('student_id')
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
@@ -46,10 +46,12 @@ export const getAllStudentDues = async () => {
   return allStudents.map(student => {
     const dues = duesMap.get(student.id);
     return {
-      id: dues?.student_id || student.id,
+      id: dues?.id || null,
       student_id: student.id,
       fine_amount: dues?.fine_amount ?? 0,
+      paid_amount: dues?.paid_amount ?? 0,
       status: dues?.status ?? 'pending',
+      permitted_until: dues?.permitted_until ?? null,
       updated_at: dues?.updated_at ?? null,
       profiles: student,
     };
@@ -115,6 +117,21 @@ export const updateStudentDueFee = async (dueId: string, fineAmount: number, pai
     .eq('id', dueId);
   if (error) throw error;
   return { id: dueId, fine_amount: fineAmount, paid_amount: paidAmount, status };
+};
+
+/**
+ * Upsert a student_dues record. If dueId is provided, update by id.
+ * If dueId is null (student has no dues row yet), create one using studentId.
+ */
+export const upsertStudentDue = async (dueId: string | null, studentId: string, updates: Record<string, any>) => {
+  if (dueId) {
+    const { error } = await supabase.from('student_dues').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', dueId);
+    if (error) throw error;
+  } else {
+    // No existing dues row — create one
+    const { error } = await supabase.from('student_dues').insert({ student_id: studentId, ...updates, updated_at: new Date().toISOString() });
+    if (error) throw error;
+  }
 };
 
 // =======================

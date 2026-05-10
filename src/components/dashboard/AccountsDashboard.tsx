@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
-import { updateStudentDueFee, logActivity } from '../../lib/api';
+import { upsertStudentDue, logActivity } from '../../lib/api';
 import { Search, X, ShieldCheck, Building2, BookOpen, Users, ChevronRight, CornerUpLeft, Download } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 
 type StudentDues = {
   id: string;
@@ -67,32 +66,6 @@ export default function AccountsDashboard() {
 
 
 
-
-  const handleManualFeeUpdate = async (dueId: string, fineAmount: number, paidAmount: number = 0, profileName: string = 'Student') => {
-    try {
-      // First, strictly fetch the existing due amount from the database
-      const { data: currentDue } = await supabase.from('student_dues').select('fine_amount, paid_amount').eq('id', dueId).single();
-      const previousAmount = currentDue?.fine_amount || 0;
-      const diff = previousAmount - fineAmount;
-      
-      await updateStudentDueFee(dueId, fineAmount, paidAmount);
-      
-      if (fineAmount === 0 && previousAmount > 0) {
-        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName} (Paid: ₹${previousAmount})`);
-      } else if (fineAmount === 0 && previousAmount === 0) {
-        await logActivity('Cleared Due Amount', `Cleared dues for ${profileName}`);
-      } else if (diff > 0) {
-        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} for ${profileName} (Paid: ₹${diff})`);
-      } else {
-        await logActivity('Updated Due Amount', `Set due amount to ₹${fineAmount} (Paid: ₹${paidAmount}) for ${profileName}`);
-      }
-      // Refetch to get updated state from server
-      refetchDues();
-      setSuccess(`Due amount updated. Fine: ₹${fineAmount}, Paid: ₹${paidAmount}.`);
-    } catch (err: any) {
-      setError('Failed to update due amount: ' + (err?.message || 'Unknown'));
-    }
-  };
 
   const downloadTemplate = () => {
     const csvContent = "data:text/csv;charset=utf-8,roll_number\n4MH24CS001\n4MH24CS002";
@@ -367,8 +340,7 @@ export default function AccountsDashboard() {
                               <button
                                 onClick={async () => {
                                   try {
-                                    const { error } = await supabase.from('student_dues').update({ status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null }).eq('id', d.id);
-                                    if (error) throw error;
+                                    await upsertStudentDue(d.id, d.student_id, { status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null });
                                     await logActivity('Set College Due', `Marked ${d.profiles?.full_name || 'student'} as having dues`);
                                     setSuccess(`Set due for ${d.profiles?.full_name}`);
                                     fetchDues();
@@ -388,11 +360,12 @@ export default function AccountsDashboard() {
                                       onClick={async () => {
                                         const permitDate = new Date();
                                         permitDate.setDate(permitDate.getDate() + 2);
-                                        const { error } = await supabase.from('student_dues').update({ permitted_until: permitDate.toISOString() }).eq('id', d.id);
-                                        if (error) setError('Failed to permit student: ' + error.message);
-                                        else {
+                                        try {
+                                          await upsertStudentDue(d.id, d.student_id, { permitted_until: permitDate.toISOString() });
                                           setSuccess(`Permitted ${d.profiles?.full_name} for 2 days.`);
                                           fetchDues();
+                                        } catch (err: any) {
+                                          setError('Failed to permit student: ' + (err?.message || 'Unknown'));
                                         }
                                       }}
                                       className="px-3 py-1.5 bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold rounded-lg transition-colors"
@@ -401,7 +374,16 @@ export default function AccountsDashboard() {
                                     </button>
                                   )}
                                   <button
-                                    onClick={() => handleManualFeeUpdate(d.id, d.fine_amount || 0, d.fine_amount || 0, d.profiles?.full_name || 'Unknown')}
+                                    onClick={async () => {
+                                      try {
+                                        await upsertStudentDue(d.id, d.student_id, { status: 'completed', fine_amount: 0, paid_amount: 0, permitted_until: null });
+                                        await logActivity('Cleared College Due', `Cleared accounts dues for ${d.profiles?.full_name || 'student'}`);
+                                        setSuccess(`Cleared dues for ${d.profiles?.full_name}`);
+                                        fetchDues();
+                                      } catch (err: any) {
+                                        setError('Failed to clear due: ' + (err?.message || 'Unknown'));
+                                      }
+                                    }}
                                     className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
                                   >
                                     Clear Accounts
@@ -570,8 +552,7 @@ export default function AccountsDashboard() {
                                   <button
                                     onClick={async () => {
                                       try {
-                                        const { error } = await supabase.from('student_dues').update({ status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null }).eq('id', d.id);
-                                        if (error) throw error;
+                                        await upsertStudentDue(d.id, d.student_id, { status: 'pending', fine_amount: 0, paid_amount: 0, permitted_until: null });
                                         await logActivity('Set College Due', `Marked ${d.profiles?.full_name || 'student'} as having dues`);
                                         setSuccess(`Set due for ${d.profiles?.full_name}`);
                                         fetchDues();
@@ -591,11 +572,12 @@ export default function AccountsDashboard() {
                                         onClick={async () => {
                                           const permitDate = new Date();
                                           permitDate.setDate(permitDate.getDate() + 2);
-                                          const { error } = await supabase.from('student_dues').update({ permitted_until: permitDate.toISOString() }).eq('id', d.id);
-                                          if (error) setError('Failed to permit student: ' + error.message);
-                                          else {
+                                          try {
+                                            await upsertStudentDue(d.id, d.student_id, { permitted_until: permitDate.toISOString() });
                                             setSuccess(`Permitted ${d.profiles?.full_name} for 2 days.`);
                                             fetchDues();
+                                          } catch (err: any) {
+                                            setError('Failed to permit student: ' + (err?.message || 'Unknown'));
                                           }
                                         }}
                                         className="px-3 py-1.5 bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold rounded-lg transition-colors"
@@ -604,7 +586,16 @@ export default function AccountsDashboard() {
                                       </button>
                                     )}
                                     <button
-                                      onClick={() => handleManualFeeUpdate(d.id, d.fine_amount || 0, d.fine_amount || 0, d.profiles?.full_name || 'Unknown')}
+                                      onClick={async () => {
+                                        try {
+                                          await upsertStudentDue(d.id, d.student_id, { status: 'completed', fine_amount: 0, paid_amount: 0, permitted_until: null });
+                                          await logActivity('Cleared College Due', `Cleared accounts dues for ${d.profiles?.full_name || 'student'}`);
+                                          setSuccess(`Cleared dues for ${d.profiles?.full_name}`);
+                                          fetchDues();
+                                        } catch (err: any) {
+                                          setError('Failed to clear due: ' + (err?.message || 'Unknown'));
+                                        }
+                                      }}
                                       className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-colors"
                                     >
                                       Clear Accounts
