@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import {
   getUsersByDeptAndRoles,
-  getSubjectsByDepartment, createSubject, deleteSubject, getDepartmentSections,
+  getSubjectsByDepartment, createSubject, deleteSubject,
   assignTeacherToSection, updateSubjectAPI, getStaffAttendanceFines, getSemestersByDepartment, updateUserAPI,
   updateStudentPaidAmount, getAllDepartments
 } from '../../lib/api';
@@ -1051,11 +1051,24 @@ export default function ClerkDashboard() {
   const fetchSectionData = async () => {
     if (!selectedDeptId) return;
     try {
-      const [secs, subs] = await Promise.all([
-        getDepartmentSections(selectedDeptId),
-        getSubjectsByDepartment(selectedDeptId),
-      ]);
+      // Get first-year semester IDs for this department
+      const allSems = await getSemestersByDepartment(selectedDeptId);
+      const firstYearSemIds = new Set(
+        (allSems as Semester[]).filter(s => isFirstYearSem(s.name)).map(s => s.id)
+      );
+
+      // Get sections only from first-year students in this branch
+      const { data: studentSections } = await supabase
+        .from('profiles')
+        .select('section')
+        .eq('department_id', selectedDeptId)
+        .eq('role', 'student')
+        .not('section', 'is', null)
+        .in('semester_id', Array.from(firstYearSemIds));
+      const secs = [...new Set((studentSections || []).map((d: any) => d.section).filter(Boolean))] as string[];
       setSections(secs);
+
+      const subs = await getSubjectsByDepartment(selectedDeptId);
       setDeptSubjects(subs as Subject[]);
       
       // Fetch all FYC and Clerk user IDs

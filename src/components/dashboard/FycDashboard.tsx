@@ -425,8 +425,9 @@ export default function FycDashboard() {
         email: newUser.email,
         password: newUser.password,
         full_name: newUser.full_name,
-        role: 'clerk',
+        role: newUser.role,
         department_id: newUser.department_id || undefined,
+        teacher_id: newUser.role === 'teacher' ? newUser.teacher_id : undefined,
       });
 
       await supabase.from('activity_logs').insert([{
@@ -434,10 +435,10 @@ export default function FycDashboard() {
         user_role: 'fyc',
         user_name: user?.email,
         action: 'User Created',
-        details: `Created clerk profile for ${newUser.full_name}`
+        details: `Created ${newUser.role} profile for ${newUser.full_name}`
       }]);
 
-      setUserSuccess(`Clerk "${newUser.full_name}" created!`);
+      setUserSuccess(`${newUser.role === 'clerk' ? 'Clerk' : 'Teacher'} "${newUser.full_name}" created!`);
       setNewUser({ email: '', password: '', full_name: '', role: 'clerk', department_id: '', teacher_id: '' });
       setShowCreateUser(false);
       fetchUsers();
@@ -990,9 +991,21 @@ export default function FycDashboard() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">Role</label>
-                    <input type="text" className="w-full px-4 py-2 bg-background border border-border rounded-xl text-muted-foreground" value="Clerk" disabled />
+                    <select
+                      className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+                      value={newUser.role}
+                      onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                    >
+                      <option value="clerk">Clerk</option>
+                      <option value="teacher">Teacher</option>
+                    </select>
                   </div>
-                  {/* Clerk is global — no department selector needed */}
+                  {newUser.role === 'teacher' && (
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">Teacher ID</label>
+                      <input type="text" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 uppercase" placeholder="e.g. FAC001" value={newUser.teacher_id} onChange={e => setNewUser({ ...newUser, teacher_id: e.target.value })} />
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">Password</label>
                     <input type="password" className="w-full px-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />

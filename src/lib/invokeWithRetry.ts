@@ -36,19 +36,31 @@ export async function invokeWithRetry<T = unknown>(
       const { data, error } = await supabase.functions.invoke(functionName, { body });
 
       if (error) {
+        // Try to extract the actual error message from the response
+        let errorMsg = error.message || 'Edge Function call failed';
+        
+        // The Supabase client often returns generic "non-2xx" message.
+        // The actual error is in the response context or data.
+        const ctx = (error as any)?.context;
+        if (ctx && typeof ctx.json === 'function') {
+          try {
+            const errBody = await ctx.json();
+            if (errBody?.error) errorMsg = errBody.error;
+          } catch {}
+        }
+
         // Check if error is retryable
         const status = (error as any)?.status || (error as any)?.context?.status || 500;
         
         if (attempt < opts.maxRetries && opts.retryableStatuses.includes(status)) {
-          lastError = new Error(error.message || `Edge Function error (${status})`);
+          lastError = new Error(errorMsg);
           const delay = Math.min(opts.baseDelay * Math.pow(2, attempt), opts.maxDelay);
-          // Add jitter (±25%)
           const jitter = delay * (0.75 + Math.random() * 0.5);
           await new Promise(resolve => setTimeout(resolve, jitter));
           continue;
         }
 
-        throw new Error(error.message || 'Edge Function call failed');
+        throw new Error(errorMsg);
       }
 
       if (data?.error) {
