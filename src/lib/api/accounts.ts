@@ -104,7 +104,7 @@ export const getAccountsPendingFeeVerifications = async () => {
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
     .gt('attendance_fee', 0)
     .eq('attendance_fee_verified', false)
-    .limit(5000);
+    .limit(10000);
   if (error) throw error;
   return data;
 };
@@ -126,7 +126,7 @@ export const getAccountsVerifiedFees = async () => {
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
     .gt('attendance_fee', 0)
     .eq('attendance_fee_verified', true)
-    .limit(5000);
+    .limit(10000);
   if (error) throw error;
   return data;
 };

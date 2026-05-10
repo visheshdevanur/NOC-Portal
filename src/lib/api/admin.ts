@@ -9,7 +9,7 @@ export const getAllUsers = async () => {
     .from('profiles')
     .select('*, departments(name)')
     .order('created_at', { ascending: false })
-    .limit(5000);
+    .limit(10000);
   if (error) throw error;
   return data;
 };
@@ -18,7 +18,7 @@ export const getAllStudentStatuses = async () => {
   const { data, error } = await supabase
     .from('clearance_requests')
     .select('*, profiles!clearance_requests_student_id_fkey(full_name, department_id, section, departments(name))')
-    .limit(5000);
+    .limit(10000);
   if (error) throw error;
   return data;
 };

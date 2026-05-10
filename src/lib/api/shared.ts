@@ -30,7 +30,7 @@ export const isFirstYearSem = (name: string) => {
   return n.includes('1st') || n.includes('2nd') || n === '1' || n === '2' || n.includes('first') || n.includes('second');
 };
 
-export const getActivityLogs = async (limit: number = 500) => {
+export const getActivityLogs = async (limit: number = 10000) => {
   const { data, error } = await supabase
     .from('activity_logs')
     .select('*')
