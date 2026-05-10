@@ -645,70 +645,103 @@ export default function FacultyDashboard() {
                 )}
               </div>
               
-              {/* Table */}
+              {/* Table grouped by Subject */}
               {filtered.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">No students match your search in this section.</div>
-              ) : (
-                  <div className="overflow-x-auto p-4">
-                    <div className="border border-border rounded-2xl overflow-hidden bg-card">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
-                            <th className="px-6 py-4 font-semibold">Student Name</th>
-                            <th className="px-6 py-4 font-semibold">USN</th>
-                            <th className="px-6 py-4 font-semibold">Section</th>
-                            <th className="px-6 py-4 font-semibold">Subject</th>
-                            <th className="px-6 py-4 font-semibold">Attendance %</th>
-                            <th className="px-6 py-4 font-semibold">Status</th>
-                            <th className="px-6 py-4 font-semibold text-right">Remarks</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                          {filtered.map(student => (
-                            <tr key={student.id} className="hover:bg-secondary/20 transition-colors">
-                              <td className="px-6 py-4 font-medium text-foreground">{student.profiles?.full_name || 'Unknown'}</td>
-                              <td className="px-6 py-4 text-sm text-muted-foreground">{student.profiles?.roll_number || 'N/A'}</td>
-                              <td className="px-6 py-4 text-sm font-medium text-foreground">{student.profiles?.section || '-'}</td>
-                              <td className="px-6 py-4">
-                                <div className="text-sm font-medium">{student.subjects.subject_name}</div>
-                                <div className="text-xs text-muted-foreground">{student.subjects.subject_code}</div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                  <input 
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    className={`w-20 p-2 border rounded-xl text-sm bg-background transition-colors focus:ring-2 focus:ring-primary focus:outline-none ${
-                                      (student.attendance_pct || 0) < 85 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
-                                    }`}
-                                    value={student.attendance_pct === null ? '' : student.attendance_pct}
-                                    onChange={e => handleAttendanceChange(student.id, e.target.value)}
-                                    onBlur={() => updateAttendance(student.id)}
-                                    onKeyDown={e => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); } }}
-                                  />
-                                  <span className="text-xs text-muted-foreground font-medium">Min 85%</span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                  student.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                                  student.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
-                                  'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                                }`}>
-                                  {student.status.toUpperCase()}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-right text-sm text-muted-foreground font-medium">
-                                {student.remarks || '-'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+              ) : (() => {
+                // Group filtered students by subject
+                const subjectGroups: Record<string, typeof filtered> = {};
+                filtered.forEach(s => {
+                  const key = `${s.subjects.subject_code} — ${s.subjects.subject_name}`;
+                  if (!subjectGroups[key]) subjectGroups[key] = [];
+                  subjectGroups[key].push(s);
+                });
+                const subjectKeys = Object.keys(subjectGroups).sort();
+
+                return (
+                  <div className="p-4 space-y-4">
+                    {subjectKeys.map(subjectKey => {
+                      const subStudents = subjectGroups[subjectKey];
+                      const completedCount = subStudents.filter(s => s.status === 'completed').length;
+                      const rejectedCount = subStudents.filter(s => s.status === 'rejected').length;
+                      const pendingCount = subStudents.filter(s => s.status === 'pending').length;
+
+                      return (
+                        <div key={subjectKey} className="border border-border rounded-2xl overflow-hidden bg-card">
+                          {/* Subject Header */}
+                          <div className="flex items-center justify-between px-6 py-4 bg-secondary/20 border-b border-border">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
+                                <BookOpen className="w-4 h-4 text-primary" />
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-foreground text-sm">{subjectKey}</h4>
+                                <p className="text-xs text-muted-foreground">{subStudents.length} students</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {completedCount > 0 && <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2.5 py-1 rounded-full">{completedCount} Cleared</span>}
+                              {rejectedCount > 0 && <span className="text-xs font-medium bg-destructive/10 text-destructive px-2.5 py-1 rounded-full">{rejectedCount} Rejected</span>}
+                              {pendingCount > 0 && <span className="text-xs font-medium bg-amber-500/10 text-amber-600 px-2.5 py-1 rounded-full">{pendingCount} Pending</span>}
+                            </div>
+                          </div>
+                          {/* Students Table */}
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
+                                <th className="px-6 py-3 font-semibold">Student Name</th>
+                                <th className="px-6 py-3 font-semibold">USN</th>
+                                <th className="px-6 py-3 font-semibold">Section</th>
+                                <th className="px-6 py-3 font-semibold">Attendance %</th>
+                                <th className="px-6 py-3 font-semibold">Status</th>
+                                <th className="px-6 py-3 font-semibold text-right">Remarks</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {subStudents.map(student => (
+                                <tr key={student.id} className="hover:bg-secondary/20 transition-colors">
+                                  <td className="px-6 py-3 font-medium text-foreground">{student.profiles?.full_name || 'Unknown'}</td>
+                                  <td className="px-6 py-3 text-sm text-muted-foreground">{student.profiles?.roll_number || 'N/A'}</td>
+                                  <td className="px-6 py-3 text-sm font-medium text-foreground">{student.profiles?.section || '-'}</td>
+                                  <td className="px-6 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <input 
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        className={`w-20 p-2 border rounded-xl text-sm bg-background transition-colors focus:ring-2 focus:ring-primary focus:outline-none ${
+                                          (student.attendance_pct || 0) < 85 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
+                                        }`}
+                                        value={student.attendance_pct === null ? '' : student.attendance_pct}
+                                        onChange={e => handleAttendanceChange(student.id, e.target.value)}
+                                        onBlur={() => updateAttendance(student.id)}
+                                        onKeyDown={e => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); } }}
+                                      />
+                                      <span className="text-xs text-muted-foreground font-medium">Min 85%</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-3">
+                                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                      student.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                                      student.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
+                                      'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                    }`}>
+                                      {student.status.toUpperCase()}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-3 text-right text-sm text-muted-foreground font-medium">
+                                    {student.remarks || '-'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
                   </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </div>
