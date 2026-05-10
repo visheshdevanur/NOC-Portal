@@ -15,14 +15,23 @@ export const getHodPendingRequests = async (departmentId: string) => {
 };
 
 export const getHodDepartmentStudents = async (departmentId: string) => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*, semesters(name), clearance_requests(status, current_stage, created_at, updated_at)')
-    .eq('department_id', departmentId)
-    .eq('role', 'student')
-    .order('full_name');
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*, semesters(name), clearance_requests(status, current_stage, created_at, updated_at)')
+      .eq('department_id', departmentId)
+      .eq('role', 'student')
+      .order('full_name')
+      .range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 export const approveHodRequest = async (requestId: string) => {

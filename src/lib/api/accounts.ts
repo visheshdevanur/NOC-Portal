@@ -292,13 +292,22 @@ export const bulkSetAttendanceDuesCSV = async (departmentId: string | undefined,
 };
 
 export const getStaffAttendanceFines = async (departmentId: string) => {
-  const { data, error } = await supabase
-    .from('subject_enrollment')
-    .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
-    .eq('status', 'rejected')
-    .eq('profiles.department_id', departmentId);
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('subject_enrollment')
+      .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+      .eq('status', 'rejected')
+      .eq('profiles.department_id', departmentId)
+      .range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 export const overrideAttendanceFine = async (enrollmentId: string, feeAmount: number = 0) => {

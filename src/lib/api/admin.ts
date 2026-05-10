@@ -90,9 +90,17 @@ export const getUsersByRole = async (roles: string[]) => {
 };
 
 export const getUsersByDeptAndRoles = async (departmentId: string, roles: string[]) => {
-  const { data, error } = await supabase.from('profiles').select('*, semesters(name)').eq('department_id', departmentId).in('role', roles).order('created_at', { ascending: false });
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase.from('profiles').select('*, semesters(name)').eq('department_id', departmentId).in('role', roles).order('created_at', { ascending: false }).range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 export const updateSubjectAPI = async (id: string, updates: Record<string, any>) => {
