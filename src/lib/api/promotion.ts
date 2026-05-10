@@ -18,21 +18,45 @@ export const promoteAllStudents = async () => {
 };
 
 export const getPromotionPreview = async () => {
-  const { data, error } = await supabase.from('profiles').select('id, full_name, department_id, semester_id, section, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)').eq('role', 'student').or('status.is.null,status.eq.active').order('full_name').limit(10000);
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase.from('profiles').select('id, full_name, department_id, semester_id, section, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)').eq('role', 'student').or('status.is.null,status.eq.active').order('full_name').range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 export const getGraduatedStudents = async () => {
-  const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, department_id, batch, section, created_at, departments!profiles_department_id_fkey(name)').eq('role', 'student').eq('status', 'graduated').order('full_name').limit(10000);
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, department_id, batch, section, created_at, departments!profiles_department_id_fkey(name)').eq('role', 'student').eq('status', 'graduated').order('full_name').range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 export const getActiveStudentsDetails = async () => {
-  const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, department_id, section, created_at, semesters!profiles_semester_id_fkey(name), departments!profiles_department_id_fkey(name)').eq('role', 'student').or('status.is.null,status.eq.active').order('full_name').limit(10000);
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, department_id, section, created_at, semesters!profiles_semester_id_fkey(name), departments!profiles_department_id_fkey(name)').eq('role', 'student').or('status.is.null,status.eq.active').order('full_name').range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 export const removeGraduatedStudents = async (studentIds: string[]) => {

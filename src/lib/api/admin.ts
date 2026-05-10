@@ -5,22 +5,38 @@ import { logActivity } from './shared';
 // ADMIN: ALL USERS & HALL-TICKET STATUS
 // =======================
 export const getAllUsers = async () => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*, departments(name)')
-    .order('created_at', { ascending: false })
-    .limit(10000);
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*, departments(name)')
+      .order('created_at', { ascending: false })
+      .range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 export const getAllStudentStatuses = async () => {
-  const { data, error } = await supabase
-    .from('clearance_requests')
-    .select('*, profiles!clearance_requests_student_id_fkey(full_name, department_id, section, departments(name))')
-    .limit(10000);
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('clearance_requests')
+      .select('*, profiles!clearance_requests_student_id_fkey(full_name, department_id, section, departments(name))')
+      .range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 export const getSubjectsByDepartment = async (departmentId: string) => {

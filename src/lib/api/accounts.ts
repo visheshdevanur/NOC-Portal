@@ -119,14 +119,22 @@ export const updateStudentDueFee = async (dueId: string, fineAmount: number, pai
 // ACCOUNTS: ATTENDANCE FEE VERIFICATION
 // =======================
 export const getAccountsPendingFeeVerifications = async () => {
-  const { data, error } = await supabase
-    .from('subject_enrollment')
-    .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
-    .gt('attendance_fee', 0)
-    .eq('attendance_fee_verified', false)
-    .limit(10000);
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('subject_enrollment')
+      .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+      .gt('attendance_fee', 0)
+      .eq('attendance_fee_verified', false)
+      .range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 export const verifyAttendanceFee = async (enrollmentId: string) => {
@@ -141,14 +149,22 @@ export const verifyAttendanceFee = async (enrollmentId: string) => {
 };
 
 export const getAccountsVerifiedFees = async () => {
-  const { data, error } = await supabase
-    .from('subject_enrollment')
-    .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
-    .gt('attendance_fee', 0)
-    .eq('attendance_fee_verified', true)
-    .limit(10000);
-  if (error) throw error;
-  return data;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('subject_enrollment')
+      .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+      .gt('attendance_fee', 0)
+      .eq('attendance_fee_verified', true)
+      .range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 };
 
 // =======================
