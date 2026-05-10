@@ -547,7 +547,7 @@ export default function AdminDashboard() {
       // Supabase max_rows is 1000 — split queries and paginate students
       const selectFields = '*, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)';
       // 1. Fetch all non-student users (< 200, fits in one query)
-      const staffRes = await supabase.from('profiles').select(selectFields).neq('role', 'student').order('created_at', { ascending: false }).limit(1000);
+      const staffRes = await supabase.from('profiles').select(selectFields).neq('role', 'student').order('created_at', { ascending: false }).limit(5000);
       if (staffRes.error) throw staffRes.error;
       // 2. Paginate students in batches of 1000
       let allStudents: any[] = [];

@@ -121,7 +121,7 @@ export const getHodStaffActivityLogs = async (departmentId: string) => {
     .eq('department_id', departmentId)
     .neq('user_role', 'student')
     .order('created_at', { ascending: false })
-    .limit(200);
+    .limit(500);
   if (error) throw error;
   return data;
 };
@@ -132,7 +132,7 @@ export const getFycStaffActivityLogs = async () => {
     .select('*')
     .neq('user_role', 'fyc')
     .order('created_at', { ascending: false })
-    .limit(200);
+    .limit(500);
   if (error) throw error;
   return data;
 };

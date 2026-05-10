@@ -275,20 +275,19 @@ export default function FycDashboard() {
     setLoadingTeacherDetails(true);
     try {
       // Get ALL clerk IDs in the tenant
+      // Get ALL clerk IDs + FYC ID for full visibility
       const { data: allClerks } = await supabase.from('profiles').select('id').eq('role', 'clerk');
       const allClerkIds = (allClerks || []).map(c => c.id);
+      const creatorIds = [...allClerkIds, user.id];
 
-      let teachers: any[] = [];
-      if (allClerkIds.length > 0) {
-        const { data, error: tErr } = await supabase
-          .from('profiles')
-          .select('id, full_name, role, section, email, created_at')
-          .in('role', ['teacher', 'faculty'])
-          .in('created_by', allClerkIds)
-          .order('full_name');
-        if (tErr) throw tErr;
-        teachers = data || [];
-      }
+      const { data, error: tErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, role, section, email, created_at')
+        .in('role', ['teacher', 'faculty'])
+        .in('created_by', creatorIds)
+        .order('full_name');
+      if (tErr) throw tErr;
+      const teachers = data || [];
 
       const teacherIds = (teachers || []).map(t => t.id);
       if (teacherIds.length === 0) {

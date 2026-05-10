@@ -233,7 +233,7 @@ export default function StaffDashboard() {
         .eq('department_id', profile.department_id)
         .in('user_role', ['faculty', 'teacher'])
         .order('created_at', { ascending: false })
-        .limit(300);
+        .limit(500);
       if (error) throw error;
       setStaffLogs(data || []);
     } catch (err: any) { console.error('Failed to fetch staff logs:', err); }

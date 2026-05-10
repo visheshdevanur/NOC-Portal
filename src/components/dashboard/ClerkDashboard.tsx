@@ -255,7 +255,7 @@ export default function ClerkDashboard() {
         .eq('department_id', selectedDeptId)
         .in('user_id', validTeacherIds)
         .order('created_at', { ascending: false })
-        .limit(300);
+        .limit(500);
       if (error) throw error;
 
       setclerkLogs(data || []);
