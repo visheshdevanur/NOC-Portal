@@ -2144,7 +2144,7 @@ export default function StaffDashboard() {
                 <select
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500"
                   value={selectedSemesterForAssign}
-                  onChange={e => setSelectedSemesterForAssign(e.target.value)}
+                  onChange={e => { setSelectedSemesterForAssign(e.target.value); setSelectedSection(''); setSelectedSubject(''); }}
                 >
                   <option value="">Select...</option>
                   {semestersList.map(sem => (
@@ -2172,11 +2172,17 @@ export default function StaffDashboard() {
                   className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500"
                   value={selectedSection}
                   onChange={e => setSelectedSection(e.target.value)}
+                  disabled={!selectedSemesterForAssign}
                 >
                   <option value="">Select Section...</option>
-                  {sections.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
+                  {(() => {
+                    const secsForSem = selectedSemesterForAssign
+                      ? [...new Set(departmentUsers.filter(u => u.role === 'student' && u.semester_id === selectedSemesterForAssign && u.section).map(u => u.section!))].sort()
+                      : sections;
+                    return secsForSem.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ));
+                  })()}
                 </select>
                 {sections.length === 0 && <p className="text-xs text-amber-500 mt-1">No sections found. Create students with sections first.</p>}
               </div>

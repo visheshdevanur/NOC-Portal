@@ -402,7 +402,8 @@ export default function FacultyDashboard() {
   const handleAttendanceChange = (id: string, pctString: string) => {
     const pct = parseInt(pctString);
     if (isNaN(pct) && pctString !== '') return;
-    const newPct = isNaN(pct) ? null : pct;
+    // Auto-correct: clamp to 0–100 range
+    let newPct = isNaN(pct) ? null : Math.min(100, Math.max(0, pct));
     // Immediately update local status preview so the badge reflects the change
     const previewStatus = (newPct !== null && newPct < 85) ? 'rejected' : (newPct !== null && newPct >= 85) ? 'completed' : undefined;
     const previewRemarks = previewStatus === 'rejected' ? 'Low Attendance (<85%)' : previewStatus === 'completed' ? 'Cleared by Faculty' : undefined;
@@ -422,7 +423,7 @@ export default function FacultyDashboard() {
       const enrollment = students.find(s => s.id === id);
       if (!enrollment) return;
       
-      const pct = enrollment.attendance_pct || 0;
+      const pct = Math.min(100, Math.max(0, enrollment.attendance_pct || 0));
       let status = pct >= 85 ? 'completed' : 'rejected';
       let remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
 
@@ -654,7 +655,8 @@ export default function FacultyDashboard() {
                         <thead>
                           <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
                             <th className="px-6 py-4 font-semibold">Student Name</th>
-                            <th className="px-6 py-4 font-semibold">Roll No</th>
+                            <th className="px-6 py-4 font-semibold">USN</th>
+                            <th className="px-6 py-4 font-semibold">Section</th>
                             <th className="px-6 py-4 font-semibold">Subject</th>
                             <th className="px-6 py-4 font-semibold">Attendance %</th>
                             <th className="px-6 py-4 font-semibold">Status</th>
@@ -666,6 +668,7 @@ export default function FacultyDashboard() {
                             <tr key={student.id} className="hover:bg-secondary/20 transition-colors">
                               <td className="px-6 py-4 font-medium text-foreground">{student.profiles?.full_name || 'Unknown'}</td>
                               <td className="px-6 py-4 text-sm text-muted-foreground">{student.profiles?.roll_number || 'N/A'}</td>
+                              <td className="px-6 py-4 text-sm font-medium text-foreground">{student.profiles?.section || '-'}</td>
                               <td className="px-6 py-4">
                                 <div className="text-sm font-medium">{student.subjects.subject_name}</div>
                                 <div className="text-xs text-muted-foreground">{student.subjects.subject_code}</div>
