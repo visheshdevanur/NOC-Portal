@@ -323,7 +323,7 @@ export default function StudentDashboard() {
   const isFirstYear = useMemo(() => isFirstYearSem(semesterName), [semesterName]);
   const isHodApproved = request?.current_stage === 'cleared';
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(e => e.status === 'completed'), [enrollments]);
-  const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
+  const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : false, [libraryDue]);
   const isLibraryPermitted = useMemo(() => libraryDue ? (libraryDue.has_dues && libraryDue.permitted) : false, [libraryDue]);
   const libraryPass = allLibraryCleared || isLibraryPermitted;
   
@@ -876,20 +876,20 @@ export default function StudentDashboard() {
           </div>
           
           <div className="flex-1 space-y-4">
-            {!libraryDue && allLibraryCleared ? (
-               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border border-border bg-emerald-500/5 hover:shadow-md transition-shadow">
+            {!libraryDue ? (
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-amber-500/20 bg-amber-500/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
-                   <h3 className="font-semibold text-foreground capitalize text-lg">Library Returns</h3>
-                   <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-1 font-medium">All books returned & dues cleared.</p>
+                   <h3 className="font-semibold text-foreground capitalize text-lg">Library Clearance</h3>
+                   <p className="text-sm text-amber-600 font-medium mt-1">Pending — Awaiting library review</p>
                  </div>
                  <div className="flex items-center gap-3">
-                   <div className="bg-background p-2 rounded-xl shadow-sm border border-emerald-500/30">
-                    <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                   <div className="bg-background p-2 rounded-xl shadow-sm border border-amber-500/20">
+                    <Clock className="w-6 h-6 text-amber-500" />
                    </div>
-                   <span className="text-sm font-bold text-emerald-500">Cleared</span>
+                   <span className="text-sm font-bold text-amber-500">Pending</span>
                  </div>
                </div>
-            ) : libraryDue && libraryDue.has_dues && libraryDue.permitted ? (
+            ) : libraryDue.has_dues && libraryDue.permitted ? (
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
                    <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
@@ -906,7 +906,7 @@ export default function StudentDashboard() {
                    <span className="text-sm font-bold text-amber-500">Permitted</span>
                  </div>
                </div>
-            ) : libraryDue && libraryDue.has_dues ? (
+            ) : libraryDue.has_dues ? (
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-orange-500/20 bg-orange-500/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
                    <h3 className="font-semibold text-foreground capitalize text-lg">Library Dues</h3>
@@ -920,11 +920,11 @@ export default function StudentDashboard() {
                    <span className="text-sm font-bold text-orange-500">Pending</span>
                  </div>
                </div>
-            ) : libraryDue && !libraryDue.has_dues ? (
+            ) : (
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border border-border bg-emerald-500/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
                    <h3 className="font-semibold text-foreground capitalize text-lg">Library Returns</h3>
-                   <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-1 font-medium">Cleared manually by Librarian.</p>
+                   <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-1 font-medium">Cleared by Librarian.</p>
                    {libraryDue.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
                  </div>
                  <div className="flex items-center gap-3">
@@ -934,7 +934,7 @@ export default function StudentDashboard() {
                    <span className="text-sm font-bold text-emerald-500">Cleared</span>
                  </div>
                </div>
-            ) : null}
+            )}
           </div>
         </div>
 
