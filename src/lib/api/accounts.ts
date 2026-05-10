@@ -5,33 +5,53 @@ import { logActivity } from './shared';
 // ACCOUNTS SPECIFIC
 // =======================
 export const getAllStudentDues = async () => {
-  // First, ensure every student has a student_dues record
-  const { data: allStudents } = await supabase.from('profiles').select('id').eq('role', 'student');
-  if (allStudents && allStudents.length > 0) {
-    // Batch upsert missing records (won't affect existing ones)
-    const BATCH = 500;
-    for (let i = 0; i < allStudents.length; i += BATCH) {
-      const batch = allStudents.slice(i, i + BATCH).map(s => ({ student_id: s.id }));
-      await supabase.from('student_dues').upsert(batch, { onConflict: 'student_id', ignoreDuplicates: true });
-    }
-  }
-
-  // Now fetch all dues with profile data
+  // Fetch ALL students from profiles (paginated to bypass 1000 row limit)
   const PAGE_SIZE = 1000;
-  let allData: any[] = [];
+  let allStudents: any[] = [];
   let from = 0;
   while (true) {
     const { data, error } = await supabase
-      .from('student_dues')
-      .select('*, profiles!student_dues_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name))')
+      .from('profiles')
+      .select('id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)')
+      .eq('role', 'student')
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
-    allData = allData.concat(data);
+    allStudents = allStudents.concat(data);
     if (data.length < PAGE_SIZE) break;
     from += PAGE_SIZE;
   }
-  return allData;
+
+  // Fetch all existing student_dues records
+  let allDues: any[] = [];
+  from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('student_dues')
+      .select('student_id, fine_amount, status, updated_at')
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allDues = allDues.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  // Build a map of student_id -> dues
+  const duesMap = new Map(allDues.map(d => [d.student_id, d]));
+
+  // Merge: every student gets a record, whether or not they have dues
+  return allStudents.map(student => {
+    const dues = duesMap.get(student.id);
+    return {
+      id: dues?.student_id || student.id,
+      student_id: student.id,
+      fine_amount: dues?.fine_amount ?? 0,
+      status: dues?.status ?? 'pending',
+      updated_at: dues?.updated_at ?? null,
+      profiles: student,
+    };
+  });
 };
 
 export const markStudentDues = async (duesModuleId: string, status: string, fineAmount: number) => {
