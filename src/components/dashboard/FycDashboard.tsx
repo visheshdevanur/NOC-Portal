@@ -173,11 +173,11 @@ export default function FycDashboard() {
           .eq('role', 'student')
           .in('semester_id', fyIds)
           .order('full_name')
-          .range(offset, offset + 999);
+          .range(offset, offset + 9999);
         if (error) throw error;
         allStudents = [...allStudents, ...(data || [])];
-        if (!data || data.length < 1000) break;
-        offset += 1000;
+        if (!data || data.length < 10000) break;
+        offset += 10000;
       }
       setDepartmentStudents(allStudents as unknown as UserProfile[]);
     } catch (err) { console.error(err); }
