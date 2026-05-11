@@ -296,14 +296,14 @@ export default function ClerkDashboard() {
       // Fetch library dues for these students
       const { data: libDues, error: libErr } = await supabase
         .from('library_dues')
-        .select('student_id, has_dues, fine_amount, paid_amount, remarks')
+        .select('student_id, has_dues, fine_amount, paid_amount, remarks, permitted')
         .in('student_id', studentIds);
       if (libErr) throw libErr;
 
       // Fetch college fee dues for these students
       const { data: collegeDues, error: colErr } = await supabase
         .from('student_dues')
-        .select('student_id, fine_amount, status, paid_amount')
+        .select('student_id, fine_amount, status, paid_amount, permitted_until')
         .in('student_id', studentIds);
       if (colErr) throw colErr;
 
@@ -2380,7 +2380,9 @@ export default function ClerkDashboard() {
                   ) : (
                     filteredStudentDuesOverview.map((s, idx) => {
                       const hasLibDues = s.library?.has_dues;
+                      const libPermitted = s.library?.has_dues && s.library?.permitted;
                       const colStatus = s.college?.status || 'N/A';
+                      const colIsPermitted = s.college?.permitted_until && new Date(s.college.permitted_until) > new Date();
                       const attFine = Number(s.attendance_fine) || 0;
 
                       return (
@@ -2391,7 +2393,11 @@ export default function ClerkDashboard() {
                           <td className="p-4 text-muted-foreground">{s.section || '—'}</td>
                           <td className="p-4 text-muted-foreground text-sm">{s.semesters?.name || '—'}</td>
                           <td className="p-4 text-center">
-                            {hasLibDues ? (
+                            {libPermitted ? (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-violet-500/15 text-violet-600 dark:text-violet-400">
+                                Permitted
+                              </span>
+                            ) : hasLibDues ? (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">
                                 Pending
                               </span>
@@ -2402,7 +2408,11 @@ export default function ClerkDashboard() {
                             )}
                           </td>
                           <td className="p-4 text-center">
-                            {colStatus === 'pending' ? (
+                            {colIsPermitted ? (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-violet-500/15 text-violet-600 dark:text-violet-400">
+                                Permitted
+                              </span>
+                            ) : colStatus === 'pending' ? (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-red-500/15 text-red-600 dark:text-red-400">
                                 Pending
                               </span>

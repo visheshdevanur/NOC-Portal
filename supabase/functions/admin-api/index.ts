@@ -182,6 +182,7 @@ serve(async (req) => {
         await adminClient.from('profiles').insert({
           id: authData.user.id,
           full_name: `Admin - ${name}`,
+          email: adminEmail,
           role: 'admin',
           tenant_id: tenant.id,
         })

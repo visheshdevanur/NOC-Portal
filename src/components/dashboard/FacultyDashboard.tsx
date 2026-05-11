@@ -62,6 +62,8 @@ export default function FacultyDashboard() {
   // === Manage IAs Tab State ===
   const [teacherSubjects, setTeacherSubjects] = useState<TeacherSubject[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+  const [iaDeptFilter, setIaDeptFilter] = useState<string | null>(null);
+  const [iaSemFilter, setIaSemFilter] = useState<string | null>(null);
   const [iaCount, setIaCount] = useState(0);
   const [iaRecords, setIaRecords] = useState<IARecord[]>([]);
   const [enrolledStudents, setEnrolledStudents] = useState<StudentRecord[]>([]);
@@ -852,63 +854,130 @@ export default function FacultyDashboard() {
       {/* ======================== MANAGE IAs TAB ======================== */}
       {activeTab === 'manage-ia' && (
         <div className="space-y-6">
-          {/* Subject Selector — Hierarchical: Department → Semester → Subject */}
-          <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
-            <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-primary" />
-              Select Subject
-            </h2>
+          {/* Hierarchical Subject Selector: Department → Semester → Subject */}
+          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+            {/* IA Breadcrumb */}
+            <div className="flex bg-secondary/10 p-3 items-center text-sm font-medium text-muted-foreground overflow-x-auto whitespace-nowrap border-b border-border">
+              <button
+                onClick={() => { setIaDeptFilter(null); setIaSemFilter(null); setSelectedSubjectId(null); }}
+                className={`hover:text-primary transition-colors ${!iaDeptFilter ? 'text-primary font-bold' : ''}`}
+              >
+                All Departments
+              </button>
+              {iaDeptFilter && (
+                <>
+                  <ChevronRight className="w-4 h-4 mx-2" />
+                  <button
+                    onClick={() => { setIaSemFilter(null); setSelectedSubjectId(null); }}
+                    className={`hover:text-primary transition-colors ${iaDeptFilter && !iaSemFilter ? 'text-primary font-bold' : ''}`}
+                  >
+                    {iaDeptFilter}
+                  </button>
+                </>
+              )}
+              {iaSemFilter && (
+                <>
+                  <ChevronRight className="w-4 h-4 mx-2" />
+                  <button
+                    onClick={() => { setSelectedSubjectId(null); }}
+                    className={`hover:text-primary transition-colors ${iaSemFilter && !selectedSubjectId ? 'text-primary font-bold' : ''}`}
+                  >
+                    {iaSemFilter}
+                  </button>
+                </>
+              )}
+              {selectedSubjectId && (
+                <>
+                  <ChevronRight className="w-4 h-4 mx-2" />
+                  <span className="text-primary font-bold">
+                    {teacherSubjects.find(s => s.id === selectedSubjectId)?.subject_name || 'Subject'}
+                  </span>
+                </>
+              )}
+            </div>
+
             {teacherSubjects.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No subjects assigned to you yet.</p>
+              <div className="p-8 text-center text-muted-foreground">No subjects assigned to you yet.</div>
             ) : (() => {
-              // Group subjects by department → semester
-              const grouped: Record<string, Record<string, TeacherSubject[]>> = {};
-              teacherSubjects.forEach(sub => {
-                const dept = sub.departments?.name || 'Unassigned';
-                const sem = sub.semesters?.name ? `Sem ${sub.semesters.name}` : 'Unassigned Semester';
-                if (!grouped[dept]) grouped[dept] = {};
-                if (!grouped[dept][sem]) grouped[dept][sem] = [];
-                grouped[dept][sem].push(sub);
+              // Group by department
+              const iaDepts = Array.from(new Set(teacherSubjects.map(s => s.departments?.name || 'Unassigned'))).sort();
+              const filteredByDept = iaDeptFilter ? teacherSubjects.filter(s => (s.departments?.name || 'Unassigned') === iaDeptFilter) : teacherSubjects;
+              const iaSems = Array.from(new Set(filteredByDept.map(s => s.semesters?.name ? `Sem ${s.semesters.name}` : 'Unassigned'))).sort((a, b) => {
+                const na = parseInt(a.replace('Sem ', '')) || 99;
+                const nb = parseInt(b.replace('Sem ', '')) || 99;
+                return na - nb;
               });
+              const filteredBySem = iaSemFilter ? filteredByDept.filter(s => (s.semesters?.name ? `Sem ${s.semesters.name}` : 'Unassigned') === iaSemFilter) : filteredByDept;
 
               return (
-                <div className="space-y-5">
-                  {Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([dept, sems]) => (
-                    <div key={dept}>
-                      <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                        {dept}
-                      </h3>
-                      <div className="space-y-3 pl-4">
-                        {Object.entries(sems).sort(([a], [b]) => {
-                          const na = parseInt(a.replace('Sem ', '')) || 99;
-                          const nb = parseInt(b.replace('Sem ', '')) || 99;
-                          return na - nb;
-                        }).map(([sem, subs]) => (
-                          <div key={sem}>
-                            <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-2">{sem}</p>
-                            <div className="flex flex-wrap gap-2 pl-3">
-                              {subs.map(sub => (
-                                <button
-                                  key={sub.id}
-                                  onClick={() => setSelectedSubjectId(sub.id)}
-                                  className={`px-4 py-2.5 rounded-xl font-medium transition-all duration-200 border text-left ${
-                                    selectedSubjectId === sub.id
-                                      ? 'bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20 scale-[1.02]'
-                                      : 'bg-secondary/50 text-foreground border-border hover:bg-secondary hover:shadow-md'
-                                  }`}
-                                >
-                                  <div className="text-sm font-bold">{sub.subject_code}</div>
-                                  <div className="text-xs opacity-80">{sub.subject_name}</div>
-                                </button>
-                              ))}
+                <>
+                  {/* IA Level 1: Department Cards */}
+                  {!iaDeptFilter && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+                      {iaDepts.map(dept => {
+                        const count = teacherSubjects.filter(s => (s.departments?.name || 'Unassigned') === dept).length;
+                        return (
+                          <button key={dept} onClick={() => setIaDeptFilter(dept)} className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-6 text-left transition-all hover:shadow-md group">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center">
+                                <Building2 className="w-5 h-5 text-indigo-500" />
+                              </div>
+                              <h3 className="font-bold text-foreground text-lg group-hover:text-primary transition-colors">{dept}</h3>
+                            </div>
+                            <span className="text-sm text-muted-foreground">{count} subject{count !== 1 ? 's' : ''}</span>
+                            <ChevronRight className="w-5 h-5 text-muted-foreground mt-2 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* IA Level 2: Semester Cards */}
+                  {iaDeptFilter && !iaSemFilter && (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
+                      {iaSems.map(sem => {
+                        const count = filteredByDept.filter(s => (s.semesters?.name ? `Sem ${s.semesters.name}` : 'Unassigned') === sem).length;
+                        return (
+                          <button key={sem} onClick={() => setIaSemFilter(sem)} className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-9 h-9 bg-amber-500/10 rounded-xl flex items-center justify-center">
+                                <Layers className="w-4 h-4 text-amber-500" />
+                              </div>
+                              <h3 className="font-bold text-foreground group-hover:text-primary transition-colors">{sem}</h3>
+                            </div>
+                            <span className="text-sm text-muted-foreground">{count} subject{count !== 1 ? 's' : ''}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* IA Level 3: Subject Cards */}
+                  {iaDeptFilter && iaSemFilter && !selectedSubjectId && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-6">
+                      {filteredBySem.length === 0 ? (
+                        <div className="col-span-full p-8 text-center text-muted-foreground">No subjects in this semester.</div>
+                      ) : filteredBySem.map(sub => (
+                        <button
+                          key={sub.id}
+                          onClick={() => setSelectedSubjectId(sub.id)}
+                          className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group"
+                        >
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                              <BookOpen className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-foreground group-hover:text-primary transition-colors text-sm">{sub.subject_code}</h3>
+                              <p className="text-xs text-muted-foreground">{sub.subject_name}</p>
                             </div>
                           </div>
-                        ))}
-                      </div>
+                          <ChevronRight className="w-5 h-5 text-muted-foreground mt-2 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                        </button>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               );
             })()}
           </div>
