@@ -84,8 +84,8 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
       };
 
       const [libDues, collegeDues, attendanceData] = await Promise.all([
-        batchIn('library_dues', 'student_id, has_dues, fine_amount, paid_amount, remarks', studentIds),
-        batchIn('student_dues', 'student_id, fine_amount, status, paid_amount', studentIds),
+        batchIn('library_dues', 'student_id, has_dues, fine_amount, paid_amount, remarks, permitted', studentIds),
+        batchIn('student_dues', 'student_id, fine_amount, status, paid_amount, permitted_until', studentIds),
         batchIn('subject_enrollment', 'student_id, attendance_fee, attendance_fee_verified', studentIds),
       ]);
 
@@ -261,10 +261,11 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
               ) : (
                 filteredStudentDuesOverview.map((s, idx) => {
                   const libRecord = s.library;
-                  const libStatus = !libRecord ? 'pending' : (libRecord.has_dues === false ? 'clear' : 'pending');
-                  // College fee: no record = pending, completed = clear, pending = due
+                  const libStatus = !libRecord ? 'pending' : (libRecord.has_dues === false ? 'clear' : (libRecord.permitted ? 'permitted' : 'pending'));
+                  // College fee: no record = pending, completed = clear, pending+permitted = permitted, pending = due
                   const colRecord = s.college;
-                  const colStatus = !colRecord ? 'pending' : (colRecord.status === 'completed' ? 'clear' : 'pending');
+                  const colIsPermitted = colRecord?.permitted_until && new Date(colRecord.permitted_until) > new Date();
+                  const colStatus = !colRecord ? 'pending' : (colRecord.status === 'completed' ? 'clear' : (colIsPermitted ? 'permitted' : 'pending'));
                   const attFineUnpaid = Number(s.attendance_fine_unpaid) || 0;
                   const attFinePaid = Number(s.attendance_fine_paid) || 0;
 
@@ -280,6 +281,10 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">
                             Pending
                           </span>
+                        ) : libStatus === 'permitted' ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-violet-500/15 text-violet-600 dark:text-violet-400">
+                            Permitted
+                          </span>
                         ) : (
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
                             Clear
@@ -290,6 +295,10 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
                         {colStatus === 'pending' ? (
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">
                             Pending
+                          </span>
+                        ) : colStatus === 'permitted' ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-violet-500/15 text-violet-600 dark:text-violet-400">
+                            Permitted
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
