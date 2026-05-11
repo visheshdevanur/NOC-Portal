@@ -293,26 +293,18 @@ export default function ClerkDashboard() {
       const studentIds = students.map((s: any) => s.id);
       if (studentIds.length === 0) { setStudentDuesOverview([]); setStudentDuesLoading(false); return; }
 
-      // Fetch library dues for these students
-      const { data: libDues, error: libErr } = await supabase
-        .from('library_dues')
-        .select('student_id, has_dues, fine_amount, paid_amount, remarks, permitted')
-        .in('student_id', studentIds);
-      if (libErr) throw libErr;
-
-      // Fetch college fee dues for these students
-      const { data: collegeDues, error: colErr } = await supabase
-        .from('student_dues')
-        .select('student_id, fine_amount, status, paid_amount, permitted_until')
-        .in('student_id', studentIds);
-      if (colErr) throw colErr;
-
-      // Fetch attendance fines for these students
-      const { data: attendanceData, error: attErr } = await supabase
-        .from('subject_enrollment')
-        .select('student_id, attendance_fee')
-        .in('student_id', studentIds);
-      if (attErr) throw attErr;
+      // Fetch all dues in parallel for speed
+      const [libResult, colResult, attResult] = await Promise.all([
+        supabase.from('library_dues').select('student_id, has_dues, fine_amount, paid_amount, remarks, permitted').in('student_id', studentIds),
+        supabase.from('student_dues').select('student_id, fine_amount, status, paid_amount, permitted_until').in('student_id', studentIds),
+        supabase.from('subject_enrollment').select('student_id, attendance_fee').in('student_id', studentIds),
+      ]);
+      if (libResult.error) throw libResult.error;
+      if (colResult.error) throw colResult.error;
+      if (attResult.error) throw attResult.error;
+      const libDues = libResult.data;
+      const collegeDues = colResult.data;
+      const attendanceData = attResult.data;
 
       // Build maps
       const libMap = new Map((libDues || []).map((d: any) => [d.student_id, d]));

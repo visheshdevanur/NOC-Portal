@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { bulkProcessLibraryDues, setLibraryDue, permitLibraryDue, clearLibraryDue } from '../lib/api';
 import { BookOpen, UserCheck, AlertCircle, Search, Upload, Download, RefreshCw, X, Building2, GraduationCap, CornerUpLeft, Users, ShieldCheck, ShieldOff, ShieldAlert } from 'lucide-react';
 import Papa from 'papaparse';
@@ -8,6 +8,7 @@ import { validateCsvFileSize } from '../lib/csvSanitizer';
 
 export default function LibraryDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
+  const queryClient = useQueryClient();
   
   // CSV Upload States
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -30,12 +31,14 @@ export default function LibraryDashboard() {
   const { data: libraryDuesData, isLoading: loading, refetch: refetchDues } = useQuery({
     queryKey: ['libraryDues'],
     queryFn: () => import('../lib/api').then(m => m.getLibraryDues()),
+    staleTime: 30_000,
   });
   const libraryDues = libraryDuesData || [];
 
   const { data: departmentsData } = useQuery({
     queryKey: ['allDepartments'],
     queryFn: () => import('../lib/api').then(m => m.getAllDepartments()),
+    staleTime: 60_000,
   });
   const departmentsList = departmentsData || [];
 
@@ -57,8 +60,11 @@ export default function LibraryDashboard() {
     setActionLoading(due.id);
     try {
       await setLibraryDue(due.student_id);
+      // Optimistic update
+      queryClient.setQueryData(['libraryDues'], (old: any[]) => 
+        old?.map((d: any) => d.student_id === due.student_id ? { ...d, has_dues: true, permitted: false } : d)
+      );
       setSuccessMsg(`Set due for ${due.profiles?.full_name}`);
-      fetchDues();
     } catch (err: any) {
       setErrorMsg(getFriendlyErrorMessage(err));
     } finally {
@@ -70,8 +76,11 @@ export default function LibraryDashboard() {
     setActionLoading(due.id);
     try {
       await permitLibraryDue(due.student_id);
+      // Optimistic update
+      queryClient.setQueryData(['libraryDues'], (old: any[]) => 
+        old?.map((d: any) => d.student_id === due.student_id ? { ...d, permitted: true } : d)
+      );
       setSuccessMsg(`Permitted clearance for ${due.profiles?.full_name}`);
-      fetchDues();
     } catch (err: any) {
       setErrorMsg(getFriendlyErrorMessage(err));
     } finally {
@@ -83,8 +92,11 @@ export default function LibraryDashboard() {
     setActionLoading(due.id);
     try {
       await clearLibraryDue(due.student_id);
+      // Optimistic update
+      queryClient.setQueryData(['libraryDues'], (old: any[]) => 
+        old?.map((d: any) => d.student_id === due.student_id ? { ...d, has_dues: false, permitted: false, fine_amount: 0, paid_amount: 0, remarks: null } : d)
+      );
       setSuccessMsg(`Cleared dues for ${due.profiles?.full_name}`);
-      fetchDues();
     } catch (err: any) {
       setErrorMsg(getFriendlyErrorMessage(err));
     } finally {

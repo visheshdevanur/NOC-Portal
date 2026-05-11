@@ -268,23 +268,17 @@ export default function StaffDashboard() {
       const studentIds = students.map((s: any) => s.id);
       if (studentIds.length === 0) { setStudentDuesOverview([]); setStudentDuesLoading(false); return; }
 
-      const { data: libDues, error: libErr } = await supabase
-        .from('library_dues')
-        .select('student_id, has_dues, fine_amount, paid_amount, remarks, permitted')
-        .in('student_id', studentIds);
-      if (libErr) throw libErr;
-
-      const { data: collegeDues, error: colErr } = await supabase
-        .from('student_dues')
-        .select('student_id, fine_amount, status, paid_amount, permitted_until')
-        .in('student_id', studentIds);
-      if (colErr) throw colErr;
-
-      const { data: attendanceData, error: attErr } = await supabase
-        .from('subject_enrollment')
-        .select('student_id, attendance_fee, attendance_fee_verified')
-        .in('student_id', studentIds);
-      if (attErr) throw attErr;
+      const [libResult, colResult, attResult] = await Promise.all([
+        supabase.from('library_dues').select('student_id, has_dues, fine_amount, paid_amount, remarks, permitted').in('student_id', studentIds),
+        supabase.from('student_dues').select('student_id, fine_amount, status, paid_amount, permitted_until').in('student_id', studentIds),
+        supabase.from('subject_enrollment').select('student_id, attendance_fee, attendance_fee_verified').in('student_id', studentIds),
+      ]);
+      if (libResult.error) throw libResult.error;
+      if (colResult.error) throw colResult.error;
+      if (attResult.error) throw attResult.error;
+      const libDues = libResult.data;
+      const collegeDues = colResult.data;
+      const attendanceData = attResult.data;
 
       const libMap = new Map((libDues || []).map((d: any) => [d.student_id, d]));
       const colMap = new Map((collegeDues || []).map((d: any) => [d.student_id, d]));

@@ -5,44 +5,34 @@ import { logActivity } from './shared';
 // ACCOUNTS SPECIFIC
 // =======================
 export const getAllStudentDues = async () => {
-  // Supabase server returns max 1000 rows per request. Loop pages through ALL records.
   const PAGE_SIZE = 1000;
-  let allStudents: any[] = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)')
-      .eq('role', 'student')
-      .order('id')
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    allStudents = allStudents.concat(data);
-    if (data.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
-  }
 
-  // Fetch all existing student_dues records
-  let allDues: any[] = [];
-  from = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from('student_dues')
-      .select('id, student_id, fine_amount, paid_amount, status, permitted_until, updated_at')
-      .order('student_id')
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    allDues = allDues.concat(data);
-    if (data.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
-  }
+  const fetchAllPaged = async (table: string, select: string, filters?: (q: any) => any) => {
+    let all: any[] = [];
+    let from = 0;
+    while (true) {
+      let q = supabase.from(table).select(select).range(from, from + PAGE_SIZE - 1);
+      if (filters) q = filters(q);
+      const { data, error } = await q;
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      all = all.concat(data);
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    return all;
+  };
+
+  // Run BOTH queries in parallel for speed
+  const [allStudents, allDues] = await Promise.all([
+    fetchAllPaged('profiles', 'id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)', q => q.eq('role', 'student').order('id')),
+    fetchAllPaged('student_dues', 'id, student_id, fine_amount, paid_amount, status, permitted_until, updated_at', q => q.order('student_id')),
+  ]);
 
   // Build a map of student_id -> dues
   const duesMap = new Map(allDues.map(d => [d.student_id, d]));
 
-  // Merge: every student gets a record, whether or not they have dues
+  // Merge: every student gets a record
   return allStudents.map(student => {
     const dues = duesMap.get(student.id);
     return {
