@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
-import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Edit } from 'lucide-react';
+import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Edit, Building2, Layers } from 'lucide-react';
 
 type SubjectEnrollment = {
   id: string;
@@ -465,10 +465,8 @@ export default function FacultyDashboard() {
   });
   const allDepartments = Array.from(deptMap.keys()).sort();
 
-  const activeDept = selectedDepartment || (allDepartments.length > 0 ? allDepartments[0] : null);
-
-  const studentsInDept = activeDept
-    ? students.filter(s => (s.subjects?.departments?.name || s.profiles?.departments?.name || 'Unassigned') === activeDept)
+  const studentsInDept = selectedDepartment
+    ? students.filter(s => (s.subjects?.departments?.name || s.profiles?.departments?.name || 'Unassigned') === selectedDepartment)
     : students;
 
   const semestersMap = new Map();
@@ -553,73 +551,45 @@ export default function FacultyDashboard() {
             <div className="p-8 text-center text-muted-foreground">No students assigned to your subjects yet.</div>
           ) : (
             <div className="flex flex-col">
-              {/* Department Tabs */}
-              <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/10 scrollbar-hide">
-                {allDepartments.length === 0 ? (
-                  <span className="text-sm font-medium text-muted-foreground px-4 py-2">No departments</span>
-                ) : allDepartments.map(dept => (
-                  <button
-                    key={dept}
-                    onClick={() => {
-                      setSelectedDepartment(dept);
-                      setSelectedSemester(null);
-                      setSelectedSection(null);
-                    }}
-                    className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
-                      activeDept === dept
-                        ? 'bg-indigo-500 text-white shadow-md'
-                        : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-                    }`}
-                  >
-                    {dept}
-                  </button>
-                ))}
+              {/* Breadcrumb Navigation */}
+              <div className="flex bg-secondary/10 p-3 items-center text-sm font-medium text-muted-foreground overflow-x-auto whitespace-nowrap border-b border-border">
+                <button 
+                  onClick={() => { setSelectedDepartment(null); setSelectedSemester(null); setSelectedSection(null); }} 
+                  className={`hover:text-primary transition-colors flex items-center ${!selectedDepartment ? 'text-primary font-bold' : ''}`}
+                >
+                  All Departments
+                </button>
+                {selectedDepartment && (
+                  <>
+                    <ChevronRight className="w-4 h-4 mx-2" />
+                    <button 
+                      onClick={() => { setSelectedSemester(null); setSelectedSection(null); }} 
+                      className={`hover:text-primary transition-colors ${selectedDepartment && !selectedSemester ? 'text-primary font-bold' : ''}`}
+                    >
+                      {selectedDepartment}
+                    </button>
+                  </>
+                )}
+                {selectedSemester && (
+                  <>
+                    <ChevronRight className="w-4 h-4 mx-2" />
+                    <button 
+                      onClick={() => { setSelectedSection(null); }} 
+                      className={`hover:text-primary transition-colors ${selectedSemester && !selectedSection ? 'text-primary font-bold' : ''}`}
+                    >
+                      Sem {allSemesters.find((s: any) => s.id === selectedSemester)?.name || '?'}
+                    </button>
+                  </>
+                )}
+                {selectedSection && (
+                  <>
+                    <ChevronRight className="w-4 h-4 mx-2" />
+                    <span className="text-primary font-bold">Section {selectedSection}</span>
+                  </>
+                )}
               </div>
 
-              {/* Semester Tabs */}
-              {activeDept && (
-                <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/20 scrollbar-hide">
-                  {allSemesters.length === 0 ? (
-                    <span className="text-sm font-medium text-muted-foreground px-4 py-2">No semesters in this department</span>
-                  ) : allSemesters.map((sem: any) => (
-                    <button
-                      key={sem.id}
-                      onClick={() => {
-                        setSelectedSemester(sem.id);
-                        setSelectedSection(null);
-                      }}
-                      className={`px-6 py-3 rounded-xl font-medium whitespace-nowrap transition-all duration-200 ${
-                        selectedSemester === sem.id
-                          ? 'bg-amber-500 text-white shadow-md'
-                          : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-                      }`}
-                    >
-                      Sem {sem.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Section Tabs */}
-              {selectedSemester && allSections.length > 0 && (
-                <div className="flex items-center overflow-x-auto border-b border-border p-2 gap-2 bg-secondary/30 scrollbar-hide">
-                  {allSections.map(section => (
-                    <button
-                      key={section}
-                      onClick={() => setSelectedSection(section)}
-                      className={`px-6 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-200 ${
-                        selectedSection === section
-                          ? 'bg-primary text-primary-foreground shadow-sm'
-                          : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-                      }`}
-                    >
-                      Section {section}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* CSV Actions Bar for Clearance */}
+              {/* CSV Actions Bar */}
               <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-secondary/5">
                 <FileSpreadsheet className="w-4 h-4 text-muted-foreground" />
                 <span className="text-xs font-medium text-muted-foreground">Bulk Actions:</span>
@@ -644,14 +614,106 @@ export default function FacultyDashboard() {
                   </span>
                 )}
               </div>
-              
-              {/* Table grouped by Subject */}
-              {filtered.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">No students match your search in this section.</div>
-              ) : (() => {
-                // Group filtered students by subject
+
+              {/* LEVEL 1: Department Cards */}
+              {!selectedDepartment && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+                  {allDepartments.length === 0 ? (
+                    <div className="col-span-full p-8 text-center text-muted-foreground">No departments found.</div>
+                  ) : allDepartments.map(dept => {
+                    const deptStudents = students.filter(s => (s.subjects?.departments?.name || s.profiles?.departments?.name || 'Unassigned') === dept);
+                    const cleared = deptStudents.filter(s => s.status === 'completed').length;
+                    return (
+                      <button
+                        key={dept}
+                        onClick={() => setSelectedDepartment(dept)}
+                        className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-6 text-left transition-all hover:shadow-md group"
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center">
+                            <Building2 className="w-5 h-5 text-indigo-500" />
+                          </div>
+                          <h3 className="font-bold text-foreground text-lg group-hover:text-primary transition-colors">{dept}</h3>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-muted-foreground">{deptStudents.length} students</span>
+                          <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">{cleared} cleared</span>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-muted-foreground mt-3 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* LEVEL 2: Semester Cards */}
+              {selectedDepartment && !selectedSemester && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
+                  {allSemesters.length === 0 ? (
+                    <div className="col-span-full p-8 text-center text-muted-foreground">No semesters in this department.</div>
+                  ) : allSemesters.map((sem: any) => {
+                    const semStudents = studentsInDept.filter(s => s.profiles?.semester_id === sem.id);
+                    const cleared = semStudents.filter(s => s.status === 'completed').length;
+                    return (
+                      <button
+                        key={sem.id}
+                        onClick={() => setSelectedSemester(sem.id)}
+                        className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group"
+                      >
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-9 h-9 bg-amber-500/10 rounded-xl flex items-center justify-center">
+                            <Layers className="w-4 h-4 text-amber-500" />
+                          </div>
+                          <h3 className="font-bold text-foreground group-hover:text-primary transition-colors">Sem {sem.name}</h3>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">{semStudents.length} students</span>
+                          <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">{cleared}/{semStudents.length}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* LEVEL 3: Section Cards */}
+              {selectedSemester && !selectedSection && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
+                  {allSections.length === 0 ? (
+                    <div className="col-span-full p-8 text-center text-muted-foreground">No sections in this semester.</div>
+                  ) : allSections.map(section => {
+                    const secStudents = studentsInSemester.filter(s => (s.profiles?.section || 'Unassigned') === section);
+                    const cleared = secStudents.filter(s => s.status === 'completed').length;
+                    return (
+                      <button
+                        key={section}
+                        onClick={() => setSelectedSection(section)}
+                        className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group"
+                      >
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
+                            <Users className="w-4 h-4 text-primary" />
+                          </div>
+                          <h3 className="font-bold text-foreground group-hover:text-primary transition-colors">Section {section}</h3>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">{secStudents.length} students</span>
+                          <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">{cleared}/{secStudents.length}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* LEVEL 4: Subject → Students */}
+              {selectedSection && (() => {
+                const sectionStudents = filtered;
+                if (sectionStudents.length === 0) {
+                  return <div className="p-8 text-center text-muted-foreground">No students match your search in this section.</div>;
+                }
                 const subjectGroups: Record<string, typeof filtered> = {};
-                filtered.forEach(s => {
+                sectionStudents.forEach(s => {
                   const key = `${s.subjects.subject_code} — ${s.subjects.subject_name}`;
                   if (!subjectGroups[key]) subjectGroups[key] = [];
                   subjectGroups[key].push(s);
@@ -668,7 +730,6 @@ export default function FacultyDashboard() {
 
                       return (
                         <div key={subjectKey} className="border border-border rounded-2xl overflow-hidden bg-card">
-                          {/* Subject Header */}
                           <div className="flex items-center justify-between px-6 py-4 bg-secondary/20 border-b border-border">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
@@ -685,13 +746,11 @@ export default function FacultyDashboard() {
                               {pendingCount > 0 && <span className="text-xs font-medium bg-amber-500/10 text-amber-600 px-2.5 py-1 rounded-full">{pendingCount} Pending</span>}
                             </div>
                           </div>
-                          {/* Students Table */}
                           <table className="w-full text-left border-collapse">
                             <thead>
                               <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
                                 <th className="px-6 py-3 font-semibold">Student Name</th>
                                 <th className="px-6 py-3 font-semibold">USN</th>
-                                <th className="px-6 py-3 font-semibold">Section</th>
                                 <th className="px-6 py-3 font-semibold">Attendance %</th>
                                 <th className="px-6 py-3 font-semibold">Status</th>
                                 <th className="px-6 py-3 font-semibold text-right">Remarks</th>
@@ -702,7 +761,6 @@ export default function FacultyDashboard() {
                                 <tr key={student.id} className="hover:bg-secondary/20 transition-colors">
                                   <td className="px-6 py-3 font-medium text-foreground">{student.profiles?.full_name || 'Unknown'}</td>
                                   <td className="px-6 py-3 text-sm text-muted-foreground">{student.profiles?.roll_number || 'N/A'}</td>
-                                  <td className="px-6 py-3 text-sm font-medium text-foreground">{student.profiles?.section || '-'}</td>
                                   <td className="px-6 py-3">
                                     <div className="flex items-center gap-2">
                                       <input 

@@ -67,8 +67,35 @@ const Login = () => {
     resetAllStates();
 
     try {
+      // Verify the email exists in profiles before attempting auth
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', email.trim().toLowerCase())
+        .limit(1)
+        .maybeSingle();
+
+      if (!existingProfile) {
+        setError('This email is not registered. Please check the email address or contact your administrator.');
+        setLoading(false);
+        loginAttemptsRef.current++;
+        if (loginAttemptsRef.current >= 5) {
+          lockoutUntilRef.current = Date.now() + 30000;
+          setLockoutSeconds(30);
+          const interval = setInterval(() => {
+            setLockoutSeconds(prev => {
+              if (prev <= 1) { clearInterval(interval); return 0; }
+              return prev - 1;
+            });
+          }, 1000);
+          loginAttemptsRef.current = 0;
+          setError('Too many failed attempts. Please wait 30 seconds before trying again.');
+        }
+        return;
+      }
+
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim().toLowerCase(),
         password,
       });
       if (error) throw error;
