@@ -11,7 +11,7 @@ export const getLibraryDues = async () => {
     let all: any[] = [];
     let from = 0;
     while (true) {
-      let q = supabase.from(table).select(select).order('id' in {} ? 'id' : 'student_id').range(from, from + PAGE_SIZE - 1);
+      let q = supabase.from(table).select(select).range(from, from + PAGE_SIZE - 1);
       if (filters) q = filters(q);
       const { data, error } = await q;
       if (error) throw error;
