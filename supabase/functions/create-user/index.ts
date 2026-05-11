@@ -174,6 +174,7 @@ serve(async (req) => {
     const profileData: Record<string, unknown> = {
       id: authData.user.id,
       full_name,
+      email,
       role,
       tenant_id: callerProfile.tenant_id,
       created_by: caller.id,
@@ -181,7 +182,7 @@ serve(async (req) => {
 
     if (department_id) profileData.department_id = department_id
     if (roll_number) profileData.roll_number = roll_number
-    if (teacher_id) profileData.roll_number = teacher_id // teacher_id is stored in roll_number
+    if (teacher_id) profileData.teacher_id = teacher_id
     if (section) profileData.section = section
     if (semester_id) profileData.semester_id = semester_id
 
