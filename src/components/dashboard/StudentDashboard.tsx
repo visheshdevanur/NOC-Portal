@@ -49,7 +49,7 @@ type IAAttendanceRecord = {
 
 export default function StudentDashboard() {
   const { user, profile } = useAuth();
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+
   const [applying, setApplying] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [payingEnrollmentId, setPayingEnrollmentId] = useState<string | null>(null);
@@ -101,8 +101,8 @@ export default function StudentDashboard() {
 
 
   const handleApplyForClearance = async () => {
-    if (selectedSubjects.length === 0) {
-      setLocalErrorMsg('Please select at least one subject to apply for clearance.');
+    if (availableSubjects.length === 0) {
+      setLocalErrorMsg('No subjects available. Please contact your department.');
       return;
     }
 
@@ -113,9 +113,9 @@ export default function StudentDashboard() {
       await submitClearanceRequest(user!.id);
       
       // Step 2: Create subject enrollments (WITHOUT teacher_id initially)
-      const enrollInserts: any[] = selectedSubjects.map(subId => ({
+      const enrollInserts: any[] = availableSubjects.map(sub => ({
         student_id: user!.id,
-        subject_id: subId,
+        subject_id: sub.id,
         teacher_id: null,
         attendance_pct: null,
         status: 'pending',
@@ -435,29 +435,22 @@ export default function StudentDashboard() {
               </div>
             )}
            <div className="w-full max-w-lg mb-8 text-left">
-              <h3 className="font-semibold text-lg mb-3">Select your enrolled subjects:</h3>
+              <h3 className="font-semibold text-lg mb-3">Your enrolled subjects:</h3>
               <div className="bg-background rounded-xl border border-border p-4 space-y-3 max-h-64 overflow-y-auto">
                 {availableSubjects.map(sub => (
-                  <label key={sub.id} className="flex items-center gap-3 p-2 hover:bg-secondary rounded-lg cursor-pointer transition-colors">
-                    <input 
-                      type="checkbox" 
-                      className="w-5 h-5 rounded border-border text-primary focus:ring-primary"
-                      checked={selectedSubjects.includes(sub.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) setSelectedSubjects([...selectedSubjects, sub.id]);
-                        else setSelectedSubjects(selectedSubjects.filter(id => id !== sub.id));
-                      }}
-                    />
+                  <div key={sub.id} className="flex items-center gap-3 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
                     <span><span className="font-bold text-primary">{sub.subject_code}</span> - {sub.subject_name}</span>
-                  </label>
+                  </div>
                 ))}
-                {availableSubjects.length === 0 && <p className="text-muted-foreground text-sm text-center">No subjects available to select.</p>}
+                {availableSubjects.length === 0 && <p className="text-muted-foreground text-sm text-center">No subjects available.</p>}
               </div>
+              <p className="text-xs text-muted-foreground mt-2">All enrolled subjects will be automatically included in your clearance application.</p>
             </div>
 
            <button 
               onClick={handleApplyForClearance}
-              disabled={applying || selectedSubjects.length === 0}
+              disabled={applying || availableSubjects.length === 0}
               className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-4 px-8 rounded-xl text-lg shadow-md transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed"
             >
               {applying ? 'Initializing System...' : 'Apply for Clearance'}
