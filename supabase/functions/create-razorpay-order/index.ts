@@ -41,8 +41,15 @@ serve(async (req) => {
     // Rate limit: 5 payment orders per minute per student
     const rl = checkRateLimit(`razorpay-order:${user.id}`, 5, 60_000)
     if (!rl.allowed) {
-      log({ level: 'WARN', fn: 'create-razorpay-order', action: 'rate_limited', userId: user.id })
+      log({ level: 'WARN', fn: 'create-razorpay-order', action: 'rate_limited_minute', userId: user.id })
       return jsonResponse({ error: 'Too many payment attempts. Please wait.' }, 429)
+    }
+
+    // Daily rate limit: 20 payment orders per day per student
+    const dailyRl = checkRateLimit(`razorpay-daily:${user.id}`, 20, 86_400_000)
+    if (!dailyRl.allowed) {
+      log({ level: 'WARN', fn: 'create-razorpay-order', action: 'rate_limited_daily', userId: user.id })
+      return jsonResponse({ error: 'Daily payment limit reached (20/day). Please try again tomorrow.' }, 429)
     }
 
     // 2. Parse request

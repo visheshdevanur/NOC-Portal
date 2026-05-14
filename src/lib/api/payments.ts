@@ -1,8 +1,2 @@
-/**
- * Payments API Module
- * FIX #7: Domain-specific API module extracted from api.ts.
- */
-export {
-  createRazorpayOrder,
-  verifyAndProcessRazorpayPayment,
-} from '../api';
+// This module has been deprecated. Use '../api/payment' directly.
+// Kept empty to avoid breaking any remaining imports.

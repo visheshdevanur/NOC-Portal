@@ -25,7 +25,7 @@ export const getAllStudentDues = async () => {
 
   // Run BOTH queries in parallel for speed
   const [allStudents, allDues] = await Promise.all([
-    fetchAllPaged('profiles', 'id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)', q => q.eq('role', 'student').order('id')),
+    fetchAllPaged('profiles', 'id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)', q => q.eq('role', 'student').order('roll_number')),
     fetchAllPaged('student_dues', 'id, student_id, fine_amount, paid_amount, status, permitted_until, updated_at', q => q.order('student_id')),
   ]);
 
@@ -136,7 +136,7 @@ export const getAccountsPendingFeeVerifications = async () => {
       .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
       .gt('attendance_fee', 0)
       .eq('attendance_fee_verified', false)
-      .order('id')
+      .order('created_at', { ascending: false })
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -167,7 +167,7 @@ export const getAccountsVerifiedFees = async () => {
       .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
       .gt('attendance_fee', 0)
       .eq('attendance_fee_verified', true)
-      .order('id')
+      .order('created_at', { ascending: false })
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -311,7 +311,7 @@ export const getStaffAttendanceFines = async (departmentId: string) => {
       .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
       .eq('status', 'rejected')
       .eq('profiles.department_id', departmentId)
-      .order('id')
+      .order('created_at', { ascending: false })
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;

@@ -151,6 +151,8 @@ export default function StudentDashboard() {
   };
 
   const handleRazorpayPayment = async (enrollment: any) => {
+    // Prevent double-click: if already paying this or any enrollment, ignore
+    if (payingEnrollmentId || payingAll) return;
     try {
       setPayingEnrollmentId(enrollment.id);
       setLocalErrorMsg(null);
@@ -225,6 +227,8 @@ export default function StudentDashboard() {
   const [payingAll, setPayingAll] = useState(false);
 
   const handlePayAll = async () => {
+    // Prevent double-click: if already paying, ignore
+    if (payingAll || payingEnrollmentId) return;
     if (pendingAttendanceDues.length === 0) return;
     const totalAmount = pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0);
     if (totalAmount <= 0) return;
@@ -760,8 +764,8 @@ export default function StudentDashboard() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Faculty Clearances */}
-        <div className="bg-card rounded-3xl p-8 shadow-sm border border-border flex flex-col h-full">
+        {/* Faculty Clearances — hidden from student view; logic retained */}
+        <div className="hidden">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-foreground flex items-center">
               <BookOpen className="w-5 h-5 mr-3 text-primary" />

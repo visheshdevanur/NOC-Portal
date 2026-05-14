@@ -21,7 +21,7 @@ export const getPromotionPreview = async () => {
   let all: any[] = [];
   let from = 0;
   while (true) {
-    const { data, error } = await supabase.from('profiles').select('id, full_name, department_id, semester_id, section, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)').eq('role', 'student').or('status.is.null,status.eq.active').order('full_name').range(from, from + 999);
+    const { data, error } = await supabase.from('profiles').select('id, full_name, department_id, semester_id, section, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)').eq('role', 'student').or('status.is.null,status.eq.active').order('roll_number').range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
     all = all.concat(data);
@@ -35,7 +35,7 @@ export const getGraduatedStudents = async () => {
   let all: any[] = [];
   let from = 0;
   while (true) {
-    const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, department_id, batch, section, created_at, departments!profiles_department_id_fkey(name)').eq('role', 'student').eq('status', 'graduated').order('full_name').range(from, from + 999);
+    const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, department_id, batch, section, created_at, departments!profiles_department_id_fkey(name)').eq('role', 'student').eq('status', 'graduated').order('roll_number').range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
     all = all.concat(data);
@@ -49,7 +49,7 @@ export const getActiveStudentsDetails = async () => {
   let all: any[] = [];
   let from = 0;
   while (true) {
-    const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, department_id, section, created_at, semesters!profiles_semester_id_fkey(name), departments!profiles_department_id_fkey(name)').eq('role', 'student').or('status.is.null,status.eq.active').order('full_name').range(from, from + 999);
+    const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, department_id, section, created_at, semesters!profiles_semester_id_fkey(name), departments!profiles_department_id_fkey(name)').eq('role', 'student').or('status.is.null,status.eq.active').order('roll_number').range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
     all = all.concat(data);
@@ -75,7 +75,7 @@ export const getStudentsNeedingSections = async (departmentId: string) => {
   if (semErr) throw semErr;
   if (!semesters || semesters.length === 0) return [];
   const semId = semesters[0].id;
-  const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, section, semester_id, semesters!profiles_semester_id_fkey(name)').eq('department_id', departmentId).eq('semester_id', semId).eq('role', 'student').is('section', null).order('full_name');
+  const { data, error } = await supabase.from('profiles').select('id, full_name, roll_number, section, semester_id, semesters!profiles_semester_id_fkey(name)').eq('department_id', departmentId).eq('semester_id', semId).eq('role', 'student').is('section', null).order('roll_number');
   if (error) throw error;
   return data;
 };

@@ -64,6 +64,7 @@ export default function FacultyDashboard() {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [iaDeptFilter, setIaDeptFilter] = useState<string | null>(null);
   const [iaSemFilter, setIaSemFilter] = useState<string | null>(null);
+  const [iaSectionFilter, setIaSectionFilter] = useState<string | null>(null);
   const [iaCount, setIaCount] = useState(0);
   const [iaRecords, setIaRecords] = useState<IARecord[]>([]);
   const [enrolledStudents, setEnrolledStudents] = useState<StudentRecord[]>([]);
@@ -82,8 +83,6 @@ export default function FacultyDashboard() {
   const iaCsvRef = useRef<HTMLInputElement>(null);
   const [iaCsvMsg, setIaCsvMsg] = useState<string | null>(null);
 
-  // IA limits validation for clearance
-  const [teacherIAs, setTeacherIAs] = useState<any[]>([]);
 
   // React Query: primary data fetch with caching + deduplication
   const { data: facultyData, isLoading: loading, refetch: refetchData } = useQuery({
@@ -107,8 +106,19 @@ export default function FacultyDashboard() {
   useEffect(() => {
     if (studentsFromQuery.length > 0) {
       setStudents(studentsFromQuery);
-      setTeacherIAs(facultyData?.ias || []);
       setTeacherSubjects(facultyData?.subjects || []);
+
+      // Auto-select department for clearance tab
+      if (!selectedDepartment) {
+        const depts = Array.from(new Set(studentsFromQuery.map(s => s.subjects?.departments?.name || s.profiles?.departments?.name || 'Unassigned'))).sort();
+        if (depts.length > 0) setSelectedDepartment(depts[0]);
+      }
+
+      // Auto-select department for manage IA tab
+      if (!iaDeptFilter) {
+        const iaDepts = Array.from(new Set((facultyData?.subjects || []).map((s: any) => s.departments?.name || 'Unassigned'))).sort();
+        if (iaDepts.length > 0) setIaDeptFilter(iaDepts[0]);
+      }
 
       // Auto-select initial semester/section
       const semsMap = new Map();
@@ -148,7 +158,7 @@ export default function FacultyDashboard() {
       ]);
       setIaCount(count);
       setIaRecords(records as unknown as IARecord[]);
-      setEnrolledStudents(studentsList as unknown as StudentRecord[]);
+      setEnrolledStudents((studentsList as unknown as StudentRecord[]).sort((a, b) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || '')));
       setShowNewIAForm(false);
       setExpandedIA(null);
     } catch (err) {
@@ -295,39 +305,55 @@ export default function FacultyDashboard() {
     e.target.value = '';
   };
 
-  // Download attendance % CSV template for the clearance tab
+  // Download attendance CSV template for the clearance tab
   const downloadAttendanceTemplate = () => {
-    const headers = ['roll_number', 'student_name', 'subject_code', 'subject_name', 'attendance_pct'];
-    const rows = filtered.map(s => [
+    const templateStudents = selectedSubject
+      ? filtered.filter(s => `${s.subjects.subject_code} — ${s.subjects.subject_name}` === selectedSubject)
+      : filtered;
+    const headers = ['roll_number', 'student_name', 'subject_code', 'subject_name', 'total_classes', 'attended_classes'];
+    const rows = templateStudents.map(s => [
       s.profiles?.roll_number || '',
       s.profiles?.full_name || '',
       s.subjects.subject_code,
       s.subjects.subject_name,
-      s.attendance_pct !== null ? s.attendance_pct.toString() : ''
+      '', // total_classes — teacher fills this
+      ''  // attended_classes — teacher fills this
     ]);
     const csvContent = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
     const semName = allSemesters.find(s => s.id === selectedSemester)?.name || 'All';
-    downloadCSV(csvContent, `Attendance_${semName}_Section${selectedSection || 'All'}.csv`);
+    const subjectCode = selectedSubject ? selectedSubject.split(' — ')[0] : 'All';
+    downloadCSV(csvContent, `Attendance_${semName}_Section${selectedSection || 'All'}_${subjectCode}.csv`);
   };
 
   // Upload attendance % CSV
   const handleAttendanceCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setCsvUploadMsg(null);
+    setCsvUploadMsg('⏳ Uploading...');
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        // Fetch IA data fresh from DB to ensure we have current data
+        const freshIAs = await getTeacherIAAttendance(user!.id) || [];
+
         const text = evt.target?.result as string;
         const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
         if (lines.length < 2) { setCsvUploadMsg('Error: CSV must have header + data rows.'); return; }
 
         const header = lines[0].toLowerCase().replace(/"/g, '').split(',').map(h => h.trim());
         const rollIdx = header.indexOf('roll_number');
-        const pctIdx = header.indexOf('attendance_pct');
         const codeIdx = header.indexOf('subject_code');
-        if (rollIdx === -1 || pctIdx === -1) { setCsvUploadMsg('Error: CSV needs "roll_number" and "attendance_pct" columns.'); return; }
+        // Support both old (attendance_pct) and new (total_classes + attended_classes)
+        const pctIdx = header.indexOf('attendance_pct');
+        const totalIdx = header.indexOf('total_classes');
+        const attendedIdx = header.indexOf('attended_classes');
+
+        if (rollIdx === -1) { setCsvUploadMsg('Error: CSV needs a "roll_number" column.'); return; }
+        if (pctIdx === -1 && (totalIdx === -1 || attendedIdx === -1)) {
+          setCsvUploadMsg('Error: CSV needs either "attendance_pct" OR both "total_classes" and "attended_classes" columns.');
+          return;
+        }
 
         // Build a lookup: roll+subjectCode -> enrollment record
         const enrollmentMap = new Map<string, SubjectEnrollment>();
@@ -336,53 +362,80 @@ export default function FacultyDashboard() {
           enrollmentMap.set(key, s);
         });
 
-        let updated = 0;
+        // Parse all rows first
+        const tasks: { enrollment: SubjectEnrollment; status: string; pct: number; remarks: string }[] = [];
         let errors = 0;
 
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].replace(/"/g, '').split(',').map(c => c.trim());
           const roll = (cols[rollIdx] || '').toLowerCase().trim();
-          const pctStr = cols[pctIdx] || '';
           const code = codeIdx !== -1 ? (cols[codeIdx] || '').toLowerCase().trim() : '';
-          const pct = parseInt(pctStr);
-          if (isNaN(pct) || pct < 0 || pct > 100) { errors++; continue; }
 
-          // Try to find matching enrollment
           let enrollment: SubjectEnrollment | undefined;
           if (code) {
             enrollment = enrollmentMap.get(`${roll}_${code}`);
           } else {
-            // If no subject code column, find first match by roll number in filtered
             enrollment = filtered.find(s => (s.profiles?.roll_number || '').toLowerCase().trim() === roll);
           }
 
-          if (enrollment) {
-            let status = pct >= 85 ? 'completed' : 'rejected';
-            let remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
+          if (!enrollment) { errors++; continue; }
 
-            // Override with IA rule (only if at least 2 IAs have been conducted for this subject)
-            const subjectIAs = teacherIAs.filter(ia => ia.subject_id === enrollment?.subject_id);
-            // Get unique IA numbers for this subject to see how many IAs have been conducted
-            const uniqueIAsConducted = new Set(subjectIAs.map(ia => ia.ia_number)).size;
-            
-            if (uniqueIAsConducted >= 2) {
-              const iaPresentCount = subjectIAs.filter(ia => ia.student_id === enrollment?.student_id && ia.is_present).length;
-              if (iaPresentCount < 2) {
-                status = 'rejected';
-                remarks = `Low IA Attendance (${iaPresentCount}/2 required)`;
-              }
-            }
-
-            try {
-              await markFacultySubjectStatus(enrollment.id, status, pct, remarks);
-              updated++;
-            } catch { errors++; }
+          // Calculate pct from class counts if provided, else use direct pct
+          let pct: number;
+          if (totalIdx !== -1 && attendedIdx !== -1) {
+            const total = parseInt(cols[totalIdx] || '0');
+            const attended = parseInt(cols[attendedIdx] || '0');
+            if (isNaN(total) || isNaN(attended) || total <= 0) { errors++; continue; }
+            pct = Math.round((attended / total) * 100);
           } else {
-            errors++;
+            const rawPct = parseInt(cols[pctIdx] || '');
+            if (isNaN(rawPct) || rawPct < 0 || rawPct > 100) { errors++; continue; }
+            pct = rawPct;
           }
+
+          // Determine IA status using fresh DB data
+          const subjectIAs = freshIAs.filter((ia: any) => ia.subject_id === enrollment?.subject_id);
+          const iaPresentCount = subjectIAs.filter((ia: any) => ia.student_id === enrollment?.student_id && ia.is_present).length;
+
+          // BOTH conditions ALWAYS required for COMPLETED:
+          // 1. Attendance >= 85%
+          // 2. Minimum 2 IAs present (strictly enforced)
+          const attendanceOk = pct >= 85;
+          const iaOk = iaPresentCount >= 2;
+
+          let status: string;
+          let remarks: string;
+
+          if (attendanceOk && iaOk) {
+            status = 'completed';
+            remarks = ''; // No remarks for cleared students
+          } else if (!attendanceOk && !iaOk) {
+            status = 'rejected';
+            remarks = `Low Attendance (<85%) & Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+          } else if (!attendanceOk) {
+            status = 'rejected';
+            remarks = `Low Attendance (<85%)`;
+          } else {
+            status = 'rejected';
+            remarks = `Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+          }
+
+          tasks.push({ enrollment, status, pct, remarks });
         }
 
-        setCsvUploadMsg(`✅ Updated: ${updated} students. ${errors > 0 ? `${errors} errors/unmatched.` : ''}`);
+        // Run ALL DB updates in parallel (batched for speed)
+        const BATCH_SIZE = 20;
+        let updated = 0;
+        for (let b = 0; b < tasks.length; b += BATCH_SIZE) {
+          const batch = tasks.slice(b, b + BATCH_SIZE);
+          const results = await Promise.allSettled(
+            batch.map(t => markFacultySubjectStatus(t.enrollment.id, t.status, t.pct, t.remarks))
+          );
+          updated += results.filter(r => r.status === 'fulfilled').length;
+          errors += results.filter(r => r.status === 'rejected').length;
+        }
+
+        setCsvUploadMsg(`✅ Updated ${updated} students.${errors > 0 ? ` ${errors} errors/unmatched.` : ''}`);
         await fetchData();
       } catch (err: any) {
         setCsvUploadMsg(`Error: ${err.message}`);
@@ -405,18 +458,13 @@ export default function FacultyDashboard() {
   const handleAttendanceChange = (id: string, pctString: string) => {
     const pct = parseInt(pctString);
     if (isNaN(pct) && pctString !== '') return;
-    // Auto-correct: clamp to 0–100 range
     let newPct = isNaN(pct) ? null : Math.min(100, Math.max(0, pct));
-    // Immediately update local status preview so the badge reflects the change
-    const previewStatus = (newPct !== null && newPct < 85) ? 'rejected' : (newPct !== null && newPct >= 85) ? 'completed' : undefined;
-    const previewRemarks = previewStatus === 'rejected' ? 'Low Attendance (<85%)' : previewStatus === 'completed' ? 'Cleared by Faculty' : undefined;
+    // Preview badge: only attendance check here (IA checked on save)
+    const previewStatus = (newPct !== null && newPct < 85) ? 'rejected' : (newPct !== null && newPct >= 85) ? 'pending' : undefined;
     setStudents(prev => prev.map(s => {
       if (s.id !== id) return s;
       const updated = { ...s, attendance_pct: newPct };
-      if (previewStatus) {
-        updated.status = previewStatus;
-        updated.remarks = previewRemarks || s.remarks;
-      }
+      if (previewStatus) updated.status = previewStatus;
       return updated;
     }));
   };
@@ -427,27 +475,39 @@ export default function FacultyDashboard() {
       if (!enrollment) return;
       
       const pct = Math.min(100, Math.max(0, enrollment.attendance_pct || 0));
-      let status = pct >= 85 ? 'completed' : 'rejected';
-      let remarks = pct >= 85 ? 'Cleared by Faculty' : 'Low Attendance (<85%)';
 
-      // Override with IA rule (only if at least 2 IAs have been conducted for this subject)
-      const subjectIAs = teacherIAs.filter(ia => ia.subject_id === enrollment.subject_id);
-      const uniqueIAsConducted = new Set(subjectIAs.map(ia => ia.ia_number)).size;
-      
-      if (uniqueIAsConducted >= 2) {
-        const iaPresentCount = subjectIAs.filter(ia => ia.student_id === enrollment.student_id && ia.is_present).length;
-        if (iaPresentCount < 2) {
-          status = 'rejected';
-          remarks = `Low IA Attendance (${iaPresentCount}/2 required)`;
-        }
+      // Fetch IA data fresh from DB to ensure we have current data
+      const freshIAs = await getTeacherIAAttendance(user!.id) || [];
+      const subjectIAs = freshIAs.filter((ia: any) => ia.subject_id === enrollment.subject_id);
+      const iaPresentCount = subjectIAs.filter((ia: any) => ia.student_id === enrollment.student_id && ia.is_present).length;
+
+      // BOTH conditions ALWAYS required for COMPLETED:
+      // 1. Attendance >= 85%
+      // 2. Minimum 2 IAs present (strictly enforced regardless of IAs conducted count)
+      const attendanceOk = pct >= 85;
+      const iaOk = iaPresentCount >= 2;
+
+      let status: string;
+      let remarks: string;
+
+      if (attendanceOk && iaOk) {
+        status = 'completed';
+        remarks = ''; // No remarks for cleared students
+      } else if (!attendanceOk && !iaOk) {
+        status = 'rejected';
+        remarks = `Low Attendance (<85%) & Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+      } else if (!attendanceOk) {
+        status = 'rejected';
+        remarks = `Low Attendance (<85%)`;
+      } else {
+        status = 'rejected';
+        remarks = `Insufficient IA Attendance (${iaPresentCount}/2 required)`;
       }
 
       await markFacultySubjectStatus(id, status, pct, remarks);
-      // Update local state immediately
       setStudents(prev => prev.map(s => s.id === id ? { ...s, status, remarks, attendance_pct: pct } : s));
     } catch (err: any) {
       console.error("Attendance update error:", err);
-      // Revert by re-fetching from DB on error
       fetchData();
     }
   };
@@ -494,7 +554,7 @@ export default function FacultyDashboard() {
     const matchesSearch = s.profiles?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || s.subjects.subject_name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesSection = selectedSection ? (s.profiles?.section || 'Unassigned') === selectedSection : true;
     return matchesSearch && matchesSection;
-  });
+  }).sort((a, b) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || ''));
 
   return (
     <div className="space-y-6 fade-in">
@@ -603,31 +663,33 @@ export default function FacultyDashboard() {
                 )}
               </div>
 
-              {/* CSV Actions Bar */}
-              <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-secondary/5">
-                <FileSpreadsheet className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground">Bulk Actions:</span>
-                <button
-                  onClick={downloadAttendanceTemplate}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors border border-border"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download Template
-                </button>
-                <button
-                  onClick={() => clearanceCsvRef.current?.click()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  Upload CSV
-                </button>
-                <input ref={clearanceCsvRef} type="file" accept=".csv" className="hidden" onChange={handleAttendanceCSVUpload} />
-                {csvUploadMsg && (
-                  <span className={`text-xs font-medium ${csvUploadMsg.startsWith('Error') ? 'text-destructive' : 'text-emerald-600'}`}>
-                    {csvUploadMsg}
-                  </span>
-                )}
-              </div>
+              {/* CSV Actions Bar — only show when a subject is selected */}
+              {selectedSubject && (
+                <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-secondary/5">
+                  <FileSpreadsheet className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-xs font-medium text-muted-foreground">Bulk Actions:</span>
+                  <button
+                    onClick={downloadAttendanceTemplate}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors border border-border"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download Template
+                  </button>
+                  <button
+                    onClick={() => clearanceCsvRef.current?.click()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    Upload CSV
+                  </button>
+                  <input ref={clearanceCsvRef} type="file" accept=".csv" className="hidden" onChange={handleAttendanceCSVUpload} />
+                  {csvUploadMsg && (
+                    <span className={`text-xs font-medium ${csvUploadMsg.startsWith('Error') ? 'text-destructive' : 'text-emerald-600'}`}>
+                      {csvUploadMsg}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* LEVEL 1: Department Cards */}
               {!selectedDepartment && (
@@ -835,8 +897,12 @@ export default function FacultyDashboard() {
                                   {student.status.toUpperCase()}
                                 </span>
                               </td>
-                              <td className="px-6 py-3 text-right text-sm text-muted-foreground font-medium">
-                                {student.remarks || '-'}
+                              <td className="px-6 py-3 text-right text-sm font-medium">
+                                {student.status === 'rejected' && student.remarks ? (
+                                  <span className="text-destructive">{student.remarks}</span>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -854,12 +920,12 @@ export default function FacultyDashboard() {
       {/* ======================== MANAGE IAs TAB ======================== */}
       {activeTab === 'manage-ia' && (
         <div className="space-y-6">
-          {/* Hierarchical Subject Selector: Department → Semester → Subject */}
+          {/* Hierarchical Subject Selector: Department → Semester → Section → Subject */}
           <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
             {/* IA Breadcrumb */}
             <div className="flex bg-secondary/10 p-3 items-center text-sm font-medium text-muted-foreground overflow-x-auto whitespace-nowrap border-b border-border">
               <button
-                onClick={() => { setIaDeptFilter(null); setIaSemFilter(null); setSelectedSubjectId(null); }}
+                onClick={() => { setIaDeptFilter(null); setIaSemFilter(null); setIaSectionFilter(null); setSelectedSubjectId(null); }}
                 className={`hover:text-primary transition-colors ${!iaDeptFilter ? 'text-primary font-bold' : ''}`}
               >
                 All Departments
@@ -868,7 +934,7 @@ export default function FacultyDashboard() {
                 <>
                   <ChevronRight className="w-4 h-4 mx-2" />
                   <button
-                    onClick={() => { setIaSemFilter(null); setSelectedSubjectId(null); }}
+                    onClick={() => { setIaSemFilter(null); setIaSectionFilter(null); setSelectedSubjectId(null); }}
                     className={`hover:text-primary transition-colors ${iaDeptFilter && !iaSemFilter ? 'text-primary font-bold' : ''}`}
                   >
                     {iaDeptFilter}
@@ -879,10 +945,21 @@ export default function FacultyDashboard() {
                 <>
                   <ChevronRight className="w-4 h-4 mx-2" />
                   <button
-                    onClick={() => { setSelectedSubjectId(null); }}
-                    className={`hover:text-primary transition-colors ${iaSemFilter && !selectedSubjectId ? 'text-primary font-bold' : ''}`}
+                    onClick={() => { setIaSectionFilter(null); setSelectedSubjectId(null); }}
+                    className={`hover:text-primary transition-colors ${iaSemFilter && !iaSectionFilter ? 'text-primary font-bold' : ''}`}
                   >
                     {iaSemFilter}
+                  </button>
+                </>
+              )}
+              {iaSectionFilter && (
+                <>
+                  <ChevronRight className="w-4 h-4 mx-2" />
+                  <button
+                    onClick={() => { setSelectedSubjectId(null); }}
+                    className={`hover:text-primary transition-colors ${iaSectionFilter && !selectedSubjectId ? 'text-primary font-bold' : ''}`}
+                  >
+                    Section {iaSectionFilter}
                   </button>
                 </>
               )}
@@ -908,6 +985,16 @@ export default function FacultyDashboard() {
                 return na - nb;
               });
               const filteredBySem = iaSemFilter ? filteredByDept.filter(s => (s.semesters?.name ? `Sem ${s.semesters.name}` : 'Unassigned') === iaSemFilter) : filteredByDept;
+
+              // Derive sections from student enrollment data for subjects in this semester
+              const semSubjectIds = new Set(filteredBySem.map(s => s.id));
+              const semStudents = students.filter(s => semSubjectIds.has(s.subject_id));
+              const iaSections = Array.from(new Set(semStudents.map(s => s.profiles?.section || 'Unassigned'))).sort();
+
+              // Filter subjects by section — only show subjects that have students in the selected section
+              const filteredBySection = iaSectionFilter
+                ? filteredBySem.filter(sub => students.some(s => s.subject_id === sub.id && (s.profiles?.section || 'Unassigned') === iaSectionFilter))
+                : filteredBySem;
 
               return (
                 <>
@@ -952,12 +1039,35 @@ export default function FacultyDashboard() {
                     </div>
                   )}
 
-                  {/* IA Level 3: Subject Cards */}
-                  {iaDeptFilter && iaSemFilter && !selectedSubjectId && (
+                  {/* IA Level 3: Section Cards */}
+                  {iaDeptFilter && iaSemFilter && !iaSectionFilter && (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
+                      {iaSections.length === 0 ? (
+                        <div className="col-span-full p-8 text-center text-muted-foreground">No sections found in this semester.</div>
+                      ) : iaSections.map(section => {
+                        const secStudents = semStudents.filter(s => (s.profiles?.section || 'Unassigned') === section);
+                        const subjectCount = new Set(secStudents.map(s => s.subject_id)).size;
+                        return (
+                          <button key={section} onClick={() => setIaSectionFilter(section)} className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
+                                <Users className="w-4 h-4 text-primary" />
+                              </div>
+                              <h3 className="font-bold text-foreground group-hover:text-primary transition-colors">Section {section}</h3>
+                            </div>
+                            <span className="text-sm text-muted-foreground">{subjectCount} subject{subjectCount !== 1 ? 's' : ''} • {secStudents.length} students</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* IA Level 4: Subject Cards */}
+                  {iaDeptFilter && iaSemFilter && iaSectionFilter && !selectedSubjectId && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-6">
-                      {filteredBySem.length === 0 ? (
-                        <div className="col-span-full p-8 text-center text-muted-foreground">No subjects in this semester.</div>
-                      ) : filteredBySem.map(sub => (
+                      {filteredBySection.length === 0 ? (
+                        <div className="col-span-full p-8 text-center text-muted-foreground">No subjects in this section.</div>
+                      ) : filteredBySection.map(sub => (
                         <button
                           key={sub.id}
                           onClick={() => setSelectedSubjectId(sub.id)}

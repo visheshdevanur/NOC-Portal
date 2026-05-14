@@ -23,7 +23,7 @@ export const getHodDepartmentStudents = async (departmentId: string) => {
       .select('*, semesters(name), clearance_requests(status, current_stage, created_at, updated_at)')
       .eq('department_id', departmentId)
       .eq('role', 'student')
-      .order('full_name')
+      .order('roll_number')
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;

@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { logActivity } from './shared';
+import { sanitizeRemarks, sanitizeNumber } from '../sanitize';
 
 // =======================
 // FACULTY SPECIFIC
@@ -19,6 +20,16 @@ export const markFacultySubjectStatus = async (
   attendancePct: number, 
   remarks: string
 ) => {
+  // Sanitize inputs
+  attendancePct = sanitizeNumber(attendancePct, 0, 100);
+  remarks = sanitizeRemarks(remarks);
+
+  // ── Hard guard: attendance < 85% MUST be rejected, no exceptions ──
+  if (attendancePct < 85 && status === 'completed') {
+    status = 'rejected';
+    remarks = remarks || `Low Attendance (<85%)`;
+  }
+
   const updatePayload: any = { status: status, attendance_pct: attendancePct, remarks };
   if (status === 'completed') {
     updatePayload.attendance_fee = 0;
@@ -104,7 +115,7 @@ export const getIAAttendanceForSubject = async (subjectId: string, teacherId: st
 export const getTeacherIAAttendance = async (teacherId: string) => {
   const { data, error } = await supabase
     .from('ia_attendance')
-    .select('student_id, subject_id, is_present')
+    .select('student_id, subject_id, ia_number, is_present')
     .eq('teacher_id', teacherId);
   if (error) throw error;
   return data;

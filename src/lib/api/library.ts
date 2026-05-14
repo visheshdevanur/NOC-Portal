@@ -25,7 +25,7 @@ export const getLibraryDues = async () => {
 
   // Run BOTH queries in parallel for speed
   const [allStudents, allDues] = await Promise.all([
-    fetchAll('profiles', 'id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)', q => q.eq('role', 'student').order('id')),
+    fetchAll('profiles', 'id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)', q => q.eq('role', 'student').order('roll_number')),
     fetchAll('library_dues', 'student_id, has_dues, fine_amount, paid_amount, remarks, permitted, updated_at', q => q.order('student_id')),
   ]);
 
