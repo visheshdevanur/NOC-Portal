@@ -1,29 +1,14 @@
 // @ts-nocheck — Deno runtime, not checked by project tsc
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-import * as jose from 'https://deno.land/x/jose@v5.2.0/index.ts'
 
 /**
- * HDFC SmartGateway — Session API (JWE Auth)
- * Uses RSA key pair + JWE encryption as per official Juspay SDK
+ * HDFC SmartGateway — Create Order via /orders endpoint (Basic Auth)
+ * This endpoint successfully creates orders (confirmed in HDFC dashboard)
  */
 
+const HDFC_API_KEY = Deno.env.get('HDFC_API_KEY') || ''
 const HDFC_MERCHANT_ID = Deno.env.get('HDFC_MERCHANT_ID') || ''
-const HDFC_KEY_UUID = Deno.env.get('HDFC_KEY_UUID') || ''
-
-// Keys are stored base64-encoded to preserve PEM newlines
-function decodeKeyFromEnv(b64Name: string, fallbackName: string): string {
-  const b64 = Deno.env.get(b64Name)
-  if (b64) {
-    try {
-      return new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))
-    } catch { /* fall through */ }
-  }
-  return Deno.env.get(fallbackName) || ''
-}
-
-const HDFC_PRIVATE_KEY_PEM = decodeKeyFromEnv('HDFC_PRIVATE_KEY_B64', 'HDFC_PRIVATE_KEY')
-const HDFC_PUBLIC_KEY_PEM = decodeKeyFromEnv('HDFC_PUBLIC_KEY_B64', 'HDFC_PUBLIC_KEY')
 const HDFC_PAYMENT_PAGE_CLIENT_ID = Deno.env.get('HDFC_PAYMENT_PAGE_CLIENT_ID') || 'hdfcmaster'
 const HDFC_BASE_URL = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
 const PAYMENT_RETURN_URL = Deno.env.get('PAYMENT_RETURN_URL') || ''
@@ -47,80 +32,9 @@ function generateOrderId(): string {
   return `NOC${ts}${rand}`.substring(0, 20)
 }
 
-/**
- * Create JWE-encrypted request payload (as per Juspay SDK)
- * 1. Create JWS (signed with private key)
- * 2. Encrypt JWS into JWE (encrypted with HDFC's public key)
- */
-async function createJwePayload(payload: object): Promise<string> {
-  const privateKey = await jose.importPKCS8(HDFC_PRIVATE_KEY_PEM, 'RS256')
-
-  // Step 1: Sign the payload as JWS
-  const jws = await new jose.CompactSign(
-    new TextEncoder().encode(JSON.stringify(payload))
-  )
-    .setProtectedHeader({ alg: 'RS256', kid: HDFC_KEY_UUID })
-    .sign(privateKey)
-
-  return jws
-}
-
-/**
- * Make authenticated API call to HDFC SmartGateway
- * The official SDK sends the payload as JWS in a specific format
- */
-async function callHdfcApi(endpoint: string, payload: object) {
-  const privateKey = await jose.importPKCS8(HDFC_PRIVATE_KEY_PEM, 'RS256')
-
-  // Create JWS token with the payload
-  const jws = await new jose.CompactSign(
-    new TextEncoder().encode(JSON.stringify(payload))
-  )
-    .setProtectedHeader({ alg: 'RS256', kid: HDFC_KEY_UUID })
-    .sign(privateKey)
-
-  const url = `${HDFC_BASE_URL}${endpoint}`
-  console.log('Calling HDFC:', url)
-
-  // Send as form-urlencoded with the JWS as the 'payload' field
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'x-merchantid': HDFC_MERCHANT_ID,
-    },
-    body: `payload=${encodeURIComponent(jws)}`,
-  })
-
-  const responseText = await response.text()
-  console.log('HDFC response status:', response.status)
-  console.log('HDFC response:', responseText.substring(0, 500))
-
-  // The response may be JWE-encrypted or plain JSON
-  let data: any
-  try {
-    data = JSON.parse(responseText)
-  } catch {
-    // Response might be JWE — try to decrypt
-    try {
-      const privKey = await jose.importPKCS8(HDFC_PRIVATE_KEY_PEM, 'RSA-OAEP-256')
-      const { plaintext } = await jose.compactDecrypt(responseText, privKey)
-      const decryptedText = new TextDecoder().decode(plaintext)
-      // The decrypted content is a JWS — verify it
-      try {
-        const pubKey = await jose.importSPKI(HDFC_PUBLIC_KEY_PEM, 'RS256')
-        const { payload: verified } = await jose.compactVerify(decryptedText, pubKey)
-        data = JSON.parse(new TextDecoder().decode(verified))
-      } catch {
-        data = JSON.parse(decryptedText)
-      }
-    } catch (decryptErr) {
-      console.error('Failed to parse/decrypt response:', decryptErr)
-      return { error: true, status: response.status, message: responseText.substring(0, 200) }
-    }
-  }
-
-  return { error: !response.ok, status: response.status, data }
+/** Base64 encode for Basic Auth */
+function btoa64(str: string): string {
+  return btoa(str)
 }
 
 serve(async (req) => {
@@ -129,7 +43,7 @@ serve(async (req) => {
   }
 
   try {
-    // Step 1: Authenticate user
+    // Step 1: Authenticate user via Supabase
     console.log('STEP 1: Auth check')
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
@@ -160,7 +74,7 @@ serve(async (req) => {
       return jsonRes({ error: 'Valid amount is required' }, 400)
     }
 
-    // Step 3: Get profile
+    // Step 3: Get student profile
     console.log('STEP 3: Verify student profile')
     const { data: profile, error: profileErr } = await adminClient
       .from('profiles')
@@ -176,46 +90,65 @@ serve(async (req) => {
     const orderId = generateOrderId()
     console.log('STEP 4: orderId =', orderId)
 
-    // Step 5: Check JWE config
-    if (!HDFC_KEY_UUID || !HDFC_PRIVATE_KEY_PEM) {
-      console.error('Missing HDFC_KEY_UUID or HDFC_PRIVATE_KEY')
-      return jsonRes({ error: 'Payment gateway not configured. Contact administrator.' }, 503)
-    }
-
-    // Step 6: Call HDFC Session API with JWE auth
-    console.log('STEP 5: Call HDFC Session API (JWE auth)')
+    // Step 5: Call HDFC /orders endpoint with Basic Auth
+    console.log('STEP 5: Call HDFC /orders (Basic Auth)')
     const returnUrl = PAYMENT_RETURN_URL || `${ALLOWED_ORIGIN}/payment/callback`
     const customerIdForHdfc = user.id.replace(/-/g, '').substring(0, 20)
+    const authB64 = btoa64(`${HDFC_API_KEY}:`)
 
-    const sessionPayload = {
+    const formParams = new URLSearchParams({
       order_id: orderId,
       amount: Number(amount).toFixed(2),
-      payment_page_client_id: HDFC_PAYMENT_PAGE_CLIENT_ID,
       customer_id: customerIdForHdfc,
       customer_email: user.email || profile.email || '',
+      customer_phone: '9999999999',
+      payment_page_client_id: HDFC_PAYMENT_PAGE_CLIENT_ID,
       action: 'paymentPage',
       return_url: returnUrl,
       currency: 'INR',
+    })
+
+    const hdfcUrl = `${HDFC_BASE_URL}/orders`
+    console.log('HDFC URL:', hdfcUrl)
+
+    const hdfcResponse = await fetch(hdfcUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${authB64}`,
+        'x-merchantid': HDFC_MERCHANT_ID,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formParams.toString(),
+    })
+
+    const responseText = await hdfcResponse.text()
+    console.log('HDFC response status:', hdfcResponse.status)
+    console.log('HDFC response:', responseText.substring(0, 500))
+
+    if (!hdfcResponse.ok) {
+      let errorData: any = {}
+      try { errorData = JSON.parse(responseText) } catch {}
+      const msg = errorData.error_message || errorData.user_message || `HDFC returned ${hdfcResponse.status}`
+      console.error('HDFC API error:', msg)
+      return jsonRes({ error: msg, hdfc_error: errorData }, 502)
     }
 
-    const result = await callHdfcApi('/session', sessionPayload)
-
-    if (result.error) {
-      console.error('HDFC API error:', JSON.stringify(result))
-      const errorMsg = result.data?.error_message || result.data?.status || result.message || 'Failed to create payment session'
-      return jsonRes({ error: errorMsg, hdfc_status: result.data?.status }, 502)
+    let hdfcData: any
+    try {
+      hdfcData = JSON.parse(responseText)
+    } catch {
+      return jsonRes({ error: 'Invalid response from payment gateway' }, 502)
     }
 
-    const sessionData = result.data
-    const paymentLink = sessionData?.payment_links?.web
-    if (!paymentLink) {
-      console.error('No payment link in response:', JSON.stringify(sessionData))
-      return jsonRes({ error: 'No payment link received from gateway', response: sessionData }, 502)
-    }
+    // Extract payment link from response
+    const paymentLink = hdfcData?.payment_links?.web || hdfcData?.payment_link
+    console.log('STEP 5 OK: status =', hdfcData.status, 'paymentLink =', paymentLink)
 
-    console.log('STEP 5 OK: paymentLink =', paymentLink)
+    // If no direct payment link, construct one from order
+    const finalPaymentLink = paymentLink ||
+      `${HDFC_BASE_URL}/pay/${HDFC_PAYMENT_PAGE_CLIENT_ID}/${orderId}`
 
-    // Step 7: Store order in DB
+    // Step 6: Store order in DB
     console.log('STEP 6: Store order in DB')
     const primaryEnrollmentId = enrollment_id || (enrollment_ids?.length > 0 ? enrollment_ids[0] : null)
 
@@ -227,7 +160,7 @@ serve(async (req) => {
       p_gateway_order_id: orderId,
       p_tenant_id: profile.tenant_id,
       p_gateway_type: 'hdfc',
-      p_payment_link: paymentLink,
+      p_payment_link: finalPaymentLink,
     })
 
     if (rpcError) {
@@ -241,8 +174,9 @@ serve(async (req) => {
     console.log('ALL STEPS COMPLETE')
     return jsonRes({
       order_id: orderId,
-      payment_link: paymentLink,
+      payment_link: finalPaymentLink,
       amount: amount,
+      hdfc_status: hdfcData.status,
     })
 
   } catch (error) {
