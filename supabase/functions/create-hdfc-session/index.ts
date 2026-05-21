@@ -10,8 +10,20 @@ import * as jose from 'https://deno.land/x/jose@v5.2.0/index.ts'
 
 const HDFC_MERCHANT_ID = Deno.env.get('HDFC_MERCHANT_ID') || ''
 const HDFC_KEY_UUID = Deno.env.get('HDFC_KEY_UUID') || ''
-const HDFC_PRIVATE_KEY_PEM = Deno.env.get('HDFC_PRIVATE_KEY') || ''
-const HDFC_PUBLIC_KEY_PEM = Deno.env.get('HDFC_PUBLIC_KEY') || ''
+
+// Keys are stored base64-encoded to preserve PEM newlines
+function decodeKeyFromEnv(b64Name: string, fallbackName: string): string {
+  const b64 = Deno.env.get(b64Name)
+  if (b64) {
+    try {
+      return new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))
+    } catch { /* fall through */ }
+  }
+  return Deno.env.get(fallbackName) || ''
+}
+
+const HDFC_PRIVATE_KEY_PEM = decodeKeyFromEnv('HDFC_PRIVATE_KEY_B64', 'HDFC_PRIVATE_KEY')
+const HDFC_PUBLIC_KEY_PEM = decodeKeyFromEnv('HDFC_PUBLIC_KEY_B64', 'HDFC_PUBLIC_KEY')
 const HDFC_PAYMENT_PAGE_CLIENT_ID = Deno.env.get('HDFC_PAYMENT_PAGE_CLIENT_ID') || 'hdfcmaster'
 const HDFC_BASE_URL = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
 const PAYMENT_RETURN_URL = Deno.env.get('PAYMENT_RETURN_URL') || ''
