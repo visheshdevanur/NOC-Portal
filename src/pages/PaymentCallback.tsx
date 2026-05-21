@@ -1,20 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/useAuth';
 import { CheckCircle2, XCircle, Clock, AlertCircle, ArrowLeft, RefreshCw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 /**
  * Payment Callback Page — HDFC SmartGateway return_url handler.
  * 
  * After the student completes (or abandons) payment on HDFC's page,
- * they are redirected here. This page:
- * 1. Extracts the order_id from sessionStorage (set before redirect)
+ * they are redirected here (POST or GET). This page:
+ * 1. Extracts the order_id from sessionStorage or URL params
  * 2. Calls the hdfc-order-status edge function to verify payment
  * 3. Displays the result and links back to the dashboard
  */
 export default function PaymentCallback() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'failed' | 'pending' | 'error'>('loading');
   const [orderDetails, setOrderDetails] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -29,7 +30,6 @@ export default function PaymentCallback() {
 
       if (result.status === 'CHARGED') {
         setStatus('success');
-        // Clear stored order info
         sessionStorage.removeItem('hdfc_order_id');
         sessionStorage.removeItem('hdfc_payment_amount');
         sessionStorage.removeItem('hdfc_payment_description');
@@ -37,7 +37,7 @@ export default function PaymentCallback() {
         setStatus('failed');
         setErrorMsg(`Payment was not successful. Status: ${result.status}`);
         sessionStorage.removeItem('hdfc_order_id');
-      } else if (['PENDING_VBV', 'NEW', 'STARTED'].includes(result.status)) {
+      } else if (['PENDING_VBV', 'NEW', 'STARTED', 'CREATED'].includes(result.status)) {
         setStatus('pending');
         // Auto-retry for pending status (max 5 times, every 3 seconds)
         if (retryCount < 5) {
@@ -59,7 +59,16 @@ export default function PaymentCallback() {
   useEffect(() => {
     if (!user) return;
 
-    const orderId = sessionStorage.getItem('hdfc_order_id');
+    // Try multiple sources for order_id:
+    // 1. sessionStorage (set before redirect)
+    // 2. URL search params (HDFC may append as query param)
+    // 3. Hash params
+    const orderId =
+      sessionStorage.getItem('hdfc_order_id') ||
+      searchParams.get('order_id') ||
+      searchParams.get('orderId') ||
+      new URLSearchParams(window.location.hash.split('?')[1] || '').get('order_id');
+
     if (!orderId) {
       setStatus('error');
       setErrorMsg('No payment session found. If you completed a payment, please check your dashboard.');
