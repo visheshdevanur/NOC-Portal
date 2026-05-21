@@ -1,5 +1,5 @@
 -- =============================================================
--- 0093: Bulk Payment Support & Fine Clearing
+-- 0093: Bulk Payment Support & Fine Clearing (HDFC SmartGateway)
 -- Adds enrollment_ids JSONB column for bulk payment tracking
 -- Updates process_payment_webhook to clear ALL bulk enrollments
 -- =============================================================
@@ -16,6 +16,8 @@ BEGIN
 END $$;
 
 -- Step 2: Update process_payment_webhook to handle bulk enrollment clearing
+-- NOTE: Parameter names kept as p_razorpay_* for backward compatibility
+-- with the existing webhook RPC calls (renaming would break the webhook).
 CREATE OR REPLACE FUNCTION process_payment_webhook(
   p_razorpay_order_id TEXT,
   p_razorpay_payment_id TEXT,
@@ -24,7 +26,6 @@ CREATE OR REPLACE FUNCTION process_payment_webhook(
 RETURNS JSON AS $$
 DECLARE
   _order RECORD;
-  _enrollment_id UUID;
   _enrollment_ids_arr UUID[];
 BEGIN
   SELECT * INTO _order
@@ -60,7 +61,6 @@ BEGIN
 
   -- Handle bulk enrollment payment (clear ALL enrollments)
   IF _order.enrollment_ids IS NOT NULL AND jsonb_typeof(_order.enrollment_ids) = 'array' THEN
-    -- Convert JSONB array to UUID array
     SELECT array_agg(elem::text::uuid)
     INTO _enrollment_ids_arr
     FROM jsonb_array_elements_text(_order.enrollment_ids) AS elem;
@@ -88,8 +88,8 @@ BEGIN
   INSERT INTO activity_logs (user_id, user_role, action, details, tenant_id)
   VALUES (
     _order.student_id, 'student', 'Payment Completed',
-    format('Payment of Rs.%s verified via %s (Order: %s, Payment: %s)',
-           p_amount_paid, _order.gateway_type, p_razorpay_order_id, p_razorpay_payment_id),
+    format('Payment of Rs.%s verified via HDFC SmartGateway (Order: %s, Payment: %s)',
+           p_amount_paid, p_razorpay_order_id, p_razorpay_payment_id),
     _order.tenant_id
   );
 
