@@ -171,6 +171,14 @@ serve(async (req) => {
       return jsonRes({ error: 'Failed to create payment order: ' + msg }, 500)
     }
 
+    // For bulk payments, store all enrollment_ids in the payment order
+    if (enrollment_ids && enrollment_ids.length > 1 && dbOrderId) {
+      await adminClient
+        .from('payment_orders')
+        .update({ enrollment_ids: JSON.stringify(enrollment_ids) })
+        .eq('id', dbOrderId)
+    }
+
     console.log('ALL STEPS COMPLETE')
     return jsonRes({
       order_id: orderId,
