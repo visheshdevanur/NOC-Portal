@@ -8,7 +8,6 @@ import {
   updateAttendanceCategory, 
   clearStudentFine, 
   overrideAttendanceFine,
-  applyMassFines,
   isFirstYearSem,
   getAllDepartments
 } from '../../../lib/api';
@@ -153,7 +152,6 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
         }
       } else {
         if (isFycGlobal) {
-          // FYC: create category in ALL departments with is_first_year=true
           if (allDepartments.length === 0) {
             setCatError('No departments loaded. Please try again.');
             setCatSaving(false);
@@ -170,7 +168,6 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           }
           if (created === 0) throw new Error('Failed to create category in any department.');
         } else if (departmentId) {
-          // HOD: create for their department only with is_first_year=false
           await createAttendanceCategory(departmentId, catForm.label, min, max, amt, false);
         } else {
           setCatError('Department not available.');
@@ -178,8 +175,8 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           return;
         }
       }
-      // Auto-apply fines after any create/edit (DB trigger also does this, but RPC ensures full coverage)
-      await handleApplyMassFines();
+      // Directly re-apply ALL category fines to matching students
+      await reapplyAllCategoryFines();
       setShowCatModal(false);
       fetchAttendanceCategories();
       fetchAttendanceFines();
@@ -191,21 +188,82 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     }
   };
 
-  /** Apply mass fines based on categories to all rejected students */
-  const handleApplyMassFines = async () => {
+  /**
+   * Directly update all rejected students' fines based on current categories.
+   * This bypasses DB triggers/RPCs and does explicit updates from the frontend.
+   */
+  const reapplyAllCategoryFines = async () => {
     try {
-      if (isFycGlobal) {
-        for (const dept of allDepartments) {
-          try { await applyMassFines(dept.id, true); }
-          catch (err) { console.warn('Failed for dept:', dept.name, err); }
-        }
+      // 1. Fetch all current categories for this scope
+      let cats: any[] = [];
+      if (isFycGlobal && allDepartments.length > 0) {
+        const { data } = await supabase
+          .from('attendance_fine_categories')
+          .select('*')
+          .eq('department_id', allDepartments[0].id)
+          .eq('is_first_year', true);
+        cats = data || [];
       } else if (departmentId) {
         const isFirstYear = role === 'fyc';
-        await applyMassFines(departmentId, isFirstYear);
+        const { data } = await supabase
+          .from('attendance_fine_categories')
+          .select('*')
+          .eq('department_id', departmentId)
+          .eq('is_first_year', isFirstYear);
+        cats = data || [];
       }
-      fetchAttendanceFines();
-    } catch (err: any) {
-      console.error('Auto-apply fines failed:', err);
+
+      if (cats.length === 0) {
+        console.log('No categories to apply');
+        return;
+      }
+
+      // 2. Fetch all rejected students (same query as the list)
+      let students: any[] = [];
+      if (departmentId) {
+        students = await getStaffAttendanceFines(departmentId);
+      } else {
+        const { data } = await supabase
+          .from('subject_enrollment')
+          .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+          .eq('status', 'rejected');
+        students = data || [];
+      }
+
+      // 3. Filter by semester (same logic as the display filter)
+      const filtered = students.filter((item: any) => {
+        const semName = item.profiles?.semesters?.name || '';
+        if (role === 'staff' || role === 'hod') return !isFirstYearSem(semName);
+        if (role === 'clerk' || role === 'fyc') return isFirstYearSem(semName);
+        return true;
+      });
+
+      console.log(`Reapplying fines: ${cats.length} categories, ${filtered.length} students`);
+
+      // 4. For each student, find matching category and update fine
+      let updated = 0;
+      for (const student of filtered) {
+        if (student.attendance_fee_verified) continue; // Skip already paid
+        const pct = student.attendance_pct || 0;
+        const matchingCat = cats.find((c: any) => pct >= c.min_pct && pct <= c.max_pct);
+        const newFee = matchingCat ? matchingCat.fine_amount : 0;
+
+        // Only update if fine changed
+        if (student.attendance_fee !== newFee) {
+          const { error } = await supabase
+            .from('subject_enrollment')
+            .update({ attendance_fee: newFee, attendance_fee_verified: false })
+            .eq('id', student.id);
+          if (error) {
+            console.warn(`Failed to update fine for ${student.profiles?.full_name}:`, error.message);
+          } else {
+            updated++;
+          }
+        }
+      }
+      console.log(`Fines reapplied: ${updated} students updated out of ${filtered.length}`);
+    } catch (err) {
+      console.error('reapplyAllCategoryFines failed:', err);
     }
   };
 
