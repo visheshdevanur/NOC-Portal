@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Plus, Trash2, Search, X, Zap } from 'lucide-react';
+import { Settings, Plus, Trash2, Search, X } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { 
   getStaffAttendanceFines, 
@@ -32,9 +32,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   const [catSaving, setCatSaving] = useState(false);
   const [catError, setCatError] = useState<string | null>(null);
 
-  const [applyingFines, setApplyingFines] = useState(false);
-  const [applyResult, setApplyResult] = useState<{ updated: number; skipped: number; total: number } | null>(null);
-  
+
   const [reduceFineId, setReduceFineId] = useState<string | null>(null);
   const [reduceFineAmount, setReduceFineAmount] = useState('');
   const [reduceFineLoading, setReduceFineLoading] = useState(false);
@@ -152,7 +150,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           }
         }
         // Auto re-apply fines so existing students get updated amounts
-        await handleApplyMassFines(true);
+        await handleApplyMassFines();
       } else {
         if (isFycGlobal) {
           // FYC: create category in ALL departments with is_first_year=true
@@ -179,6 +177,8 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           setCatSaving(false);
           return;
         }
+        // Auto-apply fines after creating new category
+        await handleApplyMassFines();
       }
       setShowCatModal(false);
       fetchAttendanceCategories();
@@ -190,34 +190,23 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   };
 
   /** Apply mass fines based on categories to all rejected students */
-  const handleApplyMassFines = async (silent = false) => {
-    if (!silent) setApplyingFines(true);
-    setApplyResult(null);
+  const handleApplyMassFines = async () => {
     try {
       if (isFycGlobal) {
-        // FYC: apply to all departments for first-year
-        let totalUpdated = 0, totalSkipped = 0, totalCount = 0;
         for (const dept of allDepartments) {
-          try {
-            const r = await applyMassFines(dept.id, true);
-            totalUpdated += r.updated;
-            totalSkipped += r.skipped;
-            totalCount += r.total;
-          } catch (err) { console.warn('Failed for dept:', dept.name, err); }
+          try { await applyMassFines(dept.id, true); }
+          catch (err) { console.warn('Failed for dept:', dept.name, err); }
         }
-        if (!silent) setApplyResult({ updated: totalUpdated, skipped: totalSkipped, total: totalCount });
       } else if (departmentId) {
         const isFirstYear = role === 'fyc';
-        const result = await applyMassFines(departmentId, isFirstYear);
-        if (!silent) setApplyResult(result);
+        await applyMassFines(departmentId, isFirstYear);
       }
       fetchAttendanceFines();
     } catch (err: any) {
-      if (!silent) alert(err.message || 'Failed to apply fines');
-    } finally {
-      if (!silent) setApplyingFines(false);
+      console.error('Auto-apply fines failed:', err);
     }
   };
+
 
   const handleDeleteCategory = async (cat: any) => {
     if (!confirm('Are you sure you want to delete this category?')) return;
@@ -285,17 +274,6 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                   : 'Define attendance % ranges and their corresponding fine amounts for your department (Sem 3–8).'}
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              {canManageCategories && categories.length > 0 && (
-                <button
-                  onClick={() => handleApplyMassFines()}
-                  disabled={applyingFines}
-                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm disabled:opacity-50"
-                >
-                  <Zap className="w-4 h-4" />
-                  {applyingFines ? 'Applying...' : 'Apply Fines'}
-                </button>
-              )}
               <button
                 onClick={() => { setEditingCat(null); setCatForm({ label: '', minPct: '', maxPct: '', amount: '' }); setCatError(null); setShowCatModal(true); }}
                 className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
@@ -303,7 +281,6 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                 <Plus className="w-4 h-4" />
                 Add Category
               </button>
-            </div>
           </div>
 
           {loadingCategories ? (
@@ -314,11 +291,6 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
             </div>
           ) : (
             <>
-            {applyResult && (
-              <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm text-emerald-700">
-                ✅ Fines applied: <strong>{applyResult.updated}</strong> updated, {applyResult.skipped} skipped (out of {applyResult.total} total rejected)
-              </div>
-            )}
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
