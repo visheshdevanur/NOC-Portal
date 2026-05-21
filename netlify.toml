@@ -14,6 +14,7 @@
   from = "/*"
   to = "/index.html"
   status = 200
+  force = true
 
 # ─── Security Headers (all routes) ───
 [[headers]]
