@@ -134,7 +134,9 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     setCatError(null);
     try {
       if (editingCat) {
+        console.log('Updating category:', editingCat.id, { label: catForm.label, min, max, amt });
         await updateAttendanceCategory(editingCat.id, catForm.label, min, max, amt);
+        console.log('Category updated successfully');
         // FYC: also update matching categories in other departments
         if (isFycGlobal) {
           const { data: matching } = await supabase
@@ -149,8 +151,6 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
             await updateAttendanceCategory(m.id, catForm.label, min, max, amt);
           }
         }
-        // Auto re-apply fines so existing students get updated amounts
-        await handleApplyMassFines();
       } else {
         if (isFycGlobal) {
           // FYC: create category in ALL departments with is_first_year=true
@@ -177,12 +177,14 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           setCatSaving(false);
           return;
         }
-        // Auto-apply fines after creating new category
-        await handleApplyMassFines();
       }
+      // Auto-apply fines after any create/edit (DB trigger also does this, but RPC ensures full coverage)
+      await handleApplyMassFines();
       setShowCatModal(false);
       fetchAttendanceCategories();
+      fetchAttendanceFines();
     } catch (err: any) {
+      console.error('Save category error:', err);
       setCatError(err.message || 'Failed to save category');
     } finally {
       setCatSaving(false);

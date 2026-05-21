@@ -136,7 +136,7 @@ export const getAccountsPendingFeeVerifications = async () => {
       .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
       .gt('attendance_fee', 0)
       .eq('attendance_fee_verified', false)
-      .order('created_at', { ascending: false })
+      .order('updated_at', { ascending: false })
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -167,7 +167,7 @@ export const getAccountsVerifiedFees = async () => {
       .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
       .gt('attendance_fee', 0)
       .eq('attendance_fee_verified', true)
-      .order('created_at', { ascending: false })
+      .order('updated_at', { ascending: false })
       .range(from, from + 999);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -204,13 +204,18 @@ export const createAttendanceCategory = async (departmentId: string, label: stri
 };
 
 export const updateAttendanceCategory = async (id: string, label: string, minPct: number, maxPct: number, amount: number) => {
+  console.log('updateAttendanceCategory:', { id, label, minPct, maxPct, amount });
   const { data, error } = await supabase
     .from('attendance_fine_categories')
-    .update({ label, min_pct: minPct, max_pct: maxPct, fine_amount: amount, updated_at: new Date().toISOString() })
+    .update({ label, min_pct: minPct, max_pct: maxPct, fine_amount: amount })
     .eq('id', id)
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    console.error('Failed to update category:', error);
+    throw error;
+  }
+  console.log('Category updated successfully:', data);
   logActivity('Updated Fine Category', `${label}: ${minPct}%-${maxPct}% → ₹${amount}`);
   return data;
 };
