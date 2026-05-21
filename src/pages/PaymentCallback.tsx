@@ -1,16 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/useAuth';
 import { CheckCircle2, XCircle, Clock, AlertCircle, ArrowLeft, RefreshCw } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 /**
  * Payment Callback Page — HDFC SmartGateway return_url handler.
  * 
  * After the student completes (or abandons) payment on HDFC's page,
  * they are redirected here (POST or GET). This page:
- * 1. Extracts the order_id from sessionStorage or URL params
- * 2. Calls the hdfc-order-status edge function to verify payment
- * 3. Displays the result and links back to the dashboard
+ * 1. Tries to restore the session and verify payment via edge function
+ * 2. If auth is unavailable, shows a helpful status based on stored info
+ * 3. Always provides a link back to the dashboard
  */
 export default function PaymentCallback() {
   const { user } = useAuth();
@@ -19,12 +20,26 @@ export default function PaymentCallback() {
   const [status, setStatus] = useState<'loading' | 'success' | 'failed' | 'pending' | 'error'>('loading');
   const [orderDetails, setOrderDetails] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
 
-  const checkOrderStatus = useCallback(async (orderId: string) => {
+  // Retrieve stored payment info (set before redirect to HDFC)
+  const storedOrderId = sessionStorage.getItem('hdfc_order_id');
+  const storedAmount = sessionStorage.getItem('hdfc_payment_amount');
+  const storedDescription = sessionStorage.getItem('hdfc_payment_description');
+
+  const orderId =
+    storedOrderId ||
+    searchParams.get('order_id') ||
+    searchParams.get('orderId') ||
+    new URLSearchParams(window.location.hash.split('?')[1] || '').get('order_id');
+
+  // Try to verify payment status via edge function
+  const verifyPayment = async (oid: string) => {
     try {
+      // First try to refresh the session
+      await supabase.auth.refreshSession();
+      
       const { invokeWithRetry } = await import('../lib/invokeWithRetry');
-      const result = await invokeWithRetry('hdfc-order-status', { order_id: orderId }) as any;
+      const result = await invokeWithRetry('hdfc-order-status', { order_id: oid }) as any;
 
       setOrderDetails(result);
 
@@ -37,59 +52,45 @@ export default function PaymentCallback() {
         setStatus('failed');
         setErrorMsg(`Payment was not successful. Status: ${result.status}`);
         sessionStorage.removeItem('hdfc_order_id');
-      } else if (['PENDING_VBV', 'NEW', 'STARTED', 'CREATED'].includes(result.status)) {
-        setStatus('pending');
-        // Auto-retry for pending status (max 5 times, every 3 seconds)
-        if (retryCount < 5) {
-          setTimeout(() => {
-            setRetryCount(prev => prev + 1);
-            checkOrderStatus(orderId);
-          }, 3000);
-        }
       } else {
         setStatus('pending');
-        setErrorMsg(`Payment status: ${result.status}. Please wait or check your dashboard.`);
       }
-    } catch (err: any) {
-      setStatus('error');
-      setErrorMsg(err.message || 'Failed to verify payment status');
+    } catch {
+      // Verification failed (likely expired session) — show pending status
+      // The webhook will process the actual payment server-side
+      setStatus('pending');
     }
-  }, [retryCount]);
+  };
 
   useEffect(() => {
-    // Wait for auth to load — user may be null briefly after HDFC redirect
-    if (!user) {
-      // Give auth a few seconds to restore session, then show error
-      const timeout = setTimeout(() => {
-        if (!user) {
-          setStatus('error');
-          setErrorMsg('Session expired. Please log in and check your dashboard for payment status.');
-        }
-      }, 5000);
-      return () => clearTimeout(timeout);
-    }
-
-    // Try multiple sources for order_id:
-    // 1. sessionStorage (set before redirect)
-    // 2. URL search params (HDFC may append as query param)
-    // 3. Hash params
-    const orderId =
-      sessionStorage.getItem('hdfc_order_id') ||
-      searchParams.get('order_id') ||
-      searchParams.get('orderId') ||
-      new URLSearchParams(window.location.hash.split('?')[1] || '').get('order_id');
-
     if (!orderId) {
       setStatus('error');
       setErrorMsg('No payment session found. If you completed a payment, please check your dashboard.');
       return;
     }
 
-    checkOrderStatus(orderId);
-  }, [user]);
+    // Try to verify, but don't block on auth
+    const timer = setTimeout(() => {
+      verifyPayment(orderId);
+    }, 1000); // Small delay to let auth restore
 
-  const storedAmount = sessionStorage.getItem('hdfc_payment_amount');
-  const storedDescription = sessionStorage.getItem('hdfc_payment_description');
+    // Fallback: if still loading after 8s, show pending
+    const fallback = setTimeout(() => {
+      setStatus(prev => prev === 'loading' ? 'pending' : prev);
+    }, 8000);
+
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(fallback);
+    };
+  }, []);
+
+  // Once user becomes available, retry verification if still loading/pending
+  useEffect(() => {
+    if (user && orderId && (status === 'loading' || status === 'pending')) {
+      verifyPayment(orderId);
+    }
+  }, [user]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -118,28 +119,24 @@ export default function PaymentCallback() {
             <div className="w-20 h-20 mx-auto mb-6 bg-emerald-500/10 rounded-full flex items-center justify-center">
               <CheckCircle2 className="w-10 h-10 text-emerald-500" />
             </div>
-            <h1 className="text-2xl font-bold text-foreground mb-2">Payment Successful! ✅</h1>
+            <h1 className="text-2xl font-bold text-foreground mb-2">Payment Successful!</h1>
             <p className="text-muted-foreground mb-6">Your attendance fine has been cleared.</p>
             
             <div className="bg-secondary/50 rounded-2xl p-5 mb-6 text-left space-y-3">
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Amount Paid</span>
-                <span className="font-bold text-emerald-600">₹{orderDetails?.amount || storedAmount || '—'}</span>
+                <span className="font-bold text-emerald-600">
+                  {'\u20B9'}{orderDetails?.amount || storedAmount || '\u2014'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Transaction ID</span>
-                <span className="font-mono text-xs text-foreground">{orderDetails?.payment_id || '—'}</span>
+                <span className="font-mono text-xs text-foreground">{orderDetails?.payment_id || '\u2014'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Order ID</span>
-                <span className="font-mono text-xs text-foreground">{orderDetails?.order_id || '—'}</span>
+                <span className="font-mono text-xs text-foreground">{orderDetails?.order_id || orderId || '\u2014'}</span>
               </div>
-              {storedDescription && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Description</span>
-                  <span className="text-sm text-foreground">{storedDescription}</span>
-                </div>
-              )}
             </div>
 
             <button
@@ -175,26 +172,43 @@ export default function PaymentCallback() {
           </>
         )}
 
-        {/* Pending State */}
+        {/* Pending State — also shown when auth is unavailable */}
         {status === 'pending' && (
           <>
-            <div className="w-20 h-20 mx-auto mb-6 bg-amber-500/10 rounded-full flex items-center justify-center animate-pulse">
+            <div className="w-20 h-20 mx-auto mb-6 bg-amber-500/10 rounded-full flex items-center justify-center">
               <RefreshCw className="w-10 h-10 text-amber-500 animate-spin" style={{ animationDuration: '3s' }} />
             </div>
             <h1 className="text-2xl font-bold text-foreground mb-2">Payment Processing</h1>
             <p className="text-muted-foreground mb-4">
-              {errorMsg || 'Your payment is being processed. This may take a few moments...'}
+              Your payment is being processed. The status will be updated on your dashboard shortly.
             </p>
-            {retryCount < 5 && (
-              <p className="text-xs text-muted-foreground mb-6">Auto-checking status... ({retryCount + 1}/5)</p>
+
+            {orderId && (
+              <div className="bg-secondary/50 rounded-2xl p-4 mb-6 text-left space-y-2">
+                {storedAmount && (
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Amount</span>
+                    <span className="font-bold">{'\u20B9'}{storedAmount}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Order ID</span>
+                  <span className="font-mono text-xs text-foreground">{orderId}</span>
+                </div>
+              </div>
             )}
+
             <button
               onClick={() => navigate('/')}
-              className="w-full py-3.5 bg-secondary text-foreground font-bold rounded-xl hover:bg-secondary/80 transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-primary text-primary-foreground font-bold rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
             >
               <ArrowLeft className="w-5 h-5" />
-              Go to Dashboard (will update automatically)
+              Go to Dashboard
             </button>
+
+            <p className="text-xs text-muted-foreground mt-4">
+              Your payment status will update automatically. Please check your dashboard.
+            </p>
           </>
         )}
 
