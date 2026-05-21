@@ -1,18 +1,10 @@
 // @ts-nocheck — Deno runtime, not checked by project tsc
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-import { log, startTimer, checkRateLimit, getCorsHeaders, jsonResponse, validateOrigin, isValidUUID } from '../_shared/utils.ts'
 
 /**
- * HDFC SmartGateway — Session API (Step 2 in flow diagram)
- * 
- * This edge function acts as the "Merchant Server":
- * 1. Validates the student's JWT
- * 2. Creates a payment order record atomically in DB
- * 3. Calls HDFC Session API to get a payment_link
- * 4. Returns { payment_link, order_id } to the frontend
- * 
- * The frontend then redirects the student to payment_link (Step 3).
+ * HDFC SmartGateway — Session API
+ * Creates payment order + calls HDFC to get payment link
  */
 
 const HDFC_API_KEY = Deno.env.get('HDFC_API_KEY') || ''
@@ -21,13 +13,20 @@ const HDFC_RESELLER_ID = Deno.env.get('HDFC_RESELLER_ID') || 'hdfc_reseller'
 const HDFC_PAYMENT_PAGE_CLIENT_ID = Deno.env.get('HDFC_PAYMENT_PAGE_CLIENT_ID') || ''
 const HDFC_BASE_URL = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
 const PAYMENT_RETURN_URL = Deno.env.get('PAYMENT_RETURN_URL') || ''
+const ALLOWED_ORIGIN = Deno.env.get('ALLOWED_ORIGIN') || '*'
 
-const corsHeaders = getCorsHeaders()
+const corsHeaders = {
+  'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
 
-/**
- * Generate a unique order ID for HDFC (max 21 chars, alphanumeric).
- * Format: NOC_{timestamp_base36}_{random_6chars}
- */
+function jsonRes(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
 function generateOrderId(): string {
   const ts = Date.now().toString(36).toUpperCase()
   const rand = Math.random().toString(36).substring(2, 8).toUpperCase()
@@ -39,82 +38,65 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  // Reject cross-origin requests in production
-  const originError = validateOrigin(req)
-  if (originError) return originError
-
   try {
-    const elapsed = startTimer()
-
-    // 1. Validate caller JWT
+    console.log('STEP 1: Auth check')
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return jsonResponse({ error: 'Missing Authorization header' }, 401)
+      return jsonRes({ error: 'Missing Authorization header' }, 401)
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const token = authHeader.replace('Bearer ', '')
 
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
-    if (authError || !user) {
-      return jsonResponse({ error: 'Invalid or expired token' }, 401)
-    }
-
-    // Rate limit: 5 payment orders per minute per student
-    const rl = checkRateLimit(`hdfc-session:${user.id}`, 5, 60_000)
-    if (!rl.allowed) {
-      log({ level: 'WARN', fn: 'create-hdfc-session', action: 'rate_limited_minute', userId: user.id })
-      return jsonResponse({ error: 'Too many payment attempts. Please wait.' }, 429)
-    }
-
-    // Daily rate limit: 20 payment orders per day per student
-    const dailyRl = checkRateLimit(`hdfc-daily:${user.id}`, 20, 86_400_000)
-    if (!dailyRl.allowed) {
-      log({ level: 'WARN', fn: 'create-hdfc-session', action: 'rate_limited_daily', userId: user.id })
-      return jsonResponse({ error: 'Daily payment limit reached (20/day). Please try again tomorrow.' }, 429)
-    }
-
-    // 2. Parse request
-    const { amount, enrollment_id, enrollment_ids, due_type } = await req.json()
-
-    if (!amount || amount <= 0) {
-      return jsonResponse({ error: 'Valid amount is required' }, 400)
-    }
-
-    if (amount > 50000) {
-      return jsonResponse({ error: 'Amount exceeds maximum allowed (₹50,000)' }, 400)
-    }
-
-    // 3. Verify student profile
     const adminClient = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    const { data: profile } = await adminClient
+    const { data: { user }, error: authError } = await adminClient.auth.getUser(token)
+    if (authError || !user) {
+      console.error('STEP 1 FAILED:', authError?.message)
+      return jsonRes({ error: 'Invalid or expired token', detail: authError?.message }, 401)
+    }
+    console.log('STEP 1 OK: user =', user.id)
+
+    console.log('STEP 2: Parse request body')
+    const body = await req.json()
+    const { amount, enrollment_id, enrollment_ids, due_type } = body
+    console.log('STEP 2 OK:', JSON.stringify({ amount, enrollment_id, due_type }))
+
+    if (!amount || amount <= 0) {
+      return jsonRes({ error: 'Valid amount is required' }, 400)
+    }
+
+    console.log('STEP 3: Verify student profile')
+    const { data: profile, error: profileErr } = await adminClient
       .from('profiles')
       .select('id, role, tenant_id, full_name, email')
       .eq('id', user.id)
       .single()
 
+    if (profileErr) {
+      console.error('STEP 3 FAILED:', profileErr.message)
+      return jsonRes({ error: 'Profile fetch failed: ' + profileErr.message }, 500)
+    }
     if (!profile || profile.role !== 'student') {
-      return jsonResponse({ error: 'Only students can create payment orders' }, 403)
+      return jsonRes({ error: 'Only students can create payment orders' }, 403)
     }
+    console.log('STEP 3 OK: profile =', profile.full_name)
 
-    // 4. Generate HDFC order ID
+    console.log('STEP 4: Generate order ID')
     const orderId = generateOrderId()
+    console.log('STEP 4 OK: orderId =', orderId)
 
-    // 5. Call HDFC Session API (Step 2 in flow diagram)
+    console.log('STEP 5: Call HDFC Session API')
     if (!HDFC_API_KEY) {
-      return jsonResponse({ error: 'Payment gateway not configured. Contact administrator.' }, 503)
+      return jsonRes({ error: 'Payment gateway not configured. Contact administrator.' }, 503)
     }
 
-    const hdfcAuthHeader = `Basic ${btoa(`${HDFC_API_KEY}:`)}`
+    const hdfcAuth = `Basic ${btoa(`${HDFC_API_KEY}:`)}`
     const customerIdForHdfc = user.id.replace(/-/g, '').substring(0, 20)
+    const returnUrl = PAYMENT_RETURN_URL || `${ALLOWED_ORIGIN}/payment/callback`
 
     const sessionPayload = {
       order_id: orderId,
@@ -124,17 +106,19 @@ serve(async (req) => {
       customer_phone: '',
       payment_page_client_id: HDFC_PAYMENT_PAGE_CLIENT_ID,
       action: 'paymentPage',
-      return_url: PAYMENT_RETURN_URL || `${Deno.env.get('ALLOWED_ORIGIN') || ''}/payment/callback`,
-      description: `NOC Portal - ${due_type === 'attendance_fine_bulk' ? 'Bulk Attendance Fines' : 'Attendance Fine Payment'}`,
+      return_url: returnUrl,
+      description: `NOC Portal - Attendance Fine Payment`,
     }
 
-    log({ level: 'INFO', fn: 'create-hdfc-session', action: 'calling_session_api', userId: user.id, meta: { orderId, amount } })
+    console.log('STEP 5: Calling', `${HDFC_BASE_URL}/v4/session`)
+    console.log('STEP 5: Headers x-merchantid =', HDFC_MERCHANT_ID, ', x-resellerid =', HDFC_RESELLER_ID)
+    console.log('STEP 5: Payload =', JSON.stringify(sessionPayload))
 
     const sessionResponse = await fetch(`${HDFC_BASE_URL}/v4/session`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': hdfcAuthHeader,
+        'Authorization': hdfcAuth,
         'x-merchantid': HDFC_MERCHANT_ID,
         'x-customerid': customerIdForHdfc,
         'x-resellerid': HDFC_RESELLER_ID,
@@ -142,18 +126,28 @@ serve(async (req) => {
       body: JSON.stringify(sessionPayload),
     })
 
-    const sessionData = await sessionResponse.json()
+    const sessionText = await sessionResponse.text()
+    console.log('STEP 5: HDFC response status =', sessionResponse.status)
+    console.log('STEP 5: HDFC response body =', sessionText)
+
+    let sessionData: any
+    try {
+      sessionData = JSON.parse(sessionText)
+    } catch {
+      console.error('STEP 5 FAILED: Could not parse HDFC response as JSON')
+      return jsonRes({ error: 'Invalid response from payment gateway', raw: sessionText.substring(0, 200) }, 502)
+    }
 
     if (!sessionResponse.ok || !sessionData.payment_links?.web) {
-      log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'hdfc_session_error', userId: user.id, meta: sessionData })
+      console.error('STEP 5 FAILED: No payment link in response')
       const errorMsg = sessionData?.error_message || sessionData?.status || 'Failed to create payment session'
-      return jsonResponse({ error: errorMsg }, 502)
+      return jsonRes({ error: errorMsg, hdfc_status: sessionData?.status }, 502)
     }
 
     const paymentLink = sessionData.payment_links.web
+    console.log('STEP 5 OK: paymentLink =', paymentLink)
 
-    // 6. Record order atomically in DB
-    // For bulk payments, use the first enrollment_id; for single, use enrollment_id
+    console.log('STEP 6: Store order in DB')
     const primaryEnrollmentId = enrollment_id || (enrollment_ids && enrollment_ids.length > 0 ? enrollment_ids[0] : null)
 
     const { data: dbOrderId, error: rpcError } = await adminClient.rpc('create_payment_order_atomic', {
@@ -168,30 +162,18 @@ serve(async (req) => {
     })
 
     if (rpcError) {
-      log({ level: 'WARN', fn: 'create-hdfc-session', action: 'atomic_order_failed', userId: user.id, error: rpcError.message })
+      console.error('STEP 6 FAILED:', rpcError.message)
       const msg = rpcError.message
-      if (msg.includes('already exists')) return jsonResponse({ error: 'An unpaid order already exists for this fine' }, 409)
-      if (msg.includes('already been paid')) return jsonResponse({ error: 'This fine has already been paid' }, 400)
-      if (msg.includes('does not match')) return jsonResponse({ error: msg }, 400)
-      if (msg.includes('not found')) return jsonResponse({ error: 'Enrollment not found or does not belong to you' }, 404)
-      return jsonResponse({ error: 'Failed to create payment order' }, 500)
+      if (msg.includes('already exists')) return jsonRes({ error: 'An unpaid order already exists for this fine' }, 409)
+      if (msg.includes('already been paid')) return jsonRes({ error: 'This fine has already been paid' }, 400)
+      if (msg.includes('does not match')) return jsonRes({ error: msg }, 400)
+      if (msg.includes('not found')) return jsonRes({ error: 'Enrollment not found or does not belong to you' }, 404)
+      return jsonRes({ error: 'Failed to create payment order: ' + msg }, 500)
     }
+    console.log('STEP 6 OK: order stored, id =', dbOrderId)
 
-    // 7. If bulk, store the enrollment_ids mapping for webhook reconciliation
-    if (enrollment_ids && enrollment_ids.length > 1) {
-      // Store bulk mapping in remarks or a separate mechanism
-      await adminClient
-        .from('payment_orders')
-        .update({ 
-          // Store additional enrollment IDs as JSON in a remarks-like approach
-          // We reuse the existing column safely
-        })
-        .eq('gateway_order_id', orderId)
-    }
-
-    log({ level: 'INFO', fn: 'create-hdfc-session', action: 'session_created', userId: user.id, duration: elapsed(), meta: { orderId, amount, paymentLink: '***' } })
-
-    return jsonResponse({
+    console.log('ALL STEPS COMPLETE — returning success')
+    return jsonRes({
       order_id: orderId,
       payment_link: paymentLink,
       amount: amount,
@@ -199,7 +181,8 @@ serve(async (req) => {
 
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
-    log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'failed', error: message })
-    return jsonResponse({ error: message }, 500)
+    const stack = error instanceof Error ? error.stack : ''
+    console.error('UNCAUGHT ERROR:', message, stack)
+    return jsonRes({ error: message }, 500)
   }
 })

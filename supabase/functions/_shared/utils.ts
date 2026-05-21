@@ -23,7 +23,7 @@ export function log(entry: LogEntry) {
     ts: new Date().toISOString(),
     ...entry,
   }
-  
+
   switch (entry.level) {
     case 'ERROR':
       console.error(JSON.stringify(payload))
@@ -108,15 +108,15 @@ export function getCorsHeaders(): Record<string, string> {
  */
 export function validateOrigin(req: Request): Response | null {
   const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN')
-  
+
   // If ALLOWED_ORIGIN is not configured, allow all (dev mode)
   if (!allowedOrigin) return null
-  
+
   const requestOrigin = req.headers.get('Origin')
-  
+
   // Webhooks and server-to-server calls don't have Origin headers — allow them
   if (!requestOrigin) return null
-  
+
   // Check if origin matches
   if (requestOrigin !== allowedOrigin) {
     return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
@@ -124,7 +124,7 @@ export function validateOrigin(req: Request): Response | null {
       headers: { 'Content-Type': 'application/json' },
     })
   }
-  
+
   return null
 }
 
