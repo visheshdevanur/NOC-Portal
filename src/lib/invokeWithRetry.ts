@@ -21,6 +21,7 @@ const DEFAULT_OPTIONS: Required<RetryOptions> = {
 /**
  * Invoke a Supabase Edge Function with automatic exponential backoff retry.
  * Only retries on transient errors (5xx, 429 rate limit).
+ * On 401 (expired token), refreshes session and retries once.
  * Non-retryable errors (4xx) throw immediately.
  */
 export async function invokeWithRetry<T = unknown>(
@@ -30,6 +31,7 @@ export async function invokeWithRetry<T = unknown>(
 ): Promise<T> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   let lastError: Error | null = null;
+  let sessionRefreshed = false;
 
   for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
     try {
@@ -49,9 +51,23 @@ export async function invokeWithRetry<T = unknown>(
           } catch {}
         }
 
-        // Check if error is retryable
+        // Check status code
         const status = (error as any)?.status || (error as any)?.context?.status || 500;
         
+        // Handle 401: refresh session and retry once
+        if (status === 401 && !sessionRefreshed) {
+          console.warn(`[invokeWithRetry] 401 from ${functionName}, refreshing session...`);
+          sessionRefreshed = true;
+          const { error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            console.error('[invokeWithRetry] Session refresh failed:', refreshError.message);
+            throw new Error('Your session has expired. Please log in again.');
+          }
+          console.log('[invokeWithRetry] Session refreshed, retrying...');
+          continue; // Retry with new token
+        }
+
+        // Check if error is retryable (transient)
         if (attempt < opts.maxRetries && opts.retryableStatuses.includes(status)) {
           lastError = new Error(errorMsg);
           const delay = Math.min(opts.baseDelay * Math.pow(2, attempt), opts.maxDelay);
@@ -84,3 +100,4 @@ export async function invokeWithRetry<T = unknown>(
 }
 
 export default invokeWithRetry;
+
