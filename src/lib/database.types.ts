@@ -730,9 +730,9 @@ export type Database = {
           id: string
           is_faculty_cleared: boolean | null
           payment_date: string | null
-          razorpay_order_id: string | null
-          razorpay_payment_id: string | null
-          razorpay_signature: string | null
+          gateway_order_id: string | null
+          gateway_payment_id: string | null
+          gateway_signature: string | null
           remarks: string | null
           status: Database["public"]["Enums"]["clearance_status"] | null
           student_id: string
@@ -748,9 +748,9 @@ export type Database = {
           id?: string
           is_faculty_cleared?: boolean | null
           payment_date?: string | null
-          razorpay_order_id?: string | null
-          razorpay_payment_id?: string | null
-          razorpay_signature?: string | null
+          gateway_order_id?: string | null
+          gateway_payment_id?: string | null
+          gateway_signature?: string | null
           remarks?: string | null
           status?: Database["public"]["Enums"]["clearance_status"] | null
           student_id: string
@@ -766,9 +766,9 @@ export type Database = {
           id?: string
           is_faculty_cleared?: boolean | null
           payment_date?: string | null
-          razorpay_order_id?: string | null
-          razorpay_payment_id?: string | null
-          razorpay_signature?: string | null
+          gateway_order_id?: string | null
+          gateway_payment_id?: string | null
+          gateway_signature?: string | null
           remarks?: string | null
           status?: Database["public"]["Enums"]["clearance_status"] | null
           student_id?: string

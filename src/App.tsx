@@ -7,6 +7,7 @@ import DashboardRouter from './pages/DashboardRouter';
 import Layout from './components/layout/Layout';
 import Logs from './pages/Logs';
 const LibraryDashboardLazy = lazy(() => import('./pages/LibraryDashboard'));
+const PaymentCallbackLazy = lazy(() => import('./pages/PaymentCallback'));
 import { ThemeProvider } from './components/ThemeProvider';
 
 const SuperAdminApp = lazy(() => import('./pages/superadmin/SuperAdminApp'));
@@ -83,6 +84,14 @@ function App() {
             <Suspense fallback={<div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>}>
               <SuperAdminApp />
             </Suspense>
+          } />
+          {/* Payment callback — accessible even without full auth layout */}
+          <Route path="/payment/callback" element={
+            user ? (
+              <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
+                <PaymentCallbackLazy />
+              </Suspense>
+            ) : <Navigate to="/login" />
           } />
           <Route 
             path="/login" 

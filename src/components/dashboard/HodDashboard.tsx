@@ -1161,8 +1161,8 @@ export default function HodDashboard() {
                               <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
                             )}
                           </td>
-                          <td className="p-4 text-xs font-mono text-muted-foreground max-w-[120px] truncate" title={item.razorpay_payment_id || ''}>
-                            {item.razorpay_payment_id || '\u2014'}
+                          <td className="p-4 text-xs font-mono text-muted-foreground max-w-[120px] truncate" title={item.gateway_payment_id || ''}>
+                            {item.gateway_payment_id || '\u2014'}
                           </td>
                           <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
                             {item.payment_date ? new Date(item.payment_date).toLocaleDateString() : '\u2014'}

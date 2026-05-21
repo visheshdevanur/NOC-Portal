@@ -136,98 +136,33 @@ export default function StudentDashboard() {
     }
   };
 
-  const razorpayKey = (import.meta).env?.VITE_RAZORPAY_KEY_ID || 'rzp_test_YourTestKeyHere';
+  const [payingAll, setPayingAll] = useState(false);
 
-  /** Dynamically load Razorpay checkout.js only when needed */
-  const loadRazorpayScript = (): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      if ((window).Razorpay) { resolve(); return; }
-      const script = document.createElement('script');
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Razorpay SDK'));
-      document.head.appendChild(script);
-    });
-  };
-
-  const handleRazorpayPayment = async (enrollment: any) => {
-    // Prevent double-click: if already paying this or any enrollment, ignore
+  /** HDFC SmartGateway — Single Payment */
+  const handleHdfcPayment = async (enrollment: any) => {
     if (payingEnrollmentId || payingAll) return;
     try {
       setPayingEnrollmentId(enrollment.id);
       setLocalErrorMsg(null);
 
-      // Load Razorpay SDK dynamically
-      await loadRazorpayScript();
+      const { createHdfcSession } = await import('../../lib/api');
+      const session = await createHdfcSession(enrollment.attendance_fee, enrollment.id) as any;
 
-      const { createRazorpayOrder, verifyAndProcessRazorpayPayment } = await import('../../lib/api');
-      
-      const order = await createRazorpayOrder(enrollment.attendance_fee, enrollment.id);
-      
-      const options = {
-        key: razorpayKey,
-        amount: Math.round(enrollment.attendance_fee * 100),
-        currency: "INR",
-        name: "NOC Portal",
-        description: `Attendance Due: ${enrollment.subjects?.subject_name}`,
-        order_id: (order as any).id,
-        handler: async function (response: any) {
-          try {
-            const result = await verifyAndProcessRazorpayPayment(
-              enrollment.id,
-              response.razorpay_order_id,
-              response.razorpay_payment_id,
-              response.razorpay_signature
-            );
-            setPaymentReceipt({
-              studentName: profile?.full_name || '',
-              usn: (profile)?.roll_number || '',
-              amount: enrollment.attendance_fee,
-              subjects: [{ name: enrollment.subjects?.subject_name, code: enrollment.subjects?.subject_code, amount: enrollment.attendance_fee }],
-              paymentId: response.razorpay_payment_id,
-              date: new Date().toLocaleString(),
-              isBulk: false
-            });
-            if ((result)?.pending_confirmation) {
-              setLocalErrorMsg("Payment received — confirmation may take a moment. Refreshing...");
-            }
-            refetch();
-          } catch (err: any) {
-            setLocalErrorMsg("Payment verification failed: " + err.message);
-          } finally {
-            setPayingEnrollmentId(null);
-          }
-        },
-        prefill: {
-          name: profile?.full_name || "",
-          email: user?.email || "",
-        },
-        theme: {
-          color: "#f59e0b"
-        },
-        modal: {
-          ondismiss: function () {
-            setPayingEnrollmentId(null);
-          }
-        }
-      };
+      // Store order info in sessionStorage for the callback page
+      sessionStorage.setItem('hdfc_order_id', session.order_id);
+      sessionStorage.setItem('hdfc_payment_amount', String(enrollment.attendance_fee));
+      sessionStorage.setItem('hdfc_payment_description', `Attendance Due: ${enrollment.subjects?.subject_name}`);
 
-      const rzp = new (window).Razorpay(options);
-      rzp.on('payment.failed', function (response: any){
-        setLocalErrorMsg(`Payment failed: ${response.error.description}`);
-        setPayingEnrollmentId(null);
-      });
-      rzp.open();
+      // Redirect to HDFC payment page (Step 3 in flow diagram)
+      window.location.href = session.payment_link;
     } catch (err: any) {
       setLocalErrorMsg("Error initiating payment: " + err.message);
       setPayingEnrollmentId(null);
     }
   };
 
-  const [payingAll, setPayingAll] = useState(false);
-
+  /** HDFC SmartGateway — Bulk Payment (Pay All) */
   const handlePayAll = async () => {
-    // Prevent double-click: if already paying, ignore
     if (payingAll || payingEnrollmentId) return;
     if (pendingAttendanceDues.length === 0) return;
     const totalAmount = pendingAttendanceDues.reduce((sum: number, d: any) => sum + (d.attendance_fee || 0), 0);
@@ -236,62 +171,18 @@ export default function StudentDashboard() {
     try {
       setPayingAll(true);
       setLocalErrorMsg(null);
-      const { createBulkRazorpayOrder, verifyAndProcessBulkRazorpayPayment } = await import('../../lib/api');
+
+      const { createBulkHdfcSession } = await import('../../lib/api');
       const enrollmentIds = pendingAttendanceDues.map((d: any) => d.id);
-      
-      const order = await createBulkRazorpayOrder(totalAmount, enrollmentIds) as any;
+      const session = await createBulkHdfcSession(totalAmount, enrollmentIds) as any;
 
-      const options = {
-        key: razorpayKey,
-        amount: Math.round(totalAmount * 100),
-        currency: "INR",
-        name: "NOC Portal",
-        description: `Attendance Dues: ${pendingAttendanceDues.length} subjects`,
-        order_id: order.id,
-        handler: async function (response: any) {
-          try {
-            await verifyAndProcessBulkRazorpayPayment(
-              enrollmentIds,
-              response.razorpay_order_id,
-              response.razorpay_payment_id,
-              response.razorpay_signature
-            );
-            setPaymentReceipt({
-              studentName: profile?.full_name || '',
-              usn: (profile)?.roll_number || '',
-              amount: totalAmount,
-              subjects: pendingAttendanceDues.map((d: any) => ({ name: d.subjects?.subject_name, code: d.subjects?.subject_code, amount: d.attendance_fee })),
-              paymentId: response.razorpay_payment_id,
-              date: new Date().toLocaleString(),
-              isBulk: true
-            });
-            refetch();
-          } catch (err: any) {
-            setLocalErrorMsg("Bulk payment verification failed: " + err.message);
-          } finally {
-            setPayingAll(false);
-          }
-        },
-        prefill: {
-          name: profile?.full_name || "",
-          email: user?.email || "",
-        },
-        theme: {
-          color: "#f59e0b"
-        },
-        modal: {
-          ondismiss: function () {
-            setPayingAll(false);
-          }
-        }
-      };
+      // Store order info for callback
+      sessionStorage.setItem('hdfc_order_id', session.order_id);
+      sessionStorage.setItem('hdfc_payment_amount', String(totalAmount));
+      sessionStorage.setItem('hdfc_payment_description', `Attendance Dues: ${pendingAttendanceDues.length} subjects`);
 
-      const rzp = new (window).Razorpay(options);
-      rzp.on('payment.failed', function (response: any){
-        setLocalErrorMsg(`Payment failed: ${response.error.description}`);
-        setPayingAll(false);
-      });
-      rzp.open();
+      // Redirect to HDFC payment page
+      window.location.href = session.payment_link;
     } catch (err: any) {
       setLocalErrorMsg("Error initiating bulk payment: " + err.message);
       setPayingAll(false);
@@ -727,7 +618,7 @@ export default function StudentDashboard() {
                       <td className="p-4 text-right">
                         {hasFine && !isPaid ? (
                           <button
-                            onClick={() => handleRazorpayPayment(enr)}
+                            onClick={() => handleHdfcPayment(enr)}
                             disabled={payingEnrollmentId === enr.id || payingAll}
                             className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all shadow-sm disabled:opacity-50 text-sm"
                           >
