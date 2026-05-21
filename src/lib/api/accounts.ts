@@ -314,7 +314,7 @@ export const getStaffAttendanceFines = async (departmentId: string) => {
     const { data, error } = await supabase
       .from('subject_enrollment')
       .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
-      .eq('status', 'rejected')
+      .or('status.eq.rejected,attendance_fee.gt.0')
       .eq('profiles.department_id', departmentId)
       .range(from, from + 999);
     if (error) throw error;

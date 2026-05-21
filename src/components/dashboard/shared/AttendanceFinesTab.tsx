@@ -98,11 +98,11 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       if (departmentId) {
         allData = await getStaffAttendanceFines(departmentId);
       } else {
-        // FYC: fetch all rejected enrollments across all departments
+        // FYC: fetch all fined/rejected enrollments across all departments
         const { data, error } = await supabase
           .from('subject_enrollment')
           .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
-          .eq('status', 'rejected');
+          .or('status.eq.rejected,attendance_fee.gt.0');
         if (error) throw error;
         allData = data || [];
       }
@@ -218,7 +218,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
         return;
       }
 
-      // 2. Fetch all rejected students (same query as the list)
+      // 2. Fetch all fined/rejected students (same query as the list)
       let students: any[] = [];
       if (departmentId) {
         students = await getStaffAttendanceFines(departmentId);
@@ -226,7 +226,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
         const { data } = await supabase
           .from('subject_enrollment')
           .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
-          .eq('status', 'rejected');
+          .or('status.eq.rejected,attendance_fee.gt.0');
         students = data || [];
       }
 
