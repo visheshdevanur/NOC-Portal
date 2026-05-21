@@ -24,7 +24,6 @@ export default function PaymentCallback() {
   // Retrieve stored payment info (set before redirect to HDFC)
   const storedOrderId = sessionStorage.getItem('hdfc_order_id');
   const storedAmount = sessionStorage.getItem('hdfc_payment_amount');
-  const storedDescription = sessionStorage.getItem('hdfc_payment_description');
 
   const orderId =
     storedOrderId ||
