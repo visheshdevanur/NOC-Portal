@@ -57,7 +57,17 @@ export default function PaymentCallback() {
   }, [retryCount]);
 
   useEffect(() => {
-    if (!user) return;
+    // Wait for auth to load — user may be null briefly after HDFC redirect
+    if (!user) {
+      // Give auth a few seconds to restore session, then show error
+      const timeout = setTimeout(() => {
+        if (!user) {
+          setStatus('error');
+          setErrorMsg('Session expired. Please log in and check your dashboard for payment status.');
+        }
+      }, 5000);
+      return () => clearTimeout(timeout);
+    }
 
     // Try multiple sources for order_id:
     // 1. sessionStorage (set before redirect)

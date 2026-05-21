@@ -85,13 +85,11 @@ function App() {
               <SuperAdminApp />
             </Suspense>
           } />
-          {/* Payment callback — accessible even without full auth layout */}
+          {/* Payment callback — always render (component handles auth internally) */}
           <Route path="/payment/callback" element={
-            user ? (
-              <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
-                <PaymentCallbackLazy />
-              </Suspense>
-            ) : <Navigate to="/login" />
+            <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
+              <PaymentCallbackLazy />
+            </Suspense>
           } />
           <Route 
             path="/login" 

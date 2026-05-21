@@ -1,0 +1,5 @@
+# HDFC payment callback (POST redirect from gateway)
+/payment/callback    /index.html    200!
+
+# SPA catch-all — serve index.html for all client-side routes
+/*    /index.html    200
