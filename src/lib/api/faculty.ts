@@ -91,13 +91,17 @@ export const getStudentsForSubject = async (subjectId: string, teacherId: string
 export const saveIAAttendance = async (
   records: { student_id: string; subject_id: string; teacher_id: string; ia_number: number; is_present: boolean }[]
 ) => {
-  const { data, error } = await supabase
-    .from('ia_attendance')
-    .upsert(records, { onConflict: 'student_id,subject_id,ia_number' })
-    .select();
-  if (error) throw error;
+  // Batch into chunks to prevent connection timeouts on large class sizes
+  const BATCH_SIZE = 25;
+  for (let i = 0; i < records.length; i += BATCH_SIZE) {
+    const batch = records.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase
+      .from('ia_attendance')
+      .upsert(batch, { onConflict: 'student_id,subject_id,ia_number' });
+    if (error) throw error;
+  }
   logActivity('Saved IA Attendance', `Updated IA metrics for ${records.length} students`);
-  return data;
+  return true;
 };
 
 export const getIAAttendanceForSubject = async (subjectId: string, teacherId: string) => {
