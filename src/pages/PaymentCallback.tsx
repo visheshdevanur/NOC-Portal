@@ -80,25 +80,26 @@ export default function PaymentCallback() {
   const [status, setStatus] = useState<'loading' | 'success' | 'failed' | 'pending' | 'error'>('loading');
   const [orderDetails, setOrderDetails] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
   // Retrieve stored payment info (set before redirect to HDFC)
-  // sessionStorage may be empty after cross-domain redirect, so also check URL params
-  const storedOrderId = sessionStorage.getItem('hdfc_order_id');
-  const storedAmount = sessionStorage.getItem('hdfc_payment_amount');
-  const storedOrderToken = sessionStorage.getItem('hdfc_order_token');
-
+  // Priority: sessionStorage → URL params → localStorage (most reliable after cross-domain redirect)
   const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
 
   const orderId =
-    storedOrderId ||
+    sessionStorage.getItem('hdfc_order_id') ||
     searchParams.get('order_id') ||
     searchParams.get('orderId') ||
-    hashParams.get('order_id');
+    hashParams.get('order_id') ||
+    localStorage.getItem('hdfc_order_id');
 
   const orderToken =
-    storedOrderToken ||
+    sessionStorage.getItem('hdfc_order_token') ||
     searchParams.get('order_token') ||
-    hashParams.get('order_token');
+    hashParams.get('order_token') ||
+    localStorage.getItem('hdfc_order_token');
+
+  const storedAmount =
+    sessionStorage.getItem('hdfc_payment_amount') ||
+    localStorage.getItem('hdfc_payment_amount');
 
   // Try to verify payment status via edge function (ONE attempt only)
   const verifiedRef = useRef(false);
@@ -132,14 +133,18 @@ export default function PaymentCallback() {
 
       if (result.status === 'CHARGED') {
         setStatus('success');
-        sessionStorage.removeItem('hdfc_order_id');
-        sessionStorage.removeItem('hdfc_order_token');
-        sessionStorage.removeItem('hdfc_payment_amount');
-        sessionStorage.removeItem('hdfc_payment_description');
+        // Clean up ALL storage
+        ['hdfc_order_id', 'hdfc_order_token', 'hdfc_payment_amount', 'hdfc_payment_description'].forEach(key => {
+          sessionStorage.removeItem(key);
+          localStorage.removeItem(key);
+        });
       } else if (['AUTHORIZATION_FAILED', 'AUTHENTICATION_FAILED', 'JUSPAY_DECLINED'].includes(result.status)) {
         setStatus('failed');
         setErrorMsg(`Payment was not successful. Status: ${result.status}`);
-        sessionStorage.removeItem('hdfc_order_id');
+        ['hdfc_order_id', 'hdfc_order_token'].forEach(key => {
+          sessionStorage.removeItem(key);
+          localStorage.removeItem(key);
+        });
       } else {
         setStatus('pending');
       }

@@ -148,11 +148,19 @@ export default function StudentDashboard() {
       const { createHdfcSession } = await import('../../lib/api');
       const session = await createHdfcSession(enrollment.attendance_fee, enrollment.id) as any;
 
-      // Store order info in sessionStorage for the callback page
+      // Store order info for the callback page
+      // Use BOTH sessionStorage and localStorage — sessionStorage can be lost
+      // after cross-domain redirect to HDFC payment gateway
       sessionStorage.setItem('hdfc_order_id', session.order_id);
-      if (session.order_token) sessionStorage.setItem('hdfc_order_token', session.order_token);
+      localStorage.setItem('hdfc_order_id', session.order_id);
+      if (session.order_token) {
+        sessionStorage.setItem('hdfc_order_token', session.order_token);
+        localStorage.setItem('hdfc_order_token', session.order_token);
+      }
       sessionStorage.setItem('hdfc_payment_amount', String(enrollment.attendance_fee));
+      localStorage.setItem('hdfc_payment_amount', String(enrollment.attendance_fee));
       sessionStorage.setItem('hdfc_payment_description', `Attendance Due: ${enrollment.subjects?.subject_name}`);
+      localStorage.setItem('hdfc_payment_description', `Attendance Due: ${enrollment.subjects?.subject_name}`);
 
       // Redirect to HDFC payment page (Step 3 in flow diagram)
       window.location.href = session.payment_link;
@@ -178,10 +186,17 @@ export default function StudentDashboard() {
       const session = await createBulkHdfcSession(totalAmount, enrollmentIds) as any;
 
       // Store order info for callback
+      // Use BOTH sessionStorage and localStorage for reliability
       sessionStorage.setItem('hdfc_order_id', session.order_id);
-      if (session.order_token) sessionStorage.setItem('hdfc_order_token', session.order_token);
+      localStorage.setItem('hdfc_order_id', session.order_id);
+      if (session.order_token) {
+        sessionStorage.setItem('hdfc_order_token', session.order_token);
+        localStorage.setItem('hdfc_order_token', session.order_token);
+      }
       sessionStorage.setItem('hdfc_payment_amount', String(totalAmount));
+      localStorage.setItem('hdfc_payment_amount', String(totalAmount));
       sessionStorage.setItem('hdfc_payment_description', `Attendance Dues: ${pendingAttendanceDues.length} subjects`);
+      localStorage.setItem('hdfc_payment_description', `Attendance Dues: ${pendingAttendanceDues.length} subjects`);
 
       // Redirect to HDFC payment page
       window.location.href = session.payment_link;
