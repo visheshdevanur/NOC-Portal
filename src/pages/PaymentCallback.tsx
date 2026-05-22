@@ -109,6 +109,7 @@ export default function PaymentCallback() {
         headers: {
           'Content-Type': 'application/json',
           'apikey': anonKey,
+          'Authorization': `Bearer ${anonKey}`,
         },
         body: JSON.stringify({ order_id: oid, callback_mode: true }),
       });
