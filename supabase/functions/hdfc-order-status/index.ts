@@ -118,6 +118,15 @@ serve(async (req) => {
     })
     const statusData = await statusRes.json()
 
+    // Log the full HDFC response for debugging
+    log({ level: 'INFO', fn: 'hdfc-order-status', action: 'hdfc_response', meta: { 
+      httpStatus: statusRes.status,
+      responseKeys: Object.keys(statusData || {}),
+      status: statusData?.status,
+      order_status: statusData?.order_status,
+      txn_status: statusData?.txn_status,
+    }})
+
     if (!statusRes.ok) {
       return jsonResponse({
         status: 'UNKNOWN',
@@ -126,13 +135,24 @@ serve(async (req) => {
       }, 502)
     }
 
-    const txnStatus = statusData.status || 'UNKNOWN'
-    const paymentId = statusData.txn_id || statusData.payment_id || null
+    // HDFC returns status in different fields depending on the API version/endpoint
+    const rawStatus = statusData.status 
+      || statusData.order_status 
+      || statusData.txn_status
+      || statusData.payment_status
+      || statusData?.order?.status
+      || 'UNKNOWN'
+    const txnStatus = rawStatus.toUpperCase()
+    const paymentId = statusData.txn_id || statusData.payment_id || statusData.txn_uuid || null
     const amountPaid = statusData.amount ? parseFloat(statusData.amount) : orderRecord.amount
 
-    // If CHARGED, process atomically
+    // All possible HDFC success statuses (case-insensitive via toUpperCase above)
+    const successStatuses = ['CHARGED', 'SUCCESS', 'TXN_CHARGED', 'AUTO_REFUNDED', 'COD_INITIATED', 'SETTLED']
+    const isSuccess = successStatuses.includes(txnStatus)
+
+    // If successful, process atomically
     // Note: RPC params retain legacy "razorpay" naming for backward compatibility
-    if (txnStatus === 'CHARGED' && orderRecord.status !== 'paid') {
+    if (isSuccess && orderRecord.status !== 'paid') {
       await adminClient.rpc('process_payment_webhook', {
         p_razorpay_order_id: order_id,
         p_razorpay_payment_id: paymentId || `HDFC_${order_id}`,
@@ -141,11 +161,14 @@ serve(async (req) => {
     }
 
     // If failed, mark as failed
-    if (['AUTHORIZATION_FAILED', 'AUTHENTICATION_FAILED', 'JUSPAY_DECLINED'].includes(txnStatus)) {
+    const failStatuses = ['AUTHORIZATION_FAILED', 'AUTHENTICATION_FAILED', 'JUSPAY_DECLINED', 'FAILED', 'DECLINED', 'TXN_FAILED']
+    if (failStatuses.includes(txnStatus)) {
       await adminClient.from('payment_orders').update({ status: 'failed' }).eq('id', orderRecord.id)
     }
 
-    return jsonResponse({ status: txnStatus, order_id, amount: amountPaid, payment_id: paymentId })
+    // Return normalized status: map HDFC statuses to what the frontend expects
+    const normalizedStatus = isSuccess ? 'CHARGED' : txnStatus
+    return jsonResponse({ status: normalizedStatus, order_id, amount: amountPaid, payment_id: paymentId })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
     log({ level: 'ERROR', fn: 'hdfc-order-status', action: 'failed', error: message })
