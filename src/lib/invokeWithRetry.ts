@@ -64,7 +64,8 @@ export async function invokeWithRetry<T = unknown>(
             throw new Error('Your session has expired. Please log in again.');
           }
           console.log('[invokeWithRetry] Session refreshed, retrying...');
-          continue; // Retry with new token
+          attempt--; // Don't count this as a retry attempt
+          continue;
         }
 
         // Check if error is retryable (transient)
