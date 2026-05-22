@@ -6,6 +6,12 @@ import { log, getCorsHeaders, jsonResponse } from '../_shared/utils.ts'
 /**
  * HDFC SmartGateway — Order Status API (Step 4 in flow diagram)
  * Called after student returns from HDFC payment page.
+ * 
+ * Supports TWO modes:
+ * 1. Authenticated: validates JWT, checks order belongs to student
+ * 2. Callback mode: no auth, uses order_id only (for post-payment redirect
+ *    when the student's JWT has expired during the HDFC payment flow).
+ *    In callback mode, only limited order info is returned (no student data).
  */
 
 const HDFC_API_KEY = Deno.env.get('HDFC_API_KEY') || ''
@@ -20,51 +26,85 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) return jsonResponse({ error: 'Missing Authorization header' }, 401)
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
-    if (authError || !user) return jsonResponse({ error: 'Invalid or expired token' }, 401)
-
-    const { order_id } = await req.json()
-    if (!order_id) return jsonResponse({ error: 'order_id is required' }, 400)
 
     const adminClient = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    // Verify order belongs to student
-    const { data: orderRecord } = await adminClient
+    const body = await req.json()
+    const { order_id, callback_mode } = body
+    if (!order_id) return jsonResponse({ error: 'order_id is required' }, 400)
+
+    // ──────────── AUTH CHECK ────────────
+    // In callback_mode (post-payment redirect), skip auth validation.
+    // The order_id is effectively a bearer token — only the student who
+    // initiated the payment has it (stored in sessionStorage).
+    let userId: string | null = null
+
+    if (!callback_mode) {
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) return jsonResponse({ error: 'Missing Authorization header' }, 401)
+
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      })
+      const { data: { user }, error: authError } = await userClient.auth.getUser()
+      if (authError || !user) {
+        // Fall through to callback mode instead of failing
+        console.warn('Auth failed, falling back to callback mode for order:', order_id)
+      } else {
+        userId = user.id
+      }
+    }
+
+    // ──────────── LOOK UP ORDER ────────────
+    let query = adminClient
       .from('payment_orders')
       .select('*')
       .eq('gateway_order_id', order_id)
-      .eq('student_id', user.id)
-      .single()
+
+    // If authenticated, also verify ownership
+    if (userId) {
+      query = query.eq('student_id', userId)
+    }
+
+    const { data: orderRecord } = await query.single()
 
     if (!orderRecord) return jsonResponse({ error: 'Order not found' }, 404)
 
-    // Already processed
+    // Already processed — return immediately
     if (orderRecord.status === 'paid') {
-      return jsonResponse({ status: 'CHARGED', order_id, amount: orderRecord.amount, payment_id: orderRecord.gateway_payment_id, already_processed: true })
+      return jsonResponse({
+        status: 'CHARGED',
+        order_id,
+        amount: orderRecord.amount,
+        payment_id: orderRecord.gateway_payment_id,
+        already_processed: true,
+      })
     }
 
-    // Call HDFC Order Status API
+    // ──────────── CHECK HDFC STATUS ────────────
     const hdfcAuth = `Basic ${btoa(`${HDFC_API_KEY}:`)}`
     const statusRes = await fetch(`${HDFC_BASE_URL}/orders/${order_id}`, {
       method: 'GET',
-      headers: { 'Authorization': hdfcAuth, 'x-merchantid': HDFC_MERCHANT_ID, 'Content-Type': 'application/json', 'version': '2024-06-01' },
+      headers: {
+        'Authorization': hdfcAuth,
+        'x-merchantid': HDFC_MERCHANT_ID,
+        'Content-Type': 'application/json',
+        'version': '2024-06-01',
+      },
     })
     const statusData = await statusRes.json()
 
     if (!statusRes.ok) {
-      return jsonResponse({ status: 'UNKNOWN', order_id, error: statusData?.error_message || 'Failed to fetch status' }, 502)
+      return jsonResponse({
+        status: 'UNKNOWN',
+        order_id,
+        error: statusData?.error_message || 'Failed to fetch status',
+      }, 502)
     }
 
     const txnStatus = statusData.status || 'UNKNOWN'

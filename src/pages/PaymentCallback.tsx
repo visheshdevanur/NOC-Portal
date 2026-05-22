@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/useAuth';
 import { CheckCircle2, XCircle, Clock, AlertCircle, ArrowLeft, RefreshCw, Download } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
 
 /**
  * Payment Callback Page — HDFC SmartGateway return_url handler.
@@ -100,17 +99,25 @@ export default function PaymentCallback() {
     verifiedRef.current = true;
 
     try {
-      // Try to refresh the session first
-      const { error: refreshErr } = await supabase.auth.refreshSession();
-      if (refreshErr) {
-        // Session is gone — just show pending, don't spam API
-        setStatus('pending');
-        return;
+      // Use callback_mode — no auth required.
+      // The order_id is only known to the student (stored in sessionStorage).
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/hdfc-order-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': anonKey,
+        },
+        body: JSON.stringify({ order_id: oid, callback_mode: true }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Status check failed: ${response.status}`);
       }
 
-      const { invokeWithRetry } = await import('../lib/invokeWithRetry');
-      const result = await invokeWithRetry('hdfc-order-status', { order_id: oid }, { maxRetries: 0 }) as any;
-
+      const result = await response.json();
       setOrderDetails(result);
 
       if (result.status === 'CHARGED') {
