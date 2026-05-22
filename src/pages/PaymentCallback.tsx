@@ -75,7 +75,7 @@ ${details.paymentId ? `<div class="row"><span class="label">Transaction ID</span
 }
 
 export default function PaymentCallback() {
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'failed' | 'pending' | 'error'>('loading');
@@ -92,14 +92,24 @@ export default function PaymentCallback() {
     searchParams.get('orderId') ||
     new URLSearchParams(window.location.hash.split('?')[1] || '').get('order_id');
 
-  // Try to verify payment status via edge function
+  // Try to verify payment status via edge function (ONE attempt only)
+  const verifiedRef = { current: false };
+
   const verifyPayment = async (oid: string) => {
+    if (verifiedRef.current) return; // Only try once
+    verifiedRef.current = true;
+
     try {
-      // First try to refresh the session
-      await supabase.auth.refreshSession();
-      
+      // Try to refresh the session first
+      const { error: refreshErr } = await supabase.auth.refreshSession();
+      if (refreshErr) {
+        // Session is gone — just show pending, don't spam API
+        setStatus('pending');
+        return;
+      }
+
       const { invokeWithRetry } = await import('../lib/invokeWithRetry');
-      const result = await invokeWithRetry('hdfc-order-status', { order_id: oid }) as any;
+      const result = await invokeWithRetry('hdfc-order-status', { order_id: oid }, { maxRetries: 0 }) as any;
 
       setOrderDetails(result);
 
@@ -116,8 +126,7 @@ export default function PaymentCallback() {
         setStatus('pending');
       }
     } catch {
-      // Verification failed (likely expired session) — show pending status
-      // The webhook will process the actual payment server-side
+      // Verification failed — show pending, webhook handles the rest
       setStatus('pending');
     }
   };
@@ -129,28 +138,21 @@ export default function PaymentCallback() {
       return;
     }
 
-    // Try to verify, but don't block on auth
+    // Try to verify once after a small delay for auth to restore
     const timer = setTimeout(() => {
       verifyPayment(orderId);
-    }, 1000); // Small delay to let auth restore
+    }, 1500);
 
-    // Fallback: if still loading after 8s, show pending
+    // Fallback: if still loading after 6s, show pending
     const fallback = setTimeout(() => {
       setStatus(prev => prev === 'loading' ? 'pending' : prev);
-    }, 8000);
+    }, 6000);
 
     return () => {
       clearTimeout(timer);
       clearTimeout(fallback);
     };
   }, []);
-
-  // Once user becomes available, retry verification if still loading/pending
-  useEffect(() => {
-    if (user && orderId && (status === 'loading' || status === 'pending')) {
-      verifyPayment(orderId);
-    }
-  }, [user]);
 
   const handleDownloadReceipt = () => {
     downloadReceipt({
