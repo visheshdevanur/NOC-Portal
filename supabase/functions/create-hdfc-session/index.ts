@@ -96,14 +96,14 @@ serve(async (req) => {
     // Step 5: DB FIRST — Auto-expire stale orders + create record atomically
     const primaryEnrollmentId = enrollment_id || (enrollment_ids?.length > 0 ? enrollment_ids[0] : null)
 
-    // Auto-expire stale orders (older than 30 minutes) before creating new one
-    // Expire ALL existing 'created' (unpaid) orders for this student
+    // Expire stale 'created' orders older than 3 minutes before creating new one
     // This prevents "unpaid order already exists" errors from abandoned/failed attempts
     await adminClient
       .from('payment_orders')
       .update({ status: 'expired' })
       .eq('student_id', user.id)
       .eq('status', 'created')
+      .lt('created_at', new Date(Date.now() - 3 * 60 * 1000).toISOString())
 
     // Create DB order record (validates enrollment, amount, duplicates atomically)
     const { data: dbOrderId, error: rpcError } = await adminClient.rpc('create_payment_order_atomic', {
