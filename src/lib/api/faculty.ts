@@ -36,13 +36,21 @@ export const markFacultySubjectStatus = async (
     updatePayload.attendance_fee_verified = false;
   }
 
+  // Verify the enrollment belongs to this teacher (defense-in-depth against RLS misconfiguration)
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
   const { data, error } = await supabase
     .from('subject_enrollment')
     .update(updatePayload)
     .eq('id', enrollmentId)
+    .eq('teacher_id', user.id)
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name)')
     .single();
-  if (error) throw error;
+  if (error) {
+    if (error.code === 'PGRST116') throw new Error('Enrollment not found or you are not authorized to modify it.');
+    throw error;
+  }
   const studentName = data?.profiles?.full_name || 'student';
   logActivity(status === 'completed' ? 'Cleared Subject' : 'Rejected Subject', `Marked attendance ${attendancePct}% for ${studentName}`);
   return data;

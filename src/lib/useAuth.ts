@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Database } from './database.types';
+import type { User } from '@supabase/supabase-js';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -10,7 +11,7 @@ const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
 const WARNING_BEFORE_MS = 2 * 60 * 1000;
 
 export function useAuth() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionWarning, setSessionWarning] = useState(false);
@@ -18,6 +19,9 @@ export function useAuth() {
   // Inactivity timer refs
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref to avoid stale closure in timer callbacks — always reflects latest user
+  const userRef = useRef(user);
+  userRef.current = user;
 
   /** Sign out due to inactivity */
   const inactivitySignOut = useCallback(async () => {
@@ -33,8 +37,8 @@ export function useAuth() {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (warningRef.current) clearTimeout(warningRef.current);
 
-    // Don't set timers if no user is logged in
-    if (!user) return;
+    // Don't set timers if no user is logged in (read from ref to avoid stale closure)
+    if (!userRef.current) return;
 
     // Dismiss any active warning
     setSessionWarning(false);
@@ -48,7 +52,7 @@ export function useAuth() {
     timeoutRef.current = setTimeout(() => {
       inactivitySignOut();
     }, INACTIVITY_TIMEOUT_MS);
-  }, [user, inactivitySignOut]);
+  }, [inactivitySignOut]);
 
   // Set up inactivity listeners
   useEffect(() => {
@@ -97,6 +101,10 @@ export function useAuth() {
         setUser(session?.user ?? null);
          if (session?.user) {
           fetchProfile(session.user.id);
+          // Signal React Query caches to refetch on token refresh (profile/role may have changed)
+          if (event === 'TOKEN_REFRESHED') {
+            window.dispatchEvent(new CustomEvent('noc:profile-updated'));
+          }
         } else {
           setProfile(null);
           setLoading(false);

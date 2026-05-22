@@ -150,6 +150,7 @@ export default function StudentDashboard() {
 
       // Store order info in sessionStorage for the callback page
       sessionStorage.setItem('hdfc_order_id', session.order_id);
+      if (session.order_token) sessionStorage.setItem('hdfc_order_token', session.order_token);
       sessionStorage.setItem('hdfc_payment_amount', String(enrollment.attendance_fee));
       sessionStorage.setItem('hdfc_payment_description', `Attendance Due: ${enrollment.subjects?.subject_name}`);
 
@@ -178,6 +179,7 @@ export default function StudentDashboard() {
 
       // Store order info for callback
       sessionStorage.setItem('hdfc_order_id', session.order_id);
+      if (session.order_token) sessionStorage.setItem('hdfc_order_token', session.order_token);
       sessionStorage.setItem('hdfc_payment_amount', String(totalAmount));
       sessionStorage.setItem('hdfc_payment_description', `Attendance Dues: ${pendingAttendanceDues.length} subjects`);
 
@@ -190,6 +192,10 @@ export default function StudentDashboard() {
   };
 
   useEffect(() => {
+    // Screenshot prevention (best-effort, client-side):
+    // NOTE: This is NOT foolproof — screen capture tools, mobile screenshots, and
+    // screen recording cannot be reliably prevented from the browser.
+    // This is a deterrent, not a security guarantee.
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'PrintScreen') {
         navigator.clipboard.writeText(''); // Attempt to clear clipboard
@@ -197,6 +203,13 @@ export default function StudentDashboard() {
       }
     };
     
+    // Block right-click context menu on sensitive content (report modal)
+    const handleContextMenu = (e: MouseEvent) => {
+      if (showReportModal) {
+        e.preventDefault();
+      }
+    };
+
     // Also listen to visibility change
     const handleVisibilityChange = () => {
       if (document.hidden && showReportModal) {
@@ -205,11 +218,13 @@ export default function StudentDashboard() {
     };
 
     window.addEventListener('keyup', handleKeyUp);
+    document.addEventListener('contextmenu', handleContextMenu);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleVisibilityChange);
     
     return () => {
       window.removeEventListener('keyup', handleKeyUp);
+      document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleVisibilityChange);
     };
@@ -233,9 +248,12 @@ export default function StudentDashboard() {
   const isDeptPermitted = useMemo(() => deptClearances.length > 0 && deptClearances.some(d => d.status === 'pending' && (d).permitted_until && new Date((d).permitted_until) > new Date()), [deptClearances]);
   const deptPass = allDeptCleared || isDeptPermitted;
   
+  // Pending attendance dues: subjects with outstanding fines (subset of enrollment data)
+  // Note: if allFacultyCleared is true, this will be empty since all fines are verified
   const pendingAttendanceDues = useMemo(() => enrollments.filter(e => (e.attendance_fee ?? 0) > 0 && !e.attendance_fee_verified), [enrollments]);
 
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
+  // This is a prerequisite for hall ticket download alongside faculty clearance
   const { allIAEligible } = useMemo(() => {
     const bySubject: Record<string, { present: number; total: number }> = {};
     iaRecords.forEach(r => {
@@ -247,7 +265,10 @@ export default function StudentDashboard() {
     const eligible = ids.length === 0 || ids.every(sid => bySubject[sid].present >= 2);
     return { allIAEligible: eligible };
   }, [iaRecords]);
+  // allAttendanceFinesPaid is derived from pendingAttendanceDues — true when all fines are resolved
+  // This is already captured by allFacultyCleared (fee_verified === true), kept for explicit hall ticket check
   const allAttendanceFinesPaid = pendingAttendanceDues.length === 0;
+  // Hall ticket requires: HOD approved + all faculty cleared + IA eligible + all fines paid + library + dept
   const canDownloadHallTicket = isHodApproved && allFacultyCleared && allIAEligible && allAttendanceFinesPaid && libraryPass && deptPass;
 
   if (loading) return <div className="animate-pulse flex flex-col gap-6">

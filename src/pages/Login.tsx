@@ -30,13 +30,16 @@ const Login = () => {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
 
-  // FIX #32: Brute force protection — track failed attempts
-  const loginAttemptsRef = useRef(0);
-  const lockoutUntilRef = useRef<number>(0);
+  // FIX #32: Brute force protection — track failed attempts (persisted to survive refresh, S-1)
+  const loginAttemptsRef = useRef(parseInt(localStorage.getItem('noc_login_attempts') || '0', 10));
+  const lockoutUntilRef = useRef<number>(parseInt(localStorage.getItem('noc_lockout_until') || '0', 10));
   const [_lockoutSeconds, setLockoutSeconds] = useState(0);
 
   // FIX #50: OTP rate limiting — 60s cooldown between OTP requests
   const [otpCooldown, setOtpCooldown] = useState(0);
+
+  // S-22: OTP attempt counter — max 2 failed attempts before blocking
+  const otpAttemptsRef = useRef(0);
 
   const resetAllStates = () => {
     setError(null);
@@ -74,11 +77,16 @@ const Login = () => {
       if (error) throw error;
       // Reset attempts on success
       loginAttemptsRef.current = 0;
+      localStorage.removeItem('noc_login_attempts');
+      localStorage.removeItem('noc_lockout_until');
     } catch (err: any) {
       loginAttemptsRef.current++;
+      localStorage.setItem('noc_login_attempts', String(loginAttemptsRef.current));
       // FIX #32: Lock out after 5 failed attempts for 30 seconds
       if (loginAttemptsRef.current >= 5) {
-        lockoutUntilRef.current = Date.now() + 30000;
+        const lockoutEnd = Date.now() + 30000;
+        lockoutUntilRef.current = lockoutEnd;
+        localStorage.setItem('noc_lockout_until', String(lockoutEnd));
         setLockoutSeconds(30);
         const interval = setInterval(() => {
           setLockoutSeconds(prev => {
@@ -87,6 +95,7 @@ const Login = () => {
           });
         }, 1000);
         loginAttemptsRef.current = 0;
+        localStorage.setItem('noc_login_attempts', '0');
         setError('Too many failed attempts. Please wait 30 seconds before trying again.');
       } else {
         // FIX #32: Generic error message to prevent email enumeration
@@ -132,9 +141,16 @@ const Login = () => {
     }
   };
 
-  // Step 2: Verify the 8-digit OTP
+  // Step 2: Verify the 8-digit OTP (S-22: max 2 failed attempts)
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // S-22: Block after 2 failed OTP attempts
+    if (otpAttemptsRef.current >= 2) {
+      setError('Too many failed OTP attempts. Please request a new OTP.');
+      return;
+    }
+
     setLoading(true);
     resetAllStates();
 
@@ -147,12 +163,22 @@ const Login = () => {
 
       if (error) throw error;
 
-      // Flag that we're in password-reset mode so App.tsx doesn't redirect to dashboard
-      sessionStorage.setItem('password_reset_pending', 'true');
+      // S-22: Reset OTP attempts on success
+      otpAttemptsRef.current = 0;
+
+      // S-23: Only set flag if we have a valid recovery session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        sessionStorage.setItem('password_reset_pending', 'true');
+      }
       // FIX #39: Use React Router navigate instead of window.location.href to avoid session race
       navigate('/update-password');
     } catch (err: any) {
-      setError(err.message || 'Invalid or expired OTP');
+      otpAttemptsRef.current++;
+      const attemptsLeft = 2 - otpAttemptsRef.current;
+      setError(attemptsLeft > 0
+        ? `Invalid or expired OTP. ${attemptsLeft} attempt(s) remaining.`
+        : 'Too many failed OTP attempts. Please request a new OTP.');
       setSuccessMessage(null);
     } finally {
       setLoading(false);

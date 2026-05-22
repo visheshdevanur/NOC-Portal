@@ -1,7 +1,7 @@
 // @ts-nocheck — Deno runtime, not checked by project tsc
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-import { log, getCorsHeaders, jsonResponse } from '../_shared/utils.ts'
+import { log, getCorsHeaders, jsonResponse, checkRateLimit } from '../_shared/utils.ts'
 
 /**
  * HDFC SmartGateway — Order Status API (Step 4 in flow diagram)
@@ -9,9 +9,11 @@ import { log, getCorsHeaders, jsonResponse } from '../_shared/utils.ts'
  * 
  * Supports TWO modes:
  * 1. Authenticated: validates JWT, checks order belongs to student
- * 2. Callback mode: no auth, uses order_id only (for post-payment redirect
- *    when the student's JWT has expired during the HDFC payment flow).
+ * 2. Callback mode: no auth, uses order_id + order_token for post-payment redirect
+ *    when the student's JWT has expired during the HDFC payment flow.
  *    In callback mode, only limited order info is returned (no student data).
+ *    SECURITY: Requires order_token (stored in sessionStorage alongside order_id)
+ *    to prevent IDOR enumeration attacks.
  */
 
 const HDFC_API_KEY = Deno.env.get('HDFC_API_KEY') || ''
@@ -20,28 +22,35 @@ const HDFC_BASE_URL = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdf
 
 const corsHeaders = getCorsHeaders()
 
+// Create Supabase clients outside the handler
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
+const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const adminClient = createClient(supabaseUrl, serviceKey, {
+  auth: { persistSession: false, autoRefreshToken: false },
+})
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
-    const adminClient = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
-
     const body = await req.json()
-    const { order_id, callback_mode } = body
+    const { order_id, callback_mode, order_token } = body
     if (!order_id) return jsonResponse({ error: 'order_id is required' }, 400)
 
+    // ──────────── RATE LIMITING (callback mode protection) ────────────
+    // Use IP-based rate limiting to prevent order_id enumeration
+    const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0] || 'unknown'
+    if (callback_mode) {
+      const rateCheck = checkRateLimit(`order-status:${clientIP}`, 10, 60_000) // 10 requests per minute
+      if (!rateCheck.allowed) {
+        return jsonResponse({ error: 'Too many requests. Please try again later.' }, 429)
+      }
+    }
+
     // ──────────── AUTH CHECK ────────────
-    // In callback_mode (post-payment redirect), skip auth validation.
-    // The order_id is effectively a bearer token — only the student who
-    // initiated the payment has it (stored in sessionStorage).
     let userId: string | null = null
 
     if (!callback_mode) {
@@ -74,6 +83,16 @@ serve(async (req) => {
     const { data: orderRecord } = await query.single()
 
     if (!orderRecord) return jsonResponse({ error: 'Order not found' }, 404)
+
+    // IDOR Protection: In callback mode (no auth), verify the order_token
+    // The order_token is a cryptographic random string stored in sessionStorage
+    // alongside the order_id. An attacker who only knows the order_id cannot
+    // query the status without the token.
+    if (!userId && orderRecord.order_token) {
+      if (!order_token || order_token !== orderRecord.order_token) {
+        return jsonResponse({ error: 'Invalid order token' }, 403)
+      }
+    }
 
     // Already processed — return immediately
     if (orderRecord.status === 'paid') {
@@ -112,6 +131,7 @@ serve(async (req) => {
     const amountPaid = statusData.amount ? parseFloat(statusData.amount) : orderRecord.amount
 
     // If CHARGED, process atomically
+    // Note: RPC params retain legacy "razorpay" naming for backward compatibility
     if (txnStatus === 'CHARGED' && orderRecord.status !== 'paid') {
       await adminClient.rpc('process_payment_webhook', {
         p_razorpay_order_id: order_id,

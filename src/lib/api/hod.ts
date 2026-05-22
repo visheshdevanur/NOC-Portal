@@ -11,7 +11,7 @@ export const getHodPendingRequests = async (departmentId: string) => {
     .from('clearance_requests')
     .select('*, profiles!inner(id, full_name, department_id, roll_number, section, semester_id, semesters(name))')
     .in('current_stage', ['faculty_review', 'library_review', 'department_review', 'hod_review', 'rejected'])
-    .neq('current_stage', 'cleared')
+    .neq('status', 'completed')
     .eq('profiles.department_id', departmentId);
   if (error) throw error;
   if (!requests || requests.length === 0) return [];
@@ -19,37 +19,60 @@ export const getHodPendingRequests = async (departmentId: string) => {
   // 2. Get student IDs
   const studentIds = requests.map((r: any) => r.student_id);
 
-  // 3. Fetch enrollments for all students (for faculty clearance check)
-  const { data: enrollments } = await supabase
-    .from('subject_enrollment')
-    .select('student_id, status, attendance_fee_verified')
-    .in('student_id', studentIds);
+  // Helper: chunk array into batches of N (Supabase .in() has ~100 element limit)
+  const chunk = <T,>(arr: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      chunks.push(arr.slice(i, i + size));
+    }
+    return chunks;
+  };
+  const CHUNK_SIZE = 80; // Stay well under 100 limit
+  const idChunks = chunk(studentIds, CHUNK_SIZE);
 
-  // 4. Fetch library dues for all students
-  const { data: libraryDues } = await supabase
-    .from('library_dues')
-    .select('student_id, has_dues, permitted')
-    .in('student_id', studentIds);
+  // 3. Fetch enrollments for all students (chunked for safety)
+  const allEnrollments: any[] = [];
+  for (const ids of idChunks) {
+    const { data } = await supabase
+      .from('subject_enrollment')
+      .select('student_id, status, attendance_fee_verified')
+      .in('student_id', ids);
+    if (data) allEnrollments.push(...data);
+  }
 
-  // 5. Fetch college dues for all students
-  const { data: collegeDues } = await supabase
-    .from('student_dues')
-    .select('student_id, status, permitted_until')
-    .in('student_id', studentIds);
+  // 4. Fetch library dues for all students (chunked)
+  const allLibraryDues: any[] = [];
+  for (const ids of idChunks) {
+    const { data } = await supabase
+      .from('library_dues')
+      .select('student_id, has_dues, permitted')
+      .in('student_id', ids);
+    if (data) allLibraryDues.push(...data);
+  }
+
+  // 5. Fetch college dues for all students (chunked)
+  const allCollegeDues: any[] = [];
+  for (const ids of idChunks) {
+    const { data } = await supabase
+      .from('student_dues')
+      .select('student_id, status, permitted_until')
+      .in('student_id', ids);
+    if (data) allCollegeDues.push(...data);
+  }
 
   // 6. Build eligibility map
-  const enrollmentsByStudent = (enrollments || []).reduce((acc: any, e: any) => {
+  const enrollmentsByStudent = allEnrollments.reduce((acc: any, e: any) => {
     if (!acc[e.student_id]) acc[e.student_id] = [];
     acc[e.student_id].push(e);
     return acc;
   }, {} as Record<string, any[]>);
 
-  const libraryByStudent = (libraryDues || []).reduce((acc: any, l: any) => {
+  const libraryByStudent = allLibraryDues.reduce((acc: any, l: any) => {
     acc[l.student_id] = l;
     return acc;
   }, {} as Record<string, any>);
 
-  const duesByStudent = (collegeDues || []).reduce((acc: any, d: any) => {
+  const duesByStudent = allCollegeDues.reduce((acc: any, d: any) => {
     if (!acc[d.student_id]) acc[d.student_id] = [];
     acc[d.student_id].push(d);
     return acc;
@@ -66,8 +89,9 @@ export const getHodPendingRequests = async (departmentId: string) => {
     );
 
     // Library clearance: no dues OR permitted
+    // If no library_dues record exists, treat as NOT cleared (librarian hasn't processed yet)
     const lib = libraryByStudent[sid];
-    const libraryPass = lib ? (!lib.has_dues || lib.permitted) : true; // no record = no dues
+    const libraryPass = lib ? (!lib.has_dues || lib.permitted) : false;
 
     // College dues: all completed OR permitted
     const dues = duesByStudent[sid] || [];

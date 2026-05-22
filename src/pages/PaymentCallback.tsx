@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../lib/useAuth';
 import { CheckCircle2, XCircle, Clock, AlertCircle, ArrowLeft, RefreshCw, Download } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -84,6 +84,7 @@ export default function PaymentCallback() {
   // Retrieve stored payment info (set before redirect to HDFC)
   const storedOrderId = sessionStorage.getItem('hdfc_order_id');
   const storedAmount = sessionStorage.getItem('hdfc_payment_amount');
+  const storedOrderToken = sessionStorage.getItem('hdfc_order_token');
 
   const orderId =
     storedOrderId ||
@@ -92,7 +93,7 @@ export default function PaymentCallback() {
     new URLSearchParams(window.location.hash.split('?')[1] || '').get('order_id');
 
   // Try to verify payment status via edge function (ONE attempt only)
-  const verifiedRef = { current: false };
+  const verifiedRef = useRef(false);
 
   const verifyPayment = async (oid: string) => {
     if (verifiedRef.current) return; // Only try once
@@ -111,7 +112,7 @@ export default function PaymentCallback() {
           'apikey': anonKey,
           'Authorization': `Bearer ${anonKey}`,
         },
-        body: JSON.stringify({ order_id: oid, callback_mode: true }),
+        body: JSON.stringify({ order_id: oid, callback_mode: true, order_token: storedOrderToken || undefined }),
       });
 
       if (!response.ok) {
@@ -124,6 +125,7 @@ export default function PaymentCallback() {
       if (result.status === 'CHARGED') {
         setStatus('success');
         sessionStorage.removeItem('hdfc_order_id');
+        sessionStorage.removeItem('hdfc_order_token');
         sessionStorage.removeItem('hdfc_payment_amount');
         sessionStorage.removeItem('hdfc_payment_description');
       } else if (['AUTHORIZATION_FAILED', 'AUTHENTICATION_FAILED', 'JUSPAY_DECLINED'].includes(result.status)) {
@@ -160,7 +162,8 @@ export default function PaymentCallback() {
       clearTimeout(timer);
       clearTimeout(fallback);
     };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
 
   const handleDownloadReceipt = () => {
     downloadReceipt({
