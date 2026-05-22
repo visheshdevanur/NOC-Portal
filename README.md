@@ -70,6 +70,28 @@ NOC Portal digitizes the traditional paper-based "No Due Certificate" process us
 - ⏰ **Session Management** — Auto-logout after 15 min inactivity with warning
 - 🔄 **Real-time Data** — React Query for smart caching and background refetching
 - 🔐 **PKCE Auth Flow** — Secure OAuth with Proof Key for Code Exchange
+- 🚩 **Report an Issue** — Global issue reporting system for all users with SuperAdmin dashboard
+
+---
+
+### 🚩 Report an Issue System
+
+A built-in issue tracking system that enables any authenticated user to report problems directly from their dashboard.
+
+**User-Facing Features:**
+- **Global Access** — A "Report" button is visible in the top navigation bar and Settings menu on every page
+- **Smart Form** — Users select a category (UI Bug, Performance, Wrong Data, Feature Broken, Access Issue, Other), severity level, and write a description
+- **Auto-Collection** — Browser, OS, screen resolution, and current page URL are captured automatically
+- **Instant Feedback** — Success confirmation shown immediately after submission
+
+**Developer/SuperAdmin Dashboard:**
+- **Summary Cards** — Total, Open, In Progress, and Resolved issue counts at a glance
+- **Advanced Filters** — Filter by status, severity, tenant, and date range; full-text search
+- **Sortable Table** — Click any column header to sort; expandable rows show full details
+- **Status Management** — Change issue status (Open → In Progress → Resolved) directly from the table
+- **Environment Details** — Browser info, OS, screen resolution, and exact URL per issue
+
+**Database Table:** `reported_issues` with RLS policies ensuring users can only see their own reports, while SuperAdmins have full access.
 
 ---
 
@@ -578,6 +600,121 @@ NOC-Portal/
 | 10-50 colleges | Supabase Pro ($25/mo) | ~50,000 users |
 | 50-100 colleges | Supabase Team ($599/mo) + Read Replicas | ~200,000 users |
 | 100+ colleges | Custom PostgreSQL + Connection Pooling | Unlimited |
+
+---
+
+## 🛡️ Security Architecture
+
+### Authentication & Authorization
+
+| Layer | Implementation | Details |
+|-------|---------------|---------|
+| **Auth Provider** | Supabase Auth (GoTrue) | PKCE flow, JWT tokens, bcrypt password hashing |
+| **Session Management** | Auto-logout after 15 min inactivity | Warning banner at 12 min, forced logout at 15 min |
+| **Brute Force Protection** | Client-side rate limiting | 5 failed attempts → 15 min lockout, stored in localStorage |
+| **Password Policy** | Minimum 6 characters | Server-enforced via Supabase Auth |
+| **Role Enforcement** | Row Level Security (RLS) | Every table has RLS policies based on `auth.uid()` and role |
+
+### Data Security
+
+| Measure | Implementation |
+|---------|---------------|
+| **Row Level Security (RLS)** | All tables enforce RLS — users can only access their own data |
+| **Input Sanitization** | Server-side validation on all Edge Functions; client-side form validation |
+| **CORS Policy** | Strict origin validation on payment endpoints |
+| **Content Security Policy** | CSP headers via Vercel config — blocks inline scripts, restricts connect-src |
+| **HTTPS Only** | HSTS headers with 2-year max-age, includeSubDomains, preload |
+| **X-Frame-Options** | DENY — prevents clickjacking |
+| **Payment Security** | HDFC SmartGateway handles card data; no PCI-sensitive data stored |
+| **Audit Trail** | All clearance actions logged with user, role, timestamp, IP |
+| **Screenshot Prevention** | PrintScreen key intercepted on sensitive pages |
+
+### Edge Function Security
+
+| Function | Auth Method | Purpose |
+|----------|------------|---------|
+| `create-hdfc-session` | JWT (Authorization header) | Creates payment orders |
+| `hdfc-order-status` | API key (callback mode) | Verifies payment status |
+| `hdfc-webhook` | HMAC signature verification | Processes payment webhooks |
+| `admin-api` | SuperAdmin JWT | All SuperAdmin operations |
+| `log-error` | Service role | Error logging (internal) |
+
+---
+
+## 🗃️ Database Schema
+
+### Core Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `tenants` | Multi-tenant organization management | id, name, slug, plan, status, admin_email, max_users |
+| `profiles` | User profiles linked to Supabase Auth | id (FK→auth.users), full_name, role, department_id, semester_id, section, tenant_id |
+| `departments` | Academic departments | id, name, tenant_id |
+| `semesters` | Academic semesters | id, name, department_id |
+| `subjects` | Course subjects | id, subject_name, subject_code, semester_id |
+
+### Clearance Workflow Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `clearance_requests` | Student clearance applications | id, student_id, status, current_stage, created_at |
+| `subject_enrollment` | Faculty-student subject mappings | id, student_id, subject_id, teacher_id, attendance_pct, attendance_fee, status |
+| `department_clearances` | Accounts dept clearance records | id, student_id, department_id, status, fine_amount, permitted_until |
+| `library_clearance` | Library clearance records | id, student_id, has_dues, fine_amount, permitted, remarks |
+
+### Payment Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `payment_orders` | HDFC payment order tracking | id, student_id, amount, status, gateway_order_id, gateway_payment_id, enrollment_ids |
+
+### System Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `audit_logs` | Activity audit trail | id, user_id, action, details, created_at |
+| `platform_errors` | Error tracking for SuperAdmin | id, tenant_id, error_code, severity, error_detail |
+| `reported_issues` | User-reported issue tracking | id, issue_id, reporter_id, category, severity, description, status |
+| `ia_attendance` | Internal assessment attendance | id, student_id, subject_id, ia_number, is_present |
+
+### RLS Policy Matrix
+
+| Table | SELECT | INSERT | UPDATE | DELETE |
+|-------|--------|--------|--------|--------|
+| `profiles` | Own record | — | Own record | — |
+| `clearance_requests` | Own + Staff | Students | Staff only | — |
+| `subject_enrollment` | Own + Teacher | System | Teacher | — |
+| `payment_orders` | Own record | Authenticated | System | — |
+| `reported_issues` | Own reports | Authenticated | SuperAdmin | SuperAdmin |
+| `audit_logs` | Staff + Admin | System | — | — |
+
+### Database Functions (Stored Procedures)
+
+| Function | Purpose |
+|----------|---------|
+| `process_payment_webhook()` | Atomically marks payment as paid and updates enrollment records |
+| `create_payment_order_atomic()` | Creates payment order with conflict detection |
+| `advance_clearance_stage()` | Moves clearance to next pipeline stage when conditions met |
+| `check_clearance_eligibility()` | Validates all clearance prerequisites |
+
+---
+
+## 📊 Compliance & Audit
+
+### Data Retention
+- **Audit Logs**: Retained indefinitely for compliance
+- **Payment Records**: Retained indefinitely per RBI regulations
+- **User Data**: Retained while account is active; deletable by SuperAdmin
+
+### Audit Capabilities
+- Every clearance action is logged with: timestamp, user ID, role, action type, affected records
+- Payment lifecycle fully tracked: order creation → gateway redirect → callback → verification
+- SuperAdmin can view all error logs and user-reported issues across all tenants
+
+### Privacy
+- No PCI-sensitive payment data stored (handled by HDFC SmartGateway)
+- Student data isolated per tenant via RLS
+- No third-party analytics or tracking scripts
 
 ---
 

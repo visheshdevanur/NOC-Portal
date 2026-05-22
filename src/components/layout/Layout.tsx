@@ -1,9 +1,11 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/useAuth';
 import { supabase } from '../../lib/supabase';
-import { LogOut, GraduationCap, UserCircle, KeyRound, X, Settings, Menu, Eye, EyeOff, Activity, IdCard, Building2, BookOpen, Hash, Shield, Mail, Clock } from 'lucide-react';
+import { LogOut, GraduationCap, UserCircle, KeyRound, X, Settings, Menu, Eye, EyeOff, Activity, IdCard, Building2, BookOpen, Hash, Shield, Mail, Clock, Flag } from 'lucide-react';
 import { ThemeToggle } from '../ThemeToggle';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, lazy, Suspense } from 'react';
+
+const ReportIssueModal = lazy(() => import('../ReportIssueModal'));
 
 const Layout = () => {
   const { profile } = useAuth();
@@ -11,6 +13,7 @@ const Layout = () => {
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
@@ -134,6 +137,16 @@ const Layout = () => {
                 </button>
               )}
 
+              {/* Report Issue icon */}
+              <button
+                onClick={() => setShowReportModal(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 transition-all shadow-sm font-medium text-sm"
+                title="Report an Issue"
+              >
+                <Flag className="w-4 h-4" />
+                Report
+              </button>
+
               <ThemeToggle />
               
               <div className="flex items-center bg-secondary/50 px-3 lg:px-4 py-2 rounded-full border border-border shadow-sm">
@@ -178,6 +191,17 @@ const Layout = () => {
                     >
                       <KeyRound className="w-4 h-4 text-amber-500" />
                       Change Password
+                    </button>
+                    <div className="my-1 border-t border-border" />
+                    <button
+                      onClick={() => {
+                        setShowSettingsMenu(false);
+                        setShowReportModal(true);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary flex items-center gap-2"
+                    >
+                      <Flag className="w-4 h-4 text-orange-500" />
+                      Report an Issue
                     </button>
                   </div>
                 )}
@@ -250,6 +274,16 @@ const Layout = () => {
                   >
                     <KeyRound className="w-4 h-4 text-amber-500" />
                     Change Password
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      setShowReportModal(true);
+                    }}
+                    className="w-full text-left px-4 py-3 text-sm text-amber-600 hover:bg-amber-500/10 flex items-center gap-3 transition-colors"
+                  >
+                    <Flag className="w-4 h-4" />
+                    Report an Issue
                   </button>
                   <button
                     onClick={handleLogout}
@@ -383,6 +417,13 @@ const Layout = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* Report Issue Modal */}
+      {showReportModal && (
+        <Suspense fallback={null}>
+          <ReportIssueModal isOpen={showReportModal} onClose={() => setShowReportModal(false)} />
+        </Suspense>
       )}
 
       {/* Main Content Area */}

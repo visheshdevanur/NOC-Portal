@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
-import { getPlatformStats, getAllTenants, getErrorStats, type Tenant, type PlatformStats, getTenantUserCount } from '../../lib/superAdminApi';
+import { getPlatformStats, getAllTenants, getErrorStats, type Tenant, type PlatformStats, getTenantUserCount, getServiceClient } from '../../lib/superAdminApi';
 import { superAdminLogout } from '../../lib/superAdminAuth';
 import { useSATheme } from './SuperAdminApp';
-import { Shield, Building2, Users, FileCheck, Plus, Eye, LogOut, Search, ChevronRight, Zap, Sun, Moon, AlertTriangle } from 'lucide-react';
+import { Shield, Building2, Users, FileCheck, Plus, Eye, LogOut, Search, ChevronRight, Zap, Sun, Moon, AlertTriangle, Flag } from 'lucide-react';
 import CreateTenantModal from './CreateTenantModal';
 import TenantDetailModal from './TenantDetailModal';
 import ErrorLogPage from './ErrorLogPage';
+import ReportedIssuesPage from './ReportedIssuesPage';
 import './superadmin.css';
 
 const s = (obj: Record<string, any>) => obj as React.CSSProperties;
 
-type View = 'overview' | 'errors';
+type View = 'overview' | 'errors' | 'issues';
 
 export default function SuperAdminDashboard({ onLogout }: { onLogout: () => void }) {
   const { theme, toggle } = useSATheme();
@@ -85,6 +86,11 @@ export default function SuperAdminDashboard({ onLogout }: { onLogout: () => void
               )}
             </button>
 
+            {/* Reported Issues tab */}
+            <button onClick={() => setView('issues')} style={s({ padding: '7px 14px', borderRadius: 8, background: view === 'issues' ? 'rgba(245,158,11,0.1)' : 'transparent', border: `1px solid ${view === 'issues' ? 'rgba(245,158,11,0.3)' : 'transparent'}`, cursor: 'pointer', color: view === 'issues' ? '#f59e0b' : 'var(--sa-text-muted)', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.2s' })}>
+              <Flag size={13} /> Issues
+            </button>
+
             {/* Divider */}
             <div style={s({ width: 1, height: 20, background: 'var(--sa-border)', margin: '0 2px' })} />
 
@@ -106,6 +112,9 @@ export default function SuperAdminDashboard({ onLogout }: { onLogout: () => void
 
         {/* Error Logs View */}
         {view === 'errors' && <ErrorLogPage />}
+
+        {/* Reported Issues View */}
+        {view === 'issues' && <ReportedIssuesPage serviceClient={getServiceClient()} />}
 
         {/* Overview View */}
         {view === 'overview' && (

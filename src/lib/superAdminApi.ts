@@ -10,6 +10,9 @@ import { superAdminSupabase as supabase } from './superAdminSupabase';
 // Keep main client import ONLY for logPlatformError (used by errorHandler in main app context)
 import { supabase as mainSupabase } from './supabase';
 
+// Export the super admin client for pages that need direct table access (e.g. ReportedIssuesPage)
+export function getServiceClient() { return supabase; }
+
 type AdminApiResponse<T = unknown> = { data?: T; error?: string };
 
 /**
