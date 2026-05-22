@@ -7,8 +7,9 @@ import { logActivity } from './shared';
 export const getHodPendingRequests = async (departmentId: string) => {
   const { data, error } = await supabase
     .from('clearance_requests')
-    .select('*, profiles!inner(full_name, department_id, semesters(name))')
-    .eq('current_stage', 'hod_review')
+    .select('*, profiles!inner(full_name, department_id, roll_number, section, semesters(name))')
+    .in('current_stage', ['faculty_review', 'library_review', 'department_review', 'hod_review'])
+    .eq('status', 'pending')
     .eq('profiles.department_id', departmentId);
   if (error) throw error;
   return data;

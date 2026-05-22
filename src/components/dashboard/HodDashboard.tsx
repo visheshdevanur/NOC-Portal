@@ -574,7 +574,10 @@ export default function HodDashboard() {
                   <thead>
                     <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
                       <th className="p-4 font-semibold">Student Name</th>
-                      <th className="p-4 font-semibold">Arrival Date</th>
+                      <th className="p-4 font-semibold">Roll Number</th>
+                      <th className="p-4 font-semibold">Semester</th>
+                      <th className="p-4 font-semibold">Stage</th>
+                      <th className="p-4 font-semibold">Applied</th>
                       <th className="p-4 font-semibold text-right">Action</th>
                     </tr>
                   </thead>
@@ -582,8 +585,21 @@ export default function HodDashboard() {
                     {filteredReqs.map(req => (
                       <tr key={req.id} className="hover:bg-secondary/20 transition-colors">
                         <td className="p-4 font-bold text-foreground">{req.profiles?.full_name || 'Unknown'}</td>
+                        <td className="p-4 text-sm text-muted-foreground">{(req.profiles as any)?.roll_number || 'N/A'}</td>
+                        <td className="p-4 text-sm text-muted-foreground">{(req.profiles as any)?.semesters?.name || 'N/A'}</td>
+                        <td className="p-4">
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            req.current_stage === 'hod_review' ? 'bg-emerald-500/10 text-emerald-600' :
+                            req.current_stage === 'department_review' ? 'bg-blue-500/10 text-blue-600' :
+                            'bg-amber-500/10 text-amber-600'
+                          }`}>
+                            {req.current_stage === 'faculty_review' ? 'Faculty' :
+                             req.current_stage === 'library_review' ? 'Library' :
+                             req.current_stage === 'department_review' ? 'Accounts' : 'Ready'}
+                          </span>
+                        </td>
                         <td className="p-4 text-sm text-muted-foreground">
-                          {new Date(req.updated_at).toLocaleDateString()}
+                          {new Date(req.created_at).toLocaleDateString()}
                         </td>
                         <td className="p-4 text-right">
                           <button
