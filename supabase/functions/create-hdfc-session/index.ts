@@ -1,7 +1,7 @@
 // @ts-nocheck — Deno runtime, not checked by project tsc
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-import { getCorsHeaders, validateOrigin, log } from '../_shared/utils.ts'
+import { getCorsHeaders, log } from '../_shared/utils.ts'
 
 /**
  * HDFC SmartGateway — Create Order via /orders endpoint (Basic Auth)
@@ -49,10 +49,6 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
-
-  // S-14: Validate request origin
-  const originError = validateOrigin(req)
-  if (originError) return originError
 
   try {
     // Step 1: Authenticate user via Supabase
