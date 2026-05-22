@@ -111,25 +111,10 @@ const Login = () => {
     resetAllStates();
 
     try {
-      // Check if email is registered before sending OTP
-      const { data: existingUser, error: lookupError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', email.trim().toLowerCase())
-        .limit(1)
-        .maybeSingle();
-      
-      if (lookupError) throw lookupError;
-      if (!existingUser) {
-        setError('This email is not registered. Please check the email address or contact your administrator.');
-        setLoading(false);
-        return;
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
       if (error) throw error;
 
-      setSuccessMessage("An OTP has been sent to your email.");
+      setSuccessMessage("If this email is registered, an OTP has been sent. Please check your inbox.");
       setResetStep('verify-otp');
 
       // FIX #50: Start 60s cooldown
