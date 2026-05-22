@@ -5,14 +5,77 @@ import { logActivity } from './shared';
 // HOD SPECIFIC
 // =======================
 export const getHodPendingRequests = async (departmentId: string) => {
-  const { data, error } = await supabase
+  // 1. Get all pending clearance requests for this department
+  const { data: requests, error } = await supabase
     .from('clearance_requests')
-    .select('*, profiles!inner(full_name, department_id, roll_number, section, semesters(name))')
+    .select('*, profiles!inner(id, full_name, department_id, roll_number, section, semester_id, semesters(name))')
     .in('current_stage', ['faculty_review', 'library_review', 'department_review', 'hod_review'])
     .eq('status', 'pending')
     .eq('profiles.department_id', departmentId);
   if (error) throw error;
-  return data;
+  if (!requests || requests.length === 0) return [];
+
+  // 2. Get student IDs
+  const studentIds = requests.map((r: any) => r.student_id);
+
+  // 3. Fetch enrollments for all students (for faculty clearance check)
+  const { data: enrollments } = await supabase
+    .from('subject_enrollment')
+    .select('student_id, status, attendance_fee_verified')
+    .in('student_id', studentIds);
+
+  // 4. Fetch library dues for all students
+  const { data: libraryDues } = await supabase
+    .from('library_dues')
+    .select('student_id, has_dues, permitted')
+    .in('student_id', studentIds);
+
+  // 5. Fetch college dues for all students
+  const { data: collegeDues } = await supabase
+    .from('student_dues')
+    .select('student_id, status, permitted_until')
+    .in('student_id', studentIds);
+
+  // 6. Build eligibility map
+  const enrollmentsByStudent = (enrollments || []).reduce((acc: any, e: any) => {
+    if (!acc[e.student_id]) acc[e.student_id] = [];
+    acc[e.student_id].push(e);
+    return acc;
+  }, {} as Record<string, any[]>);
+
+  const libraryByStudent = (libraryDues || []).reduce((acc: any, l: any) => {
+    acc[l.student_id] = l;
+    return acc;
+  }, {} as Record<string, any>);
+
+  const duesByStudent = (collegeDues || []).reduce((acc: any, d: any) => {
+    if (!acc[d.student_id]) acc[d.student_id] = [];
+    acc[d.student_id].push(d);
+    return acc;
+  }, {} as Record<string, any[]>);
+
+  // 7. Filter: only students with ALL prerequisites cleared/permitted
+  return requests.filter((req: any) => {
+    const sid = req.student_id;
+
+    // Faculty clearance: every enrollment is completed OR fee verified
+    const enrs = enrollmentsByStudent[sid] || [];
+    const facultyCleared = enrs.length > 0 && enrs.every(
+      (e: any) => e.status === 'completed' || e.attendance_fee_verified === true
+    );
+
+    // Library clearance: no dues OR permitted
+    const lib = libraryByStudent[sid];
+    const libraryPass = lib ? (!lib.has_dues || lib.permitted) : true; // no record = no dues
+
+    // College dues: all completed OR permitted
+    const dues = duesByStudent[sid] || [];
+    const duesPass = dues.length === 0 || dues.every(
+      (d: any) => d.status === 'completed' || (d.permitted_until && new Date(d.permitted_until) > new Date())
+    );
+
+    return facultyCleared && libraryPass && duesPass;
+  });
 };
 
 export const getHodDepartmentStudents = async (departmentId: string) => {
