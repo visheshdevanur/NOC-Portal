@@ -98,26 +98,29 @@ serve(async (req) => {
       })
     }
 
-    // ──────────── CHECK HDFC STATUS ────────────
+    // ──────────── CHECK HDFC STATUS (with retry for sandbox) ────────────
     const hdfcAuth = `Basic ${btoa(`${HDFC_API_KEY}:`)}`
-    const statusRes = await fetch(`${HDFC_BASE_URL}/orders/${order_id}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': hdfcAuth,
-        'x-merchantid': HDFC_MERCHANT_ID,
-        'Content-Type': 'application/json',
-        'version': '2024-06-01',
-      },
-    })
-    const statusData = await statusRes.json()
 
-    // Log the full HDFC response for debugging
-    log({ level: 'INFO', fn: 'hdfc-order-status', action: 'hdfc_response', meta: { 
+    async function checkHdfcStatus() {
+      const res = await fetch(`${HDFC_BASE_URL}/orders/${order_id}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': hdfcAuth,
+          'x-merchantid': HDFC_MERCHANT_ID,
+          'Content-Type': 'application/json',
+          'version': '2024-06-01',
+        },
+      })
+      const data = await res.json()
+      return { res, data }
+    }
+
+    let { res: statusRes, data: statusData } = await checkHdfcStatus()
+
+    // Log full HDFC response for debugging
+    log({ level: 'INFO', fn: 'hdfc-order-status', action: 'hdfc_response', meta: {
       httpStatus: statusRes.status,
-      responseKeys: Object.keys(statusData || {}),
-      status: statusData?.status,
-      order_status: statusData?.order_status,
-      txn_status: statusData?.txn_status,
+      fullBody: JSON.stringify(statusData).substring(0, 500),
     }})
 
     if (!statusRes.ok) {
@@ -125,26 +128,37 @@ serve(async (req) => {
         status: 'UNKNOWN',
         order_id,
         error: statusData?.error_message || 'Failed to fetch status',
+        debug_hdfc_status: statusRes.status,
       }, 502)
     }
 
-    // HDFC returns status in different fields depending on the API version/endpoint
-    const rawStatus = statusData.status 
-      || statusData.order_status 
-      || statusData.txn_status
-      || statusData.payment_status
-      || statusData?.order?.status
-      || 'UNKNOWN'
-    const txnStatus = rawStatus.toUpperCase()
+    // Extract status from all possible field locations
+    const extractStatus = (d: any): string => {
+      return (d.status || d.order_status || d.txn_status || d.payment_status || d?.order?.status || 'UNKNOWN').toString().toUpperCase()
+    }
+
+    let txnStatus = extractStatus(statusData)
+
+    // Sandbox timing: if status is still NEW/CREATED, retry after 3 seconds
+    // The HDFC sandbox may need a moment to process the payment
+    const pendingStatuses = ['NEW', 'CREATED', 'PENDING_VBV', 'PENDING']
+    if (pendingStatuses.includes(txnStatus)) {
+      log({ level: 'INFO', fn: 'hdfc-order-status', action: 'retrying', meta: { firstStatus: txnStatus }})
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      const retry = await checkHdfcStatus()
+      statusData = retry.data
+      txnStatus = extractStatus(statusData)
+      log({ level: 'INFO', fn: 'hdfc-order-status', action: 'retry_result', meta: { retryStatus: txnStatus }})
+    }
+
     const paymentId = statusData.txn_id || statusData.payment_id || statusData.txn_uuid || null
     const amountPaid = statusData.amount ? parseFloat(statusData.amount) : orderRecord.amount
 
-    // All possible HDFC success statuses (case-insensitive via toUpperCase above)
+    // All possible HDFC success statuses
     const successStatuses = ['CHARGED', 'SUCCESS', 'TXN_CHARGED', 'AUTO_REFUNDED', 'COD_INITIATED', 'SETTLED']
     const isSuccess = successStatuses.includes(txnStatus)
 
     // If successful, process atomically
-    // Note: RPC params retain legacy "razorpay" naming for backward compatibility
     if (isSuccess && orderRecord.status !== 'paid') {
       await adminClient.rpc('process_payment_webhook', {
         p_razorpay_order_id: order_id,
@@ -159,9 +173,9 @@ serve(async (req) => {
       await adminClient.from('payment_orders').update({ status: 'failed' }).eq('id', orderRecord.id)
     }
 
-    // Return normalized status: map HDFC statuses to what the frontend expects
+    // Return normalized status + raw HDFC status for debugging
     const normalizedStatus = isSuccess ? 'CHARGED' : txnStatus
-    return jsonResponse({ status: normalizedStatus, order_id, amount: amountPaid, payment_id: paymentId })
+    return jsonResponse({ status: normalizedStatus, order_id, amount: amountPaid, payment_id: paymentId, hdfc_raw_status: txnStatus })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
     log({ level: 'ERROR', fn: 'hdfc-order-status', action: 'failed', error: message })
