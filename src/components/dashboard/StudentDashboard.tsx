@@ -217,7 +217,12 @@ export default function StudentDashboard() {
 
   const isFirstYear = useMemo(() => isFirstYearSem(semesterName), [semesterName]);
   const isHodApproved = request?.current_stage === 'cleared';
-  const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(e => e.status === 'completed'), [enrollments]);
+  // A subject is "faculty cleared" when:
+  // 1. Faculty marked it 'completed' (attendance >= 85%), OR
+  // 2. The attendance fine has been paid (verified by HDFC/cash)
+  const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(
+    e => e.status === 'completed' || e.attendance_fee_verified === true
+  ), [enrollments]);
   const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : false, [libraryDue]);
   const isLibraryPermitted = useMemo(() => libraryDue ? (libraryDue.has_dues && libraryDue.permitted) : false, [libraryDue]);
   const libraryPass = allLibraryCleared || isLibraryPermitted;
