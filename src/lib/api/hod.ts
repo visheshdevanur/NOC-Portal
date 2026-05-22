@@ -5,12 +5,13 @@ import { logActivity } from './shared';
 // HOD SPECIFIC
 // =======================
 export const getHodPendingRequests = async (departmentId: string) => {
-  // 1. Get all pending clearance requests for this department
+  // 1. Get all non-cleared clearance requests for this department
+  // Include 'rejected' so HOD can override if student has since cleared all prerequisites
   const { data: requests, error } = await supabase
     .from('clearance_requests')
     .select('*, profiles!inner(id, full_name, department_id, roll_number, section, semester_id, semesters(name))')
-    .in('current_stage', ['faculty_review', 'library_review', 'department_review', 'hod_review'])
-    .eq('status', 'pending')
+    .in('current_stage', ['faculty_review', 'library_review', 'department_review', 'hod_review', 'rejected'])
+    .neq('current_stage', 'cleared')
     .eq('profiles.department_id', departmentId);
   if (error) throw error;
   if (!requests || requests.length === 0) return [];
