@@ -172,11 +172,16 @@ serve(async (req) => {
     }
 
     // For bulk payments, store all enrollment_ids in the payment order
-    if (enrollment_ids && enrollment_ids.length > 1 && dbOrderId) {
-      await adminClient
+    if (enrollment_ids && enrollment_ids.length > 0 && dbOrderId) {
+      const { error: updateErr } = await adminClient
         .from('payment_orders')
-        .update({ enrollment_ids: JSON.stringify(enrollment_ids) })
+        .update({ enrollment_ids: enrollment_ids })
         .eq('id', dbOrderId)
+      if (updateErr) {
+        console.error('Failed to store enrollment_ids:', updateErr.message)
+      } else {
+        console.log(`Stored ${enrollment_ids.length} enrollment_ids for bulk payment`)
+      }
     }
 
     console.log('ALL STEPS COMPLETE')
