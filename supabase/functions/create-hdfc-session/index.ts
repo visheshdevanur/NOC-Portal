@@ -152,6 +152,14 @@ serve(async (req) => {
     console.log('STEP 6: Store order in DB')
     const primaryEnrollmentId = enrollment_id || (enrollment_ids?.length > 0 ? enrollment_ids[0] : null)
 
+    // Auto-expire stale orders (older than 30 minutes) to prevent blocking
+    await adminClient
+      .from('payment_orders')
+      .update({ status: 'expired' })
+      .eq('student_id', user.id)
+      .eq('status', 'created')
+      .lt('created_at', new Date(Date.now() - 30 * 60 * 1000).toISOString())
+
     const { data: dbOrderId, error: rpcError } = await adminClient.rpc('create_payment_order_atomic', {
       p_student_id: user.id,
       p_enrollment_id: primaryEnrollmentId || null,
