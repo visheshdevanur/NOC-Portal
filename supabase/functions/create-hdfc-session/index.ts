@@ -143,13 +143,12 @@ serve(async (req) => {
     }
 
     // Step 6: Now call HDFC /orders endpoint (DB record already created)
-    const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN') || ''
-    const baseReturnUrl = PAYMENT_RETURN_URL || (allowedOrigin ? `${allowedOrigin}/payment/callback` : '')
-    // Include order_id and order_token in return URL so callback page works
-    // even when sessionStorage is cleared after cross-domain redirect to HDFC
-    const returnUrl = baseReturnUrl
-      ? `${baseReturnUrl}?order_id=${orderId}&order_token=${orderToken}`
-      : ''
+    // Build return URL: try env vars first, then use the request's Origin header as fallback
+    const requestOrigin = req.headers.get('Origin') || req.headers.get('Referer')?.replace(/\/+$/, '') || ''
+    const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN') || requestOrigin || 'https://noc-portal-self.vercel.app'
+    const baseReturnUrl = PAYMENT_RETURN_URL || `${allowedOrigin}/payment/callback`
+    // Include order_id in return URL so callback page works even if localStorage is cleared
+    const returnUrl = `${baseReturnUrl}?order_id=${orderId}&order_token=${orderToken}`
     const customerIdForHdfc = user.id.replace(/-/g, '').substring(0, 20)
     const authB64 = btoa(`${HDFC_API_KEY}:`)
 
