@@ -514,7 +514,7 @@ export default function FycDashboard() {
       for (const teacherId of selectedImportIds) {
         const { error } = await supabase
           .from('profiles')
-          .update({ created_by: user.id })
+          .update({ created_by: user!.id })
           .eq('id', teacherId);
         if (error) throw error;
         count++;
