@@ -82,15 +82,23 @@ export default function PaymentCallback() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Retrieve stored payment info (set before redirect to HDFC)
+  // sessionStorage may be empty after cross-domain redirect, so also check URL params
   const storedOrderId = sessionStorage.getItem('hdfc_order_id');
   const storedAmount = sessionStorage.getItem('hdfc_payment_amount');
   const storedOrderToken = sessionStorage.getItem('hdfc_order_token');
+
+  const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
 
   const orderId =
     storedOrderId ||
     searchParams.get('order_id') ||
     searchParams.get('orderId') ||
-    new URLSearchParams(window.location.hash.split('?')[1] || '').get('order_id');
+    hashParams.get('order_id');
+
+  const orderToken =
+    storedOrderToken ||
+    searchParams.get('order_token') ||
+    hashParams.get('order_token');
 
   // Try to verify payment status via edge function (ONE attempt only)
   const verifiedRef = useRef(false);
@@ -101,7 +109,7 @@ export default function PaymentCallback() {
 
     try {
       // Use callback_mode — no auth required.
-      // The order_id is only known to the student (stored in sessionStorage).
+      // order_token provides IDOR protection in callback mode.
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -112,7 +120,7 @@ export default function PaymentCallback() {
           'apikey': anonKey,
           'Authorization': `Bearer ${anonKey}`,
         },
-        body: JSON.stringify({ order_id: oid, callback_mode: true, order_token: storedOrderToken || undefined }),
+        body: JSON.stringify({ order_id: oid, callback_mode: true, order_token: orderToken || undefined }),
       });
 
       if (!response.ok) {
