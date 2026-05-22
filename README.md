@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white" alt="Supabase" />
   <img src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" alt="Vite" />
   <img src="https://img.shields.io/badge/TailwindCSS-3.4-06B6D4?logo=tailwindcss&logoColor=white" alt="TailwindCSS" />
-  <img src="https://img.shields.io/badge/Razorpay-Integrated-0C2451?logo=razorpay&logoColor=white" alt="Razorpay" />
+  <img src="https://img.shields.io/badge/HDFC_SmartGateway-Integrated-004B87?logo=data:image/svg+xml;base64,&logoColor=white" alt="HDFC SmartGateway" />
 </p>
 
 <h1 align="center">🎓 NOC Portal — No Objection Certificate Management System</h1>
@@ -39,9 +39,9 @@ NOC Portal digitizes the traditional paper-based "No Due Certificate" process us
 
 | Feature | Description |
 |---------|-------------|
-| **Automated Clearance Pipeline** | Faculty → Department → HOD → Cleared — enforced at database level |
+| **Automated Clearance Pipeline** | Faculty → Library → Accounts → HOD — enforced at database level |
 | **Attendance Compliance** | Strict 85% attendance + 2 IA minimum rule with server-side guards |
-| **Online Fine Payments** | Razorpay-powered payment gateway for attendance and library fines |
+| **Online Fine Payments** | HDFC SmartGateway-powered payments (UPI, Cards, NetBanking) |
 | **Bulk Operations** | CSV upload for students, attendance, dues — up to 500 records per batch |
 | **Multi-Tenant SaaS** | One deployment, multiple colleges, complete data isolation |
 | **Super Admin Portal** | Platform-level management for onboarding new institutions |
@@ -50,11 +50,11 @@ NOC Portal digitizes the traditional paper-based "No Due Certificate" process us
 
 | Dashboard | Capabilities |
 |-----------|-------------|
-| **Student** | View clearance status, pay fines, download receipts, track IA attendance |
+| **Student** | View clearance status, pay fines online, track IA attendance, view clearance report |
 | **Faculty** | Manage attendance per subject, upload IA data via CSV, approve/reject clearance |
 | **Staff** | Department-wide student management, fine overrides, attendance due assignments |
 | **Clerk** | First/second year student management, subject enrollment, section management |
-| **HOD** | Final clearance approval, teacher assignment monitoring, staff activity logs |
+| **HOD** | Final clearance approval, teacher assignment monitoring, staff activity logs, cash fine clearing |
 | **Accounts** | College-wide dues management, fee verification, fine category configuration |
 | **FYC (First Year Coordinator)** | Cross-department management for Sem 1 & 2 students |
 | **Librarian** | Library dues tracking, bulk processing, permit management |
@@ -81,8 +81,8 @@ NOC Portal digitizes the traditional paper-based "No Due Certificate" process us
 ┌─────────────────────────────────────────────────────────────────┐
 │                        CLIENT (Browser)                         │
 │  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌────────────┐  │
-│  │  React   │  │  React Query │  │  Router   │  │  Razorpay  │  │
-│  │  19 SPA  │  │  (Caching)   │  │  (v7)     │  │  Checkout  │  │
+│  │  React   │  │  React Query │  │  Router   │  │   HDFC     │  │
+│  │  19 SPA  │  │  (Caching)   │  │  (v7)     │  │  SmartPay  │  │
 │  └────┬─────┘  └──────┬───────┘  └────┬─────┘  └─────┬──────┘  │
 │       └───────────────┼──────────────┼─────────────┘          │
 └───────────────────────┼──────────────────────────────────────────┘
@@ -98,10 +98,10 @@ NOC Portal digitizes the traditional paper-based "No Due Certificate" process us
 │  ┌─────────────────────▼─────────────────────────┐               │
 │  │            Edge Functions (Deno)               │               │
 │  │  ┌──────────────┐  ┌───────────────────────┐  │               │
-│  │  │ create-user  │  │ create-razorpay-order │  │               │
-│  │  │ bulk-create  │  │ razorpay-webhook      │  │               │
-│  │  │ provision-   │  │ log-error             │  │               │
-│  │  │ tenant       │  │ admin-api             │  │               │
+│  │  │ create-user  │  │ create-hdfc-session   │  │               │
+│  │  │ bulk-create  │  │ hdfc-webhook          │  │               │
+│  │  │ provision-   │  │ hdfc-order-status     │  │               │
+│  │  │ tenant       │  │ log-error / admin-api │  │               │
 │  │  └──────────────┘  └───────────────────────┘  │               │
 │  └─────────────────────┬─────────────────────────┘               │
 │                        │                                         │
@@ -147,19 +147,56 @@ NOC Portal digitizes the traditional paper-based "No Due Certificate" process us
 
 ## 🔄 Clearance Workflow
 
-### Student Clearance Pipeline
+### Two-Step Clearance Process
+
+#### Step 1: Faculty Clearance
+
+A student's subject is considered **faculty-cleared** through any one of three paths:
+
+| Path | How | Who |
+|------|-----|-----|
+| **Fine Payment** | Student pays attendance fine via HDFC SmartGateway | Student |
+| **Faculty Clear** | Faculty directly marks subject as cleared (attendance ≥ 85%) | Faculty |
+| **HOD Override** | HOD clears the subject via cash payment collection | HOD |
+
+> **Rule:** A student with attendance < 85% is automatically rejected with a fine. They must pay the fine or get an HOD override to be cleared.
+
+#### Step 2: HOD Approval
+
+A student must first clear **all three prerequisites** before appearing for HOD final approval:
+
+| Prerequisite | Condition |
+|-------------|-----------|
+| ✅ **Faculty Clearance** | All enrolled subjects are cleared (via any of the 3 paths above) |
+| ✅ **Library Clearance** | No pending library dues, OR library dues permitted |
+| ✅ **College Dues** | All college fees paid, OR dues permitted |
+
+Only students with **all three** prerequisites met appear in the HOD's clearance tab.
+
+> HOD approval is **department-specific** — students can only be approved by the HOD of their own department. This is the **final step** in the No Due process.
+
+### Clearance Pipeline Diagram
 
 ```mermaid
 graph TD
     A[Student Applies for Clearance] --> B{Faculty Review}
-    B -->|All Subjects Cleared| C{Department Review}
-    B -->|Attendance < 85% OR < 2 IAs| D[Rejected - Pay Fine]
-    D -->|Fine Paid & Verified| B
-    C -->|No Unpaid Dues| E{HOD Review}
-    C -->|Has Unpaid Dues| F[Blocked - Clear Dues]
-    F -->|Dues Cleared| C
-    E -->|Approved| G[✅ Clearance Granted]
-    E -->|Rejected| H[Sent Back for Review]
+    B -->|Attendance ≥ 85%| C[Faculty Clears Subject]
+    B -->|Attendance < 85%| D[Rejected — Fine Imposed]
+    D -->|Student Pays via HDFC| E[Subject Cleared]
+    D -->|HOD Clears via Cash| E
+    C --> F{All Subjects Cleared?}
+    E --> F
+    F -->|No| B
+    F -->|Yes| G{Library Cleared?}
+    G -->|No| H[Clear Library Dues]
+    H --> G
+    G -->|Yes| I{College Dues Cleared?}
+    I -->|No| J[Pay College Fees]
+    J --> I
+    I -->|Yes| K[Appears in HOD Dashboard]
+    K --> L{HOD Approval}
+    L -->|Approved| M[✅ Clearance Granted]
+    L -->|Rejected| N[Sent Back]
 ```
 
 ### Clearance Rules (Server-Enforced)
@@ -169,21 +206,49 @@ graph TD
 | Attendance ≥ 85% | Database trigger + API guard |
 | ≥ 2 IAs attended | Database trigger + API guard |
 | No unpaid college dues | Clearance state machine RPC |
-| No unpaid library dues | Evaluated during department review |
-| No unpaid attendance fines | Enrollment status check |
-| Stage transitions must be sequential | `advance_clearance_stage` RPC |
+| No unpaid library dues | Evaluated during clearance check |
+| No unpaid attendance fines | Enrollment status + fee_verified check |
+| HOD sees only eligible students | Client-side prerequisite filtering |
 
 ### Attendance Fine Workflow
 
 ```mermaid
 graph LR
-    A[Faculty Uploads CSV] --> B{Attendance < 85%?}
-    B -->|Yes| C[Auto-Calculate Fine]
-    C --> D[Student Pays via Razorpay]
+    A[Faculty Marks Attendance] --> B{Attendance < 85%?}
+    B -->|Yes| C[Auto-Reject + Calculate Fine]
+    C --> D[Student Pays via HDFC SmartGateway]
     D --> E[Webhook Verifies Payment]
-    E --> F[Accounts Verifies Receipt]
-    F --> G[Enrollment Cleared]
+    E --> F[attendance_fee_verified = true]
+    F --> G[Subject Cleared]
     B -->|No & ≥ 2 IAs| G
+```
+
+### Payment Flow (HDFC SmartGateway)
+
+```mermaid
+sequenceDiagram
+    participant S as Student
+    participant F as Frontend
+    participant E as Edge Function
+    participant H as HDFC SmartGateway
+    participant DB as Database
+
+    S->>F: Click "Pay Fine"
+    F->>E: create-hdfc-session
+    E->>E: Auto-expire stale orders (>30min)
+    E->>H: Create Payment Session
+    H-->>E: Payment Link + Order ID
+    E->>DB: Store payment_order (status: created)
+    E-->>F: Redirect URL
+    F->>H: Redirect to HDFC Payment Page
+    S->>H: Complete Payment (UPI/Card)
+    H->>E: hdfc-webhook (payment notification)
+    E->>DB: Update order (status: paid)
+    E->>DB: Set attendance_fee_verified = true
+    H-->>F: Redirect to /payment-callback
+    F->>E: hdfc-order-status (callback_mode)
+    E-->>F: Payment status (success/failed)
+    F->>S: Show result + redirect to dashboard
 ```
 
 ---
@@ -195,7 +260,7 @@ Super Admin (Platform Level)
     │
     ├── Admin (Institution Level)
     │     ├── Principal (View-only oversight)
-    │     ├── HOD (Department head)
+    │     ├── HOD (Department head — final clearance)
     │     │     ├── Staff (Department operations)
     │     │     │     ├── Faculty/Teacher (Subject-level)
     │     │     │     └── Clerk (Student management)
@@ -231,20 +296,21 @@ Super Admin (Platform Level)
 | **Supabase** | Backend-as-a-Service (Auth, DB, Edge Functions) |
 | **PostgreSQL** | Primary database with RLS |
 | **Edge Functions (Deno)** | Serverless API endpoints |
-| **Row Level Security** | Database-level access control |
-| **RPCs** | Atomic server-side operations |
+| **Row Level Security** | Database-level access control (90+ policies) |
+| **RPCs** | Atomic server-side operations (20+ functions) |
 
 ### Payments
 | Technology | Purpose |
 |-----------|---------|
-| **Razorpay** | Payment gateway (UPI, Cards, NetBanking) |
-| **HMAC-SHA256** | Webhook signature verification |
+| **HDFC SmartGateway** | Payment gateway (UPI, Cards, NetBanking) |
+| **RSA + SHA-256** | Payment response signature verification |
+| **Callback Mode** | Stateless payment status check (no JWT required) |
 
 ### Infrastructure
 | Technology | Purpose |
 |-----------|---------|
-| **Vercel / Netlify** | Frontend hosting with CDN |
-| **Supabase Cloud** | Managed PostgreSQL + Auth + Edge |
+| **Vercel** | Frontend hosting with CDN and auto-deploy |
+| **Supabase Cloud** | Managed PostgreSQL + Auth + Edge Functions |
 | **GitHub** | Version control and CI/CD triggers |
 
 ---
@@ -255,7 +321,7 @@ Super Admin (Platform Level)
 - Node.js 18+
 - npm 9+
 - Supabase account
-- Razorpay account (for payments)
+- HDFC SmartGateway merchant account (for payments)
 
 ### Installation
 
@@ -274,9 +340,9 @@ cp .env.example .env
 ### Environment Variables
 
 ```env
+# Frontend (safe to expose in browser)
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key
-VITE_RAZORPAY_KEY_ID=rzp_live_your_key
 ```
 
 ### Development
@@ -300,18 +366,23 @@ npm run lint
 1. Create a Supabase project
 2. Run migrations in order:
 ```bash
-# Apply all 90+ migrations
-supabase db push
+# Apply all 94+ migrations
+supabase db push --linked
 ```
 
 ### Edge Functions Deployment
 
 ```bash
-# Deploy all Edge Functions
+# User management
 supabase functions deploy create-user --no-verify-jwt
 supabase functions deploy bulk-create-users --no-verify-jwt
-supabase functions deploy create-razorpay-order --no-verify-jwt
-supabase functions deploy razorpay-webhook --no-verify-jwt
+
+# HDFC SmartGateway payment functions
+supabase functions deploy create-hdfc-session
+supabase functions deploy hdfc-order-status --no-verify-jwt
+supabase functions deploy hdfc-webhook --no-verify-jwt
+
+# Platform management
 supabase functions deploy provision-tenant --no-verify-jwt
 supabase functions deploy log-error --no-verify-jwt
 supabase functions deploy admin-api --no-verify-jwt
@@ -322,9 +393,14 @@ supabase functions deploy admin-api --no-verify-jwt
 Set these in Supabase Dashboard → Settings → Edge Functions → Secrets:
 ```
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-RAZORPAY_KEY_ID=rzp_live_your_key
-RAZORPAY_KEY_SECRET=your_secret
-RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
+
+# HDFC SmartGateway
+HDFC_MERCHANT_ID=your_merchant_id
+HDFC_API_KEY=your_api_key
+HDFC_PAYMENT_PAGE_CLIENT_ID=your_client_id
+HDFC_BASE_URL=https://smartgateway.hdfcbank.com
+HDFC_API_BASE_URL=https://api.hdfcbank.com
+
 ALLOWED_ORIGIN=https://your-domain.com
 ```
 
@@ -345,9 +421,15 @@ ALLOWED_ORIGIN=https://your-domain.com
 - **State machine enforcement** — Clearance stages can only advance sequentially
 - **Fee self-verification block** — Students cannot mark their own fines as paid
 
+### Payment Security
+- **RSA signature verification** — HDFC webhook responses verified with public key
+- **Stale order auto-expiry** — Orders older than 30 minutes automatically expired
+- **Callback mode** — Stateless payment status check using `order_id` as implicit token
+- **No JWT required for callbacks** — Handles expired sessions after payment redirect
+- **Atomic payment processing** — Database-level locking prevents double-processing
+
 ### API Security
 - **Edge Functions validate JWTs** — Every call verified server-side
-- **HMAC webhook verification** — Razorpay webhooks use constant-time comparison
 - **Rate limiting** — 5 requests/minute + 20/day on payment endpoints
 - **Origin validation** — Edge Functions reject cross-origin requests
 - **Input sanitization** — Client-side XSS prevention on all user inputs
@@ -385,12 +467,12 @@ NOC-Portal/
 │   ├── lib/
 │   │   ├── api/                       # Domain-specific API modules
 │   │   │   ├── student.ts             # Student queries
-│   │   │   ├── faculty.ts             # Faculty operations
-│   │   │   ├── hod.ts                 # HOD operations
+│   │   │   ├── faculty.ts             # Faculty operations (batched upserts)
+│   │   │   ├── hod.ts                 # HOD operations (prerequisite filtering)
 │   │   │   ├── accounts.ts            # Financial operations
 │   │   │   ├── admin.ts               # Admin operations
 │   │   │   ├── library.ts             # Library dues
-│   │   │   ├── payment.ts             # Razorpay integration
+│   │   │   ├── payment.ts             # HDFC SmartGateway integration
 │   │   │   ├── promotion.ts           # Student promotion
 │   │   │   └── shared.ts              # Activity logs + utilities
 │   │   ├── supabase.ts                # Supabase client init
@@ -398,7 +480,8 @@ NOC-Portal/
 │   │   └── sanitize.ts               # Input sanitization utilities
 │   ├── pages/
 │   │   ├── DashboardRouter.tsx        # Role-based dashboard routing
-│   │   ├── Login.tsx                  # Auth page
+│   │   ├── Login.tsx                  # Auth page (OTP + password)
+│   │   ├── PaymentCallback.tsx        # HDFC payment return handler
 │   │   ├── LibraryDashboard.tsx       # Library management
 │   │   └── superadmin/                # Platform admin portal
 │   │       ├── SuperAdminApp.tsx       # SA routing
@@ -411,21 +494,22 @@ NOC-Portal/
 │   ├── functions/                     # Edge Functions (Deno)
 │   │   ├── create-user/               # Single user creation
 │   │   ├── bulk-create-users/         # CSV batch user creation (500/batch)
-│   │   ├── create-razorpay-order/     # Payment order creation
-│   │   ├── razorpay-webhook/          # Payment verification
+│   │   ├── create-hdfc-session/       # HDFC payment session creation
+│   │   ├── hdfc-order-status/         # Payment status check (callback_mode)
+│   │   ├── hdfc-webhook/              # Payment verification webhook
 │   │   ├── provision-tenant/          # New college onboarding
 │   │   ├── log-error/                 # Error reporting
 │   │   ├── admin-api/                 # Admin operations
 │   │   └── _shared/                   # Shared utilities (CORS, rate limit)
-│   └── migrations/                    # 90+ SQL migrations
+│   └── migrations/                    # 94+ SQL migrations
 │       ├── 0001_initial_schema.sql
 │       ├── ...
 │       ├── 0072_multi_tenant_schema.sql
 │       ├── 0078_critical_security_patches.sql
-│       ├── 0083_secure_bulk_rpcs.sql
-│       └── 0090_add_teacher_id_to_profiles.sql
-├── vercel.json                        # Vercel hosting config
-├── netlify.toml                       # Netlify hosting config
+│       ├── 0091_hdfc_smartgateway_migration.sql
+│       └── 0094_fix_payment_orders_and_bulk.sql
+├── vercel.json                        # Vercel hosting config (SPA routing)
+├── netlify.toml                       # Netlify hosting config (backup)
 ├── package.json
 ├── tsconfig.json
 └── tailwind.config.js
@@ -447,9 +531,11 @@ NOC-Portal/
 | `clearance_requests` | Clearance applications | 1 per student |
 | `student_dues` | College fee status | 1 per student |
 | `library_dues` | Library fine status | 1 per student |
-| `payment_orders` | Razorpay payment records | Variable |
+| `payment_orders` | HDFC payment records | Variable |
+| `attendance_fine_categories` | Fine slab configuration | 5-10 per department |
 | `activity_logs` | Audit trail | Grows continuously |
 | `platform_error_logs` | System error monitoring | Grows continuously |
+| `imported_teachers` | Cross-department teacher sharing | Variable |
 
 ---
 
@@ -457,8 +543,8 @@ NOC-Portal/
 
 ### For Students
 - ✅ No physical visits to 8+ departments
-- ✅ Real-time clearance status tracking
-- ✅ Online fine payments via UPI/Cards
+- ✅ Real-time clearance status tracking with pipeline visualization
+- ✅ Online fine payments via UPI/Cards (HDFC SmartGateway)
 - ✅ Auto-generated payment receipts
 - ✅ Transparent IA attendance visibility
 
@@ -466,19 +552,19 @@ NOC-Portal/
 - ✅ Bulk attendance upload via CSV
 - ✅ Automated compliance checking (85% + 2 IA)
 - ✅ Per-section student management
-- ✅ No manual paperwork
+- ✅ Batched database operations (no timeouts for large classes)
 
 ### For Administration
 - ✅ Complete audit trail of every action
 - ✅ Automated fine calculation and collection
-- ✅ Department-wise analytics
-- ✅ Role-based access control
+- ✅ Department-wise clearance analytics
+- ✅ Role-based access control with 10 distinct roles
 - ✅ Bulk student onboarding (500/batch)
 
 ### For Institutions
 - ✅ Zero infrastructure to manage (SaaS)
 - ✅ Works on any device with a browser
-- ✅ Complete data isolation between departments
+- ✅ Complete data isolation between departments and tenants
 - ✅ Revenue generation through fine collection
 - ✅ Paperless, eco-friendly process
 
@@ -488,7 +574,7 @@ NOC-Portal/
 
 | Scale | Architecture | Capacity |
 |-------|-------------|----------|
-| 1-10 colleges | Supabase Free/Pro + Vercel/Netlify | ~10,000 users |
+| 1-10 colleges | Supabase Free/Pro + Vercel | ~10,000 users |
 | 10-50 colleges | Supabase Pro ($25/mo) | ~50,000 users |
 | 50-100 colleges | Supabase Team ($599/mo) + Read Replicas | ~200,000 users |
 | 100+ colleges | Custom PostgreSQL + Connection Pooling | Unlimited |
