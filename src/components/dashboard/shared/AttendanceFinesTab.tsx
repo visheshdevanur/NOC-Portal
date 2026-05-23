@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Plus, Trash2, Search, X } from 'lucide-react';
+import { Pencil, Plus, Trash2, Search, X, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { 
   getStaffAttendanceFines, 
@@ -37,6 +37,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   const [reduceFineLoading, setReduceFineLoading] = useState(false);
   
   const [clearFineLoading, setClearFineLoading] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // FYC needs all departments to create categories globally
   const [allDepartments, setAllDepartments] = useState<any[]>([]);
@@ -178,8 +179,12 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       // Directly re-apply ALL category fines to matching students
       await reapplyAllCategoryFines();
       setShowCatModal(false);
+      setEditingCat(null);
       fetchAttendanceCategories();
       fetchAttendanceFines();
+      // Show success feedback
+      setSuccessMsg(editingCat ? '✅ Category updated & fines reapplied to all students!' : '✅ Category created & fines applied!');
+      setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
       console.error('Save category error:', err);
       setCatError(err.message || 'Failed to save category');
@@ -284,7 +289,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
             <div>
               <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
-                <Settings className="w-5 h-5 text-amber-500" />
+                <Pencil className="w-5 h-5 text-amber-500" />
                 Attendance Fine Categories
                 {isFycGlobal && <span className="text-xs font-medium bg-violet-500/10 text-violet-600 px-2 py-0.5 rounded-full ml-2">Sem 1 & 2 · All Departments</span>}
                 {role === 'hod' && <span className="text-xs font-medium bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full ml-2">Sem 3–8 · Your Department</span>}
@@ -303,6 +308,14 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                 Add Category
               </button>
           </div>
+
+          {/* Success feedback */}
+          {successMsg && (
+            <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2 text-emerald-600 text-sm font-medium">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              {successMsg}
+            </div>
+          )}
 
           {loadingCategories ? (
             <div className="p-4 text-center text-muted-foreground animate-pulse text-sm">Loading categories...</div>
@@ -333,10 +346,11 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                       <td className="p-3 text-right flex items-center justify-end gap-2">
                         <button
                           onClick={() => { setEditingCat(cat); setCatForm({ label: cat.label, minPct: String(cat.min_pct), maxPct: String(cat.max_pct), amount: String(cat.fine_amount) }); setCatError(null); setShowCatModal(true); }}
-                          className="p-2 rounded-xl bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white transition-colors"
-                          title="Edit"
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white transition-colors text-xs font-semibold"
+                          title="Edit Category"
                         >
-                          <Settings className="w-4 h-4" />
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
                         </button>
                         <button
                           onClick={() => handleDeleteCategory(cat)}
