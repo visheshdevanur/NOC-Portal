@@ -1147,7 +1147,7 @@ export default function HodDashboard() {
                         <th className="p-4 font-semibold">Roll No</th>
                         <th className="p-4 font-semibold">Subject</th>
                         <th className="p-4 font-semibold text-center">Attendance %</th>
-                        <th className="p-4 font-semibold text-center">Fine (\u20b9)</th>
+                        <th className="p-4 font-semibold text-center">Fine (₹)</th>
                         <th className="p-4 font-semibold text-center">Status</th>
                         <th className="p-4 font-semibold">Transaction ID</th>
                         <th className="p-4 font-semibold">Date</th>
@@ -1177,7 +1177,7 @@ export default function HodDashboard() {
                               <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
                             )}
                           </td>
-                          <td className="p-4 text-xs font-mono text-muted-foreground max-w-[120px] truncate" title={item.gateway_payment_id || ''}>
+                          <td className="p-4 text-xs font-mono text-muted-foreground">
                             {item.gateway_payment_id || '\u2014'}
                           </td>
                           <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
