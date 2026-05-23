@@ -122,9 +122,13 @@ export default function StudentDashboard() {
         remarks: null
       }));
       
-      const { error: enrollError } = await supabase.from('subject_enrollment').insert(enrollInserts);
+      // Use upsert to handle students who already have enrollments (re-applying)
+      const { error: enrollError } = await supabase
+        .from('subject_enrollment')
+        .upsert(enrollInserts, { onConflict: 'student_id,subject_id' })
+        .select();
       if (enrollError) {
-        console.error('Enrollment insert error:', enrollError);
+        console.error('Enrollment upsert error:', enrollError);
       }
 
       await refetch();

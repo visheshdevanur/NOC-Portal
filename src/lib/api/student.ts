@@ -15,9 +15,10 @@ export const getStudentClearanceRequest = async (studentId: string) => {
 };
 
 export const submitClearanceRequest = async (studentId: string) => {
+  // Use upsert so re-applying doesn't fail with duplicate key error
   const { data, error } = await supabase
     .from('clearance_requests')
-    .insert([{ student_id: studentId, current_stage: 'faculty_review', status: 'pending' }])
+    .upsert([{ student_id: studentId, current_stage: 'faculty_review', status: 'pending' }], { onConflict: 'student_id' })
     .select()
     .single();
     
