@@ -74,7 +74,27 @@ export const getTeacherSubjectsList = async (teacherId: string) => {
   return Array.from(subjectMap.values());
 };
 
-export const getIACountForSubject = async (subjectId: string, teacherId: string) => {
+export const getIACountForSubject = async (subjectId: string, teacherId: string, section?: string | null) => {
+  // Get student IDs in this section first, then count IAs only for those students
+  if (section) {
+    const { data: enrollments } = await supabase
+      .from('subject_enrollment')
+      .select('student_id, profiles!subject_enrollment_student_id_fkey(section)')
+      .eq('subject_id', subjectId)
+      .eq('teacher_id', teacherId);
+    const sectionStudentIds = (enrollments || []).filter((e: any) => (e.profiles?.section || 'Unassigned') === section).map((e: any) => e.student_id);
+    if (sectionStudentIds.length === 0) return 0;
+    const { data, error } = await supabase
+      .from('ia_attendance')
+      .select('ia_number')
+      .eq('subject_id', subjectId)
+      .eq('teacher_id', teacherId)
+      .in('student_id', sectionStudentIds)
+      .order('ia_number', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    return data && data.length > 0 ? data[0].ia_number : 0;
+  }
   const { data, error } = await supabase
     .from('ia_attendance')
     .select('ia_number')
@@ -86,13 +106,17 @@ export const getIACountForSubject = async (subjectId: string, teacherId: string)
   return data && data.length > 0 ? data[0].ia_number : 0;
 };
 
-export const getStudentsForSubject = async (subjectId: string, teacherId: string) => {
+export const getStudentsForSubject = async (subjectId: string, teacherId: string, section?: string | null) => {
   const { data, error } = await supabase
     .from('subject_enrollment')
     .select('student_id, profiles!subject_enrollment_student_id_fkey(id, full_name, roll_number, section, semester_id)')
     .eq('subject_id', subjectId)
     .eq('teacher_id', teacherId);
   if (error) throw error;
+  // Filter by section on the client side if specified
+  if (section) {
+    return (data || []).filter((s: any) => (s.profiles?.section || 'Unassigned') === section);
+  }
   return data;
 };
 
@@ -112,7 +136,7 @@ export const saveIAAttendance = async (
   return true;
 };
 
-export const getIAAttendanceForSubject = async (subjectId: string, teacherId: string) => {
+export const getIAAttendanceForSubject = async (subjectId: string, teacherId: string, section?: string | null) => {
   const { data, error } = await supabase
     .from('ia_attendance')
     .select('*, profiles!ia_attendance_student_id_fkey(full_name, roll_number, section)')
@@ -121,6 +145,10 @@ export const getIAAttendanceForSubject = async (subjectId: string, teacherId: st
     .order('ia_number')
     .order('created_at');
   if (error) throw error;
+  // Filter by section on client side if specified
+  if (section) {
+    return (data || []).filter((r: any) => (r.profiles?.section || 'Unassigned') === section);
+  }
   return data;
 };
 

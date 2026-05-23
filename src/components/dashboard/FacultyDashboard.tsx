@@ -143,18 +143,18 @@ export default function FacultyDashboard() {
   // Load IA data when subject changes
   useEffect(() => {
     if (selectedSubjectId && user) {
-      loadIAData(selectedSubjectId);
+      loadIAData(selectedSubjectId, iaSectionFilter);
     }
   }, [selectedSubjectId]);
 
-  const loadIAData = async (subjectId: string) => {
+  const loadIAData = async (subjectId: string, section?: string | null) => {
     if (!user) return;
     setIaLoading(true);
     try {
       const [count, records, studentsList] = await Promise.all([
-        getIACountForSubject(subjectId, user.id),
-        getIAAttendanceForSubject(subjectId, user.id),
-        getStudentsForSubject(subjectId, user.id)
+        getIACountForSubject(subjectId, user.id, section),
+        getIAAttendanceForSubject(subjectId, user.id, section),
+        getStudentsForSubject(subjectId, user.id, section)
       ]);
       setIaCount(count);
       setIaRecords(records as unknown as IARecord[]);
@@ -203,7 +203,7 @@ export default function FacultyDashboard() {
       setShowNewIAForm(false);
       
       // Reload data
-      await loadIAData(selectedSubjectId);
+      await loadIAData(selectedSubjectId, iaSectionFilter);
     } catch (err: any) {
       console.error('Error saving IA:', err);
       setSaveSuccess(`Error: ${err?.message || 'Failed to save'}`);
@@ -230,7 +230,7 @@ export default function FacultyDashboard() {
       setEditingIA(null);
       
       // Reload data
-      await loadIAData(selectedSubjectId);
+      await loadIAData(selectedSubjectId, iaSectionFilter);
     } catch (err: any) {
       console.error('Error saving IA edits:', err);
       setSaveSuccess(`Error: ${err?.message || 'Failed to update IA'}`);
