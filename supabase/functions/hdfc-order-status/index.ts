@@ -160,11 +160,17 @@ serve(async (req) => {
 
     // If successful, process atomically
     if (isSuccess && orderRecord.status !== 'paid') {
-      await adminClient.rpc('process_payment_webhook', {
+      const { data: rpcResult, error: rpcError } = await adminClient.rpc('process_payment_webhook', {
         p_razorpay_order_id: order_id,
         p_razorpay_payment_id: paymentId || `HDFC_${order_id}`,
         p_amount_paid: amountPaid,
       })
+
+      if (rpcError) {
+        log({ level: 'ERROR', fn: 'hdfc-order-status', action: 'rpc_failed', error: rpcError.message, meta: { order_id } })
+      } else {
+        log({ level: 'INFO', fn: 'hdfc-order-status', action: 'rpc_success', meta: { order_id, result: JSON.stringify(rpcResult) } })
+      }
     }
 
     // If failed, mark as failed
