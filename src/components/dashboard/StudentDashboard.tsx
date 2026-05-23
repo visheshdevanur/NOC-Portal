@@ -255,11 +255,11 @@ export default function StudentDashboard() {
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(
     e => e.status === 'completed' || e.attendance_fee_verified === true
   ), [enrollments]);
-  const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : false, [libraryDue]);
+  const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
   const isLibraryPermitted = useMemo(() => libraryDue ? (libraryDue.has_dues && libraryDue.permitted) : false, [libraryDue]);
   const libraryPass = allLibraryCleared || isLibraryPermitted;
   
-  const allDeptCleared = useMemo(() => deptClearances.length > 0 && deptClearances.every(d => d.status === 'completed'), [deptClearances]);
+  const allDeptCleared = useMemo(() => deptClearances.length === 0 || deptClearances.every(d => d.status === 'completed'), [deptClearances]);
   const isDeptPermitted = useMemo(() => deptClearances.length > 0 && deptClearances.some(d => d.status === 'pending' && (d).permitted_until && new Date((d).permitted_until) > new Date()), [deptClearances]);
   const deptPass = allDeptCleared || isDeptPermitted;
   
@@ -754,13 +754,24 @@ export default function StudentDashboard() {
                Accounts & College Fees
             </h2>
              <span className="bg-primary/10 text-primary font-medium text-xs px-3 py-1 rounded-full uppercase tracking-wider">
-              {deptClearances.filter(d => d.status === 'completed').length} / {deptClearances.length === 0 ? 1 : deptClearances.length} Cleared
+              {allDeptCleared ? `${Math.max(deptClearances.length, 1)} / ${Math.max(deptClearances.length, 1)} Cleared` : `${deptClearances.filter(d => d.status === 'completed').length} / ${deptClearances.length} Cleared`}
             </span>
           </div>
           
           <div className="flex-1 space-y-4">
             {deptClearances.length === 0 ? (
-               <p className="text-muted-foreground text-sm italic text-center py-8">No college dues recorded.</p>
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border border-border bg-emerald-500/5 hover:shadow-md transition-shadow">
+                 <div className="mb-3 sm:mb-0">
+                   <h3 className="font-semibold text-foreground capitalize text-lg">Central College Dues</h3>
+                   <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-1 font-medium">No outstanding dues — Cleared</p>
+                 </div>
+                 <div className="flex items-center gap-3">
+                   <div className="bg-background p-2 rounded-xl shadow-sm border border-emerald-500/30">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                   </div>
+                   <span className="text-sm font-bold text-emerald-500">Cleared</span>
+                 </div>
+               </div>
             ) : deptClearances.map((dept: any) => {
               const isPermitActive = dept.status === 'pending' && dept.permitted_until && new Date(dept.permitted_until) > new Date();
               return (
@@ -802,22 +813,23 @@ export default function StudentDashboard() {
                Library Clearance
             </h2>
              <span className="bg-primary/10 text-primary font-medium text-xs px-3 py-1 rounded-full uppercase tracking-wider">
-               {allLibraryCleared ? '1 / 1 Cleared' : '0 / 1 Cleared'}
+               {allLibraryCleared ? '1 / 1 Cleared' : isLibraryPermitted ? '0 / 1 Permitted' : '0 / 1 Cleared'}
             </span>
           </div>
           
           <div className="flex-1 space-y-4">
-            {!libraryDue ? (
-               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border-2 border-amber-500/20 bg-amber-500/5 hover:shadow-md transition-shadow">
+            {!libraryDue || !libraryDue.has_dues ? (
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-5 rounded-2xl border border-border bg-emerald-500/5 hover:shadow-md transition-shadow">
                  <div className="mb-3 sm:mb-0">
-                   <h3 className="font-semibold text-foreground capitalize text-lg">Library Clearance</h3>
-                   <p className="text-sm text-amber-600 font-medium mt-1">Pending — Awaiting library review</p>
+                   <h3 className="font-semibold text-foreground capitalize text-lg">Library Returns</h3>
+                   <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-1 font-medium">No outstanding dues — Cleared</p>
+                   {libraryDue?.remarks && <p className="text-xs text-muted-foreground mt-1.5 italic">Remarks: {libraryDue.remarks}</p>}
                  </div>
                  <div className="flex items-center gap-3">
-                   <div className="bg-background p-2 rounded-xl shadow-sm border border-amber-500/20">
-                    <Clock className="w-6 h-6 text-amber-500" />
+                   <div className="bg-background p-2 rounded-xl shadow-sm border border-emerald-500/30">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500" />
                    </div>
-                   <span className="text-sm font-bold text-amber-500">Pending</span>
+                   <span className="text-sm font-bold text-emerald-500">Cleared</span>
                  </div>
                </div>
             ) : libraryDue.has_dues && libraryDue.permitted ? (
