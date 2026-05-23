@@ -115,16 +115,15 @@ export const updateStudentDueFee = async (dueId: string, fineAmount: number, pai
  */
 export const upsertStudentDue = async (dueId: string | null, studentId: string, updates: Record<string, any>) => {
   if (dueId) {
+    // Existing row — direct update is fine (RLS USING passes for existing rows)
     const { error } = await supabase.from('student_dues').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', dueId);
     if (error) throw error;
   } else {
-    // Get caller's tenant_id for RLS compliance
-    const { data: me } = await supabase.from('profiles').select('tenant_id').eq('id', (await supabase.auth.getUser()).data.user?.id || '').single();
-    const tenantId = me?.tenant_id || null;
-    const { error } = await supabase.from('student_dues').upsert(
-      { student_id: studentId, tenant_id: tenantId, ...updates, updated_at: new Date().toISOString() },
-      { onConflict: 'student_id' }
-    );
+    // No existing row — use SECURITY DEFINER RPC to bypass RLS
+    const { error } = await supabase.rpc('rpc_upsert_student_due', {
+      p_student_id: studentId,
+      p_updates: updates,
+    });
     if (error) throw error;
   }
 };

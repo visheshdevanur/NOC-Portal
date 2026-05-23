@@ -50,18 +50,34 @@ export const getLibraryDues = async () => {
 };
 
 export const updateLibraryDue = async (studentId: string, hasDues: boolean, fineAmount: number, paidAmount: number = 0, remarks: string) => {
-  const { data, error } = await supabase.from('library_dues').upsert({ student_id: studentId, has_dues: hasDues, fine_amount: fineAmount, paid_amount: paidAmount, remarks }, { onConflict: 'student_id' }).select('*, profiles!library_dues_student_id_fkey(full_name)').single();
-  if (error) throw error;
+  // Use RPC to bypass RLS for new students without a library_dues row
+  const { error: rpcErr } = await supabase.rpc('rpc_upsert_library_due', {
+    p_student_id: studentId,
+    p_has_dues: hasDues,
+    p_fine_amount: fineAmount,
+    p_paid_amount: paidAmount,
+    p_remarks: remarks || null,
+    p_permitted: false,
+  });
+  if (rpcErr) throw rpcErr;
+  // Fetch the updated row for logging
+  const { data } = await supabase.from('library_dues').select('*, profiles!library_dues_student_id_fkey(full_name)').eq('student_id', studentId).limit(1).maybeSingle();
   const studentName = data?.profiles?.full_name || 'student';
   logActivity(hasDues ? 'Assigned Library Fine' : 'Cleared Library Fine', `Amount: ₹${fineAmount} for ${studentName}`);
   return data;
 };
 
 export const setLibraryDue = async (studentId: string) => {
-  // First ensure a row exists via upsert
-  await supabase.from('library_dues').upsert({ student_id: studentId, has_dues: true, permitted: false }, { onConflict: 'student_id' });
-  const { data, error } = await supabase.from('library_dues').select('*, profiles!library_dues_student_id_fkey(full_name)').eq('student_id', studentId).limit(1).maybeSingle();
+  const { error } = await supabase.rpc('rpc_upsert_library_due', {
+    p_student_id: studentId,
+    p_has_dues: true,
+    p_fine_amount: 0,
+    p_paid_amount: 0,
+    p_remarks: null,
+    p_permitted: false,
+  });
   if (error) throw error;
+  const { data } = await supabase.from('library_dues').select('*, profiles!library_dues_student_id_fkey(full_name)').eq('student_id', studentId).limit(1).maybeSingle();
   logActivity('Set Library Due', `Blocked ${data?.profiles?.full_name || 'student'}`);
   return data;
 };
@@ -76,10 +92,16 @@ export const permitLibraryDue = async (studentId: string) => {
 };
 
 export const clearLibraryDue = async (studentId: string) => {
-  const { error: upErr } = await supabase.from('library_dues').update({ has_dues: false, permitted: false, fine_amount: 0, paid_amount: 0, remarks: null }).eq('student_id', studentId);
-  if (upErr) throw upErr;
-  const { data, error } = await supabase.from('library_dues').select('*, profiles!library_dues_student_id_fkey(full_name)').eq('student_id', studentId).limit(1).maybeSingle();
+  const { error } = await supabase.rpc('rpc_upsert_library_due', {
+    p_student_id: studentId,
+    p_has_dues: false,
+    p_fine_amount: 0,
+    p_paid_amount: 0,
+    p_remarks: null,
+    p_permitted: false,
+  });
   if (error) throw error;
+  const { data } = await supabase.from('library_dues').select('*, profiles!library_dues_student_id_fkey(full_name)').eq('student_id', studentId).limit(1).maybeSingle();
   logActivity('Cleared Library Due', `Cleared dues for ${data?.profiles?.full_name || 'student'}`);
   return data;
 };
