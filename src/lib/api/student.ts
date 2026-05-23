@@ -59,9 +59,9 @@ export const getStudentLibraryDues = async (studentId: string) => {
     .from('library_dues')
     .select('*')
     .eq('student_id', studentId)
-    .single();
-  if (error && error.code !== 'PGRST116') throw error; // ignore no rows
-  return data;
+    .maybeSingle();
+  if (error) throw error;
+  return data; // null if no row exists (new student)
 };
 
 export const getStudentByUSN = async (usn: string, departmentId: string) => {

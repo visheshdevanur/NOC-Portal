@@ -118,8 +118,13 @@ export const upsertStudentDue = async (dueId: string | null, studentId: string, 
     const { error } = await supabase.from('student_dues').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', dueId);
     if (error) throw error;
   } else {
-    // No existing dues row — upsert to handle duplicates safely
-    const { error } = await supabase.from('student_dues').upsert({ student_id: studentId, ...updates, updated_at: new Date().toISOString() }, { onConflict: 'student_id' });
+    // Get caller's tenant_id for RLS compliance
+    const { data: me } = await supabase.from('profiles').select('tenant_id').eq('id', (await supabase.auth.getUser()).data.user?.id || '').single();
+    const tenantId = me?.tenant_id || null;
+    const { error } = await supabase.from('student_dues').upsert(
+      { student_id: studentId, tenant_id: tenantId, ...updates, updated_at: new Date().toISOString() },
+      { onConflict: 'student_id' }
+    );
     if (error) throw error;
   }
 };

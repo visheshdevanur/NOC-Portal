@@ -327,15 +327,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                       <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.min_pct}%</span></td>
                       <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.max_pct}%</span></td>
                       <td className="p-3 text-center font-bold text-amber-600">₹{cat.fine_amount}</td>
-                      <td className="p-3 text-right flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => { setEditingCat(cat); setCatForm({ label: cat.label, minPct: String(cat.min_pct), maxPct: String(cat.max_pct), amount: String(cat.fine_amount) }); setCatError(null); setShowCatModal(true); }}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white transition-colors text-xs font-semibold"
-                          title="Edit Category"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                          Edit
-                        </button>
+                      <td className="p-3 text-right">
                         <button
                           onClick={() => handleDeleteCategory(cat)}
                           className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors"
