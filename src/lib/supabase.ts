@@ -17,6 +17,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     flowType: 'pkce',       // OAuth 2.1 standard — prevents token interception
     autoRefreshToken: true,
     persistSession: true,
+    // Use a unique storage key to prevent cross-tab lock collisions.
+    // The "Lock not released within 5000ms" warning happens when multiple
+    // Supabase auth calls race during component re-renders. This is cosmetic —
+    // the library auto-recovers by forcefully acquiring the lock.
+    storageKey: 'sb-noc-auth-token',
+    detectSessionInUrl: true,
   },
 });
 
