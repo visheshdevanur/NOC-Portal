@@ -118,8 +118,8 @@ export const upsertStudentDue = async (dueId: string | null, studentId: string, 
     const { error } = await supabase.from('student_dues').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', dueId);
     if (error) throw error;
   } else {
-    // No existing dues row — create one
-    const { error } = await supabase.from('student_dues').insert({ student_id: studentId, ...updates, updated_at: new Date().toISOString() });
+    // No existing dues row — upsert to handle duplicates safely
+    const { error } = await supabase.from('student_dues').upsert({ student_id: studentId, ...updates, updated_at: new Date().toISOString() }, { onConflict: 'student_id' });
     if (error) throw error;
   }
 };
