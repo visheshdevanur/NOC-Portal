@@ -194,74 +194,35 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
    */
   const reapplyAllCategoryFines = async () => {
     try {
-      // 1. Fetch all current categories for this scope
-      let cats: any[] = [];
+      // Use the server-side RPC which handles ALL students correctly
+      // (not just status='rejected') and respects tenant isolation
       if (isFycGlobal && allDepartments.length > 0) {
-        const { data } = await supabase
-          .from('attendance_fine_categories')
-          .select('*')
-          .eq('department_id', allDepartments[0].id)
-          .eq('is_first_year', true);
-        cats = data || [];
-      } else if (departmentId) {
-        const isFirstYear = role === 'fyc';
-        const { data } = await supabase
-          .from('attendance_fine_categories')
-          .select('*')
-          .eq('department_id', departmentId)
-          .eq('is_first_year', isFirstYear);
-        cats = data || [];
-      }
-
-      if (cats.length === 0) {
-        console.log('No categories to apply');
-        return;
-      }
-
-      // 2. Fetch all fined/rejected students (same query as the list)
-      let students: any[] = [];
-      if (departmentId) {
-        students = await getStaffAttendanceFines(departmentId);
-      } else {
-        const { data } = await supabase
-          .from('subject_enrollment')
-          .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
-          .or('status.eq.rejected,attendance_fee.gt.0');
-        students = data || [];
-      }
-
-      // 3. Filter by semester (same logic as the display filter)
-      const filtered = students.filter((item: any) => {
-        const semName = item.profiles?.semesters?.name || '';
-        if (role === 'staff' || role === 'hod') return !isFirstYearSem(semName);
-        if (role === 'clerk' || role === 'fyc') return isFirstYearSem(semName);
-        return true;
-      });
-
-      console.log(`Reapplying fines: ${cats.length} categories, ${filtered.length} students`);
-
-      // 4. For each student, find matching category and update fine
-      let updated = 0;
-      for (const student of filtered) {
-        if (student.attendance_fee_verified) continue; // Skip already paid
-        const pct = student.attendance_pct || 0;
-        const matchingCat = cats.find((c: any) => pct >= c.min_pct && pct <= c.max_pct);
-        const newFee = matchingCat ? matchingCat.fine_amount : 0;
-
-        // Only update if fine changed
-        if (student.attendance_fee !== newFee) {
-          const { error } = await supabase
-            .from('subject_enrollment')
-            .update({ attendance_fee: newFee, attendance_fee_verified: false })
-            .eq('id', student.id);
-          if (error) {
-            console.warn(`Failed to update fine for ${student.profiles?.full_name}:`, error.message);
-          } else {
-            updated++;
+        // FYC: apply to ALL departments for first-year students
+        let totalUpdated = 0;
+        for (const dept of allDepartments) {
+          try {
+            const { data } = await supabase.rpc('rpc_apply_mass_fines', {
+              p_department_id: dept.id,
+              p_is_first_year: true,
+            });
+            totalUpdated += (data as any)?.updated || 0;
+          } catch (err: any) {
+            console.warn(`Failed to apply fines for ${dept.name}:`, err.message);
           }
         }
+        console.log(`FYC: Total fines updated across all departments: ${totalUpdated}`);
+      } else if (departmentId) {
+        const isFirstYear = role === 'fyc';
+        const { data, error } = await supabase.rpc('rpc_apply_mass_fines', {
+          p_department_id: departmentId,
+          p_is_first_year: isFirstYear,
+        });
+        if (error) {
+          console.error('rpc_apply_mass_fines failed:', error.message);
+        } else {
+          console.log('Fines reapplied via RPC:', data);
+        }
       }
-      console.log(`Fines reapplied: ${updated} students updated out of ${filtered.length}`);
     } catch (err) {
       console.error('reapplyAllCategoryFines failed:', err);
     }
