@@ -177,14 +177,15 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
         }
       }
       // Directly re-apply ALL category fines to matching students
-      await reapplyAllCategoryFines();
+      const updatedCount = await reapplyAllCategoryFines();
       setShowCatModal(false);
       setEditingCat(null);
       fetchAttendanceCategories();
       fetchAttendanceFines();
-      // Show success feedback
-      setSuccessMsg(editingCat ? '✅ Category updated & fines reapplied to all students!' : '✅ Category created & fines applied!');
-      setTimeout(() => setSuccessMsg(null), 4000);
+      // Show success feedback with actual count
+      const action = editingCat ? 'updated' : 'created';
+      setSuccessMsg(`✅ Category ${action} — ${updatedCount} student fine(s) applied!`);
+      setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err: any) {
       console.error('Save category error:', err);
       setCatError(err.message || 'Failed to save category');
@@ -193,44 +194,27 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     }
   };
 
-  /**
-   * Directly update all rejected students' fines based on current categories.
-   * This bypasses DB triggers/RPCs and does explicit updates from the frontend.
-   */
-  const reapplyAllCategoryFines = async () => {
-    try {
-      // Use the server-side RPC which handles ALL students correctly
-      // (not just status='rejected') and respects tenant isolation
-      if (isFycGlobal && allDepartments.length > 0) {
-        // FYC: apply to ALL departments for first-year students
-        let totalUpdated = 0;
-        for (const dept of allDepartments) {
-          try {
-            const { data } = await supabase.rpc('rpc_apply_mass_fines', {
-              p_department_id: dept.id,
-              p_is_first_year: true,
-            });
-            totalUpdated += (data as any)?.updated || 0;
-          } catch (err: any) {
-            console.warn(`Failed to apply fines for ${dept.name}:`, err.message);
-          }
-        }
-        console.log(`FYC: Total fines updated across all departments: ${totalUpdated}`);
-      } else if (departmentId) {
-        const isFirstYear = role === 'fyc';
+  const reapplyAllCategoryFines = async (): Promise<number> => {
+    let totalUpdated = 0;
+    if (isFycGlobal && allDepartments.length > 0) {
+      for (const dept of allDepartments) {
         const { data, error } = await supabase.rpc('rpc_apply_mass_fines', {
-          p_department_id: departmentId,
-          p_is_first_year: isFirstYear,
+          p_department_id: dept.id,
+          p_is_first_year: true,
         });
-        if (error) {
-          console.error('rpc_apply_mass_fines failed:', error.message);
-        } else {
-          console.log('Fines reapplied via RPC:', data);
-        }
+        if (error) throw new Error(`Failed for ${dept.name}: ${error.message}`);
+        totalUpdated += (data as any)?.updated || 0;
       }
-    } catch (err) {
-      console.error('reapplyAllCategoryFines failed:', err);
+    } else if (departmentId) {
+      const isFirstYear = role === 'fyc';
+      const { data, error } = await supabase.rpc('rpc_apply_mass_fines', {
+        p_department_id: departmentId,
+        p_is_first_year: isFirstYear,
+      });
+      if (error) throw new Error(error.message);
+      totalUpdated = (data as any)?.updated || 0;
     }
+    return totalUpdated;
   };
 
 
