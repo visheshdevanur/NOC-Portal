@@ -388,7 +388,7 @@ npm run lint
 1. Create a Supabase project
 2. Run migrations in order:
 ```bash
-# Apply all 94+ migrations
+# Apply all 102+ migrations
 supabase db push --linked
 ```
 
@@ -425,6 +425,425 @@ HDFC_API_BASE_URL=https://api.hdfcbank.com
 
 ALLOWED_ORIGIN=https://your-domain.com
 ```
+
+---
+
+## 📖 User Manual
+
+This section provides step-by-step instructions for every user role in the NOC Portal.
+
+---
+
+### 🔑 Logging In
+
+1. Open the portal URL in any browser (Chrome, Firefox, Edge, Safari)
+2. Enter your **email** and **password** provided by your institution admin
+3. Click **Sign In**
+4. You will be automatically redirected to your role-specific dashboard
+
+> **Session Timeout:** You will be automatically logged out after 15 minutes of inactivity. A warning appears at 12 minutes.
+
+> **Theme:** Click the ⚙️ **Settings** icon (top-right) to switch between Dark and Light mode.
+
+> **Report an Issue:** If you encounter a bug, click the 🚩 **Report** button in the top navigation bar.
+
+---
+
+### 🎓 Student Dashboard
+
+The Student Dashboard is your one-stop portal for tracking clearance status, paying fines, and downloading your No Due Certificate.
+
+#### Viewing Your Clearance Status
+
+After logging in, you will see the **Clearance Pipeline Match** with four stages:
+
+| Stage | Icon | What It Means |
+|-------|------|---------------|
+| **Faculty** | 📘 IA + Attendance | Your subject-wise attendance and IA status |
+| **Library** | 📖 Books & Fines | Whether you have pending library books or fines |
+| **Accounts** | 💰 College Fees | Whether your college dues are cleared |
+| **HOD Approval** | 👤 Final Sign-off | Final clearance from your Head of Department |
+
+Each stage shows a ✅ green check when cleared, or a ⏳ pending/🔴 blocked indicator when not.
+
+#### Applying for Clearance
+
+1. Click **"Apply for Clearance"** button
+2. The system automatically enrolls you in all subjects for your semester
+3. Your clearance request enters the pipeline at **Faculty Review** stage
+
+> **Note:** You only need to apply once. Re-clicking the button is safe — it won't create duplicates.
+
+#### Understanding Academic Eligibility
+
+Under **Academic Eligibility**, you'll see each subject with:
+
+| Field | Requirement |
+|-------|-------------|
+| **Attendance** | Must be ≥ 85% (marked by your faculty) |
+| **IA Attendance** | Must be marked **Present** in at least 2 out of 3 Internal Assessments |
+
+- ✅ **Eligible** — You meet both requirements
+- ❌ **Not Eligible** — You are below the threshold; a fine may be imposed
+
+#### Paying Attendance Fines
+
+If your attendance is below 85%, a fine is auto-calculated:
+
+1. Scroll to the **Attendance Dues** section
+2. You'll see each subject with a pending fine amount
+3. Click **"Pay ₹XXX"** to pay individually, OR click **"Pay All"** to pay all fines at once
+4. You'll be redirected to **HDFC SmartGateway** — pay via UPI, Card, or Net Banking
+5. After payment, you're redirected back. The subject is automatically marked as **Cleared**
+
+> **Bulk Payment:** Use "Pay All" to settle all pending fines in a single transaction.
+
+#### Viewing Library & College Dues
+
+- **Library Section:** Shows "Cleared" (green) or "Pending" / "Permitted"
+- **College Dues Section:** Shows "Cleared", "Pending", or "Permitted"
+- "Permitted" means the staff has temporarily allowed your clearance to proceed despite pending dues
+
+#### Downloading Your NOC Report
+
+Once **all four stages** are cleared:
+
+1. A **"Download NOC Report"** button appears
+2. Click to generate a PDF receipt with your clearance details
+3. The PDF includes: your name, USN, department, semester, clearance date, and approval status
+
+---
+
+### 👨‍🏫 Faculty / Teacher Dashboard
+
+The Faculty Dashboard has two tabs: **Student Clearance** and **Manage IAs**.
+
+#### Tab 1: Student Clearance
+
+This tab lets you manage attendance percentages for students enrolled in your subjects.
+
+**Navigation:** Department → Semester → Section → Subject
+
+1. Select your **Department** from the cards
+2. Select the **Semester**
+3. Select the **Section**
+4. Select the **Subject**
+5. You'll see all enrolled students with their current attendance %
+
+**Setting Attendance Individually:**
+1. Type the attendance percentage (0–100) in the input field next to each student
+2. Click the **Save** button (checkmark icon)
+3. The system automatically evaluates:
+   - **≥ 85% + 2 IAs present** → Status: ✅ Cleared
+   - **< 85%** → Status: ❌ Rejected (fine auto-calculated)
+   - **< 2 IAs present** → Status: ❌ Rejected (insufficient IA attendance)
+
+**Bulk Attendance via CSV:**
+1. Click **"Download Template"** to get a pre-filled CSV with student names and roll numbers
+2. Fill in `total_classes` and `attended_classes` columns
+3. Click **"Upload CSV"** and select the filled file
+4. All attendance percentages are calculated and statuses are auto-assigned
+
+#### Tab 2: Manage IAs (Internal Assessments)
+
+**Navigation:** Department → Semester → Section → Subject
+
+1. Navigate to your subject (same hierarchy)
+2. You'll see the IA panel showing **X / 3 IAs recorded**
+3. Click **"+ Add IA-X"** to record a new IA
+4. All students default to **Present** — toggle to **Absent** as needed
+5. Click **"Save IA-X"**
+
+> **Maximum:** 3 IAs per subject per section. Once all 3 are recorded, the button shows "Max 3 IAs Reached".
+
+**Editing a Previous IA:**
+1. Click the chevron (▼) next to an existing IA to expand it
+2. Click the ✏️ **Edit** icon
+3. Modify attendance (Present/Absent)
+4. Click **"Save"**
+
+**IA CSV Upload:**
+1. Click **"Download Template"** → get CSV with `roll_number, student_name, status`
+2. Fill status column with `Present` or `Absent`
+3. Click **"Upload CSV"**
+
+> **Section Isolation:** Each section's IAs are tracked independently. Even if you teach the same subject to Sections A and C, IAs are completely separate.
+
+---
+
+### 🏢 Staff Dashboard
+
+The Staff Dashboard provides department-level operations for managing students, subjects, teachers, and attendance fines.
+
+#### Tabs Overview
+
+| Tab | Purpose |
+|-----|---------|
+| **Student Management** | View all students in your department, filter by semester/section |
+| **Subject Management** | View and manage subjects assigned to your department |
+| **Teacher Assignment** | Assign teachers to subjects and sections |
+| **Student Dues** | View and manage college fee dues for your department's students |
+| **Attendance Fines** | Configure fine slabs and process bulk attendance fines |
+
+#### Student Management
+- View all students filtered by semester and section
+- See clearance status, roll number, section, and semester
+
+#### Subject Management
+- View all subjects with their codes, semesters, and assigned teachers
+- Add new subjects for your department
+
+#### Teacher Assignment
+- Assign/reassign teachers to specific subject + section combinations
+- View current assignments
+
+#### Student Dues
+- View pending/cleared college dues for all students
+- Set due, clear due, or permit dues for individual students
+
+#### Attendance Fines
+- **Configure Fine Categories:** Set fine slabs (e.g., 75–84% → ₹500, 65–74% → ₹1000)
+- **Process Bulk Fines:** Upload CSV with student attendance data
+- Fines are auto-calculated based on the configured slabs
+
+---
+
+### 📋 Clerk Dashboard
+
+The Clerk Dashboard is similar to the Staff Dashboard but is specifically scoped to **Semester 1 and 2** students.
+
+#### Key Capabilities
+- Manage students only in **Sem 1 and Sem 2** (first-year students)
+- Upload bulk student data via CSV
+- Assign subjects and teachers to sections
+- View and manage student dues
+
+> **Scope Restriction:** Clerks cannot see or manage students in Semester 3 and above. Those students are managed by Staff/HOD.
+
+---
+
+### 👔 HOD (Head of Department) Dashboard
+
+The HOD Dashboard is the final clearance authority for students in your department.
+
+#### Tabs Overview
+
+| Tab | Purpose |
+|-----|---------|
+| **Clearance Approvals** | Approve/reject final clearance for eligible students |
+| **Student Overview** | View all students with their clearance pipeline status |
+| **Staff & Teachers** | View staff members and teacher assignments |
+| **Student Dues** | Manage college fee dues, permit/clear/set dues |
+| **Cash Fine Clearing** | Clear fines collected via cash (bypasses online payment) |
+| **Activity Logs** | View all staff actions in your department |
+| **Attendance Fines** | Configure and manage fine categories |
+
+#### Final Clearance Approval
+
+Only students who have **all three prerequisites** met appear in the Clearance Approvals tab:
+
+1. ✅ All subjects cleared by faculty (attendance ≥ 85% + 2 IAs, or fine paid)
+2. ✅ Library dues cleared or permitted
+3. ✅ College dues cleared or permitted
+
+**To approve:**
+1. Navigate to **Clearance Approvals**
+2. Review the student's clearance summary
+3. Click **"Approve"** — this marks the student as **Fully Cleared**
+
+> **Cash Fine Clearing:** If a student pays a fine in cash (not online), go to **Cash Fine Clearing** tab, find the student, and click **"Clear"** to bypass the online payment requirement.
+
+#### Student Dues Management
+
+- **Set Due:** Marks a student as having pending college dues (status → Pending)
+- **Permit:** Temporarily allows the student to proceed with clearance despite pending dues (status → Permitted). You can set a permit duration (e.g., 2 days, 7 days)
+- **Clear:** Marks the student's dues as fully settled (status → Completed)
+
+---
+
+### 💰 Accounts Dashboard
+
+The Accounts Dashboard manages college-wide financial dues across all departments.
+
+#### Tabs Overview
+
+| Tab | Purpose |
+|-----|---------|
+| **All Student Dues** | View and manage dues for every student across all departments |
+| **Approved/Cleared** | View students whose dues are marked as completed |
+| **Attendance Fines** | Configure fine categories by department |
+
+#### Managing Student Dues
+
+Each student row shows: Name, Roll Number, Department, Semester, Section, Fine Amount, Paid Amount, Status.
+
+**Actions (via dropdown menu per student):**
+
+| Action | Effect |
+|--------|--------|
+| **Set Due** | Sets status to **Pending** with the specified fine amount |
+| **Permit** | Sets status to **Permitted** for a specified duration (e.g., 2 days). Student can proceed with clearance |
+| **Clear** | Sets status to **Completed**. College dues are fully settled |
+| **Edit Fee** | Modify the fine amount and paid amount |
+
+**Bulk Operations via CSV:**
+1. Download the student dues template
+2. Fill in roll numbers and fine amounts
+3. Upload — all matching students are updated automatically
+
+> **Status Reflection:** All changes made here are immediately visible on the student's dashboard.
+
+---
+
+### 📚 Library Dashboard
+
+The Library Dashboard manages library dues (unreturned books, fines) for all students.
+
+#### Student List
+
+Each student shows: Name, Roll Number, Department, Status (Has Dues / No Dues / Permitted).
+
+#### Actions (via dropdown menu per student)
+
+| Action | Effect |
+|--------|--------|
+| **Set Due** | Marks student as having pending library dues (blocks clearance) |
+| **Permit** | Permits the student to proceed with clearance despite library dues |
+| **Clear** | Clears all library dues for the student |
+| **Set Fine** | Assigns a specific fine amount for library violations |
+
+**Bulk Operations via CSV:**
+1. Upload a CSV with roll numbers of students who have **NOT** returned books
+2. All listed students are marked as "Has Dues"
+3. All other students are automatically marked as "Cleared"
+
+> **Status Reflection:** Changes are immediately reflected on the student's dashboard under the "Library" stage.
+
+---
+
+### 🎓 FYC (First Year Coordinator) Dashboard
+
+The FYC Dashboard provides cross-department management specifically for **Semester 1 and 2** students.
+
+#### Tabs Overview
+
+| Tab | Purpose |
+|-----|---------|
+| **Student Overview** | View all first-year students across all departments |
+| **Clearance Approvals** | Final clearance for first-year students (same role as HOD but for Sem 1-2) |
+| **Student Dues** | Manage college dues for first-year students |
+| **Activity Logs** | View staff actions related to first-year students |
+| **Attendance Fines** | Configure fine categories for first-year semesters |
+
+> **Key Difference from HOD:** FYC manages students across **all departments** but only for Sem 1 and Sem 2, while HOD manages **one department** across all semesters.
+
+---
+
+### ⚙️ Admin Dashboard
+
+The Admin Dashboard provides full institutional control.
+
+#### Tabs Overview
+
+| Tab | Purpose |
+|-----|---------|
+| **Users** | View, search, and manage all user accounts |
+| **Departments** | Create and manage academic departments |
+| **Semesters** | Create semesters within departments |
+| **Subjects** | Create subjects and assign them to semesters |
+| **Teacher Assignment** | Assign teachers to subjects across departments |
+| **Bulk Import** | Upload student and teacher data via CSV (up to 500 per batch) |
+
+#### Creating Users
+
+1. Go to **Users** tab
+2. Click **"+ Add User"**
+3. Fill in: Full Name, Email, Password, Role, Department, Semester, Section
+4. Click **Create** — the user is created in Supabase Auth + profiles table
+
+#### Bulk User Import
+
+1. Click **"Import CSV"**
+2. Download the template → fill in student/teacher details
+3. Upload → up to **500 users created per batch**
+4. For students: `student_dues` and `library_dues` rows are automatically created
+
+#### Subject Setup Workflow
+
+1. Create **Department** (e.g., "Computer Science")
+2. Create **Semesters** within the department (e.g., "1", "2", "3"...)
+3. Create **Subjects** within semesters (e.g., "Data Structures", code: "CS301")
+4. **Assign Teachers** to subjects + sections
+
+---
+
+### 🌐 Super Admin Dashboard
+
+The Super Admin manages the platform at the multi-tenant level.
+
+#### Capabilities
+
+| Feature | Description |
+|---------|-------------|
+| **Tenant Management** | Create new college tenants, set quotas, activate/deactivate |
+| **Error Logs** | View platform-wide error logs with severity filtering |
+| **Issue Tracker** | View and manage user-reported issues across all tenants |
+| **System Health** | Monitor tenant usage and database metrics |
+
+#### Creating a New Tenant (College)
+
+1. Click **"+ Create Tenant"**
+2. Fill in: College Name, Slug, Admin Email, Plan, Max Users
+3. Click **Create** — provisions a new isolated tenant with its own admin
+
+---
+
+### 📱 Common Features (All Roles)
+
+#### Dark / Light Theme
+- Click ⚙️ **Settings** icon → Toggle theme
+- Preference is saved to your profile
+
+#### Report an Issue
+1. Click 🚩 **Report** in the top navigation
+2. Select **Category**: UI Bug, Performance, Wrong Data, Feature Broken, Access Issue, Other
+3. Select **Severity**: Low, Medium, High, Critical
+4. Write a description
+5. Click **Submit** — your browser info and current page URL are auto-captured
+
+#### Activity Logs
+- Every action (clearance approval, fine assignment, payment, etc.) is logged
+- Staff/HOD/Admin can view logs filtered by date, user, and action type
+
+#### Session Security
+- Auto-logout after **15 minutes** of inactivity
+- Warning banner appears at **12 minutes**
+- Click "Stay Logged In" to refresh your session
+
+---
+
+### ❓ Frequently Asked Questions
+
+**Q: I applied for clearance but nothing happened.**
+A: Your request is now in the pipeline. Faculty must mark your attendance and IA status first. Check the "Academic Eligibility" section to see your subject-wise status.
+
+**Q: My attendance is above 85% but the subject shows "Not Eligible".**
+A: You also need to be present in at least **2 out of 3 IAs**. Check the IA section to verify.
+
+**Q: I paid my fine but the subject still shows "Pending".**
+A: Wait 30 seconds and refresh the page. If it still shows pending, check the payment status on the HDFC SmartGateway page. Contact your accounts department if the issue persists.
+
+**Q: The Library/Accounts section shows "Pending" but I have no dues.**
+A: Ask your library/accounts staff to click **"Clear"** on your record. If you're a new student, the staff needs to run the clearance action at least once.
+
+**Q: HOD says my clearance isn't showing for approval.**
+A: All three prerequisites must be met: (1) All subjects cleared by faculty, (2) Library cleared or permitted, (3) College dues cleared or permitted. Check each stage on your dashboard.
+
+**Q: I'm a faculty member and I see IAs from another section.**
+A: This has been fixed. Refresh your browser (Ctrl+F5). IAs are now section-specific.
+
+**Q: How do I change my password?**
+A: Go to ⚙️ Settings → Use the Supabase password reset flow, or contact your Admin.
 
 ---
 
@@ -523,13 +942,16 @@ NOC-Portal/
 │   │   ├── log-error/                 # Error reporting
 │   │   ├── admin-api/                 # Admin operations
 │   │   └── _shared/                   # Shared utilities (CORS, rate limit)
-│   └── migrations/                    # 94+ SQL migrations
+│   └── migrations/                    # 102+ SQL migrations
 │       ├── 0001_initial_schema.sql
 │       ├── ...
 │       ├── 0072_multi_tenant_schema.sql
 │       ├── 0078_critical_security_patches.sql
 │       ├── 0091_hdfc_smartgateway_migration.sql
-│       └── 0094_fix_payment_orders_and_bulk.sql
+│       ├── 0094_fix_payment_orders_and_bulk.sql
+│       ├── 0096_reported_issues.sql
+│       ├── 0099_fix_accounts_library_new_students.sql
+│       └── 0102_combined_new_student_fix.sql
 ├── vercel.json                        # Vercel hosting config (SPA routing)
 ├── netlify.toml                       # Netlify hosting config (backup)
 ├── package.json
