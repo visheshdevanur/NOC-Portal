@@ -83,10 +83,20 @@ export const setLibraryDue = async (studentId: string) => {
 };
 
 export const permitLibraryDue = async (studentId: string) => {
-  const { error: upErr } = await supabase.from('library_dues').update({ permitted: true }).eq('student_id', studentId);
-  if (upErr) throw upErr;
-  const { data, error } = await supabase.from('library_dues').select('*, profiles!library_dues_student_id_fkey(full_name)').eq('student_id', studentId).limit(1).maybeSingle();
+  // First get existing data to preserve has_dues and fine_amount
+  const { data: existing } = await supabase.from('library_dues').select('has_dues, fine_amount, paid_amount, remarks').eq('student_id', studentId).maybeSingle();
+  
+  // Use RPC to handle both existing and new students
+  const { error } = await supabase.rpc('rpc_upsert_library_due', {
+    p_student_id: studentId,
+    p_has_dues: existing?.has_dues ?? true,
+    p_fine_amount: existing?.fine_amount ?? 0,
+    p_paid_amount: existing?.paid_amount ?? 0,
+    p_remarks: existing?.remarks ?? null,
+    p_permitted: true,
+  });
   if (error) throw error;
+  const { data } = await supabase.from('library_dues').select('*, profiles!library_dues_student_id_fkey(full_name)').eq('student_id', studentId).limit(1).maybeSingle();
   logActivity('Permitted Library Due', `Permitted clearance for ${data?.profiles?.full_name || 'student'}`);
   return data;
 };
