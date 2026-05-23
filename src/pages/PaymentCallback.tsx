@@ -1,15 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../lib/useAuth';
 import { CheckCircle2, XCircle, Clock, AlertCircle, ArrowLeft, RefreshCw, Download } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * Payment Callback Page — HDFC SmartGateway return_url handler.
  * 
  * After the student completes (or abandons) payment on HDFC's page,
  * they are redirected here (POST or GET). This page:
- * 1. Tries to restore the session and verify payment via edge function
- * 2. If auth is unavailable, shows a helpful status based on stored info
+ * 1. Extracts order_id from ALL possible sources (URL, storage, POST body)
+ * 2. Verifies payment via edge function with retry logic
  * 3. Shows a downloadable receipt on success
  * 4. Always provides a link back to the dashboard
  */
@@ -73,44 +73,66 @@ ${details.paymentId ? `<div class="row"><span class="label">Transaction ID</span
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Extract order_id from ALL possible sources.
+ * HDFC may redirect via GET (query params) or POST (form body) — 
+ * and may modify the URL. We try everything.
+ */
+function extractOrderId(): string | null {
+  // 1. URL search params (GET redirect): ?order_id=XXX
+  const urlParams = new URLSearchParams(window.location.search);
+  const fromUrlParam = urlParams.get('order_id') || urlParams.get('orderId');
+  if (fromUrlParam) return fromUrlParam;
+
+  // 2. URL hash params (SPA fallback): #?order_id=XXX
+  const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const fromHash = hashParams.get('order_id') || hashParams.get('orderId');
+  if (fromHash) return fromHash;
+
+  // 3. sessionStorage (set before redirect — same tab only)
+  const fromSession = sessionStorage.getItem('hdfc_order_id');
+  if (fromSession) return fromSession;
+
+  // 4. localStorage (set before redirect — persists across tabs/domains)
+  const fromLocal = localStorage.getItem('hdfc_order_id');
+  if (fromLocal) return fromLocal;
+
+  return null;
+}
+
 export default function PaymentCallback() {
   const { profile } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'failed' | 'pending' | 'error'>('loading');
   const [orderDetails, setOrderDetails] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  // Retrieve stored payment info (set before redirect to HDFC)
-  // Priority: sessionStorage → URL params → localStorage (most reliable after cross-domain redirect)
-  const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const [retryCount, setRetryCount] = useState(0);
 
-  const orderId =
-    sessionStorage.getItem('hdfc_order_id') ||
-    searchParams.get('order_id') ||
-    searchParams.get('orderId') ||
-    hashParams.get('order_id') ||
-    localStorage.getItem('hdfc_order_id');
+  // Extract order info ONCE using ref to avoid re-extraction
+  const orderIdRef = useRef<string | null>(null);
+  if (orderIdRef.current === null) {
+    orderIdRef.current = extractOrderId();
+  }
+  const orderId = orderIdRef.current;
 
   const orderToken =
     sessionStorage.getItem('hdfc_order_token') ||
-    searchParams.get('order_token') ||
-    hashParams.get('order_token') ||
+    new URLSearchParams(window.location.search).get('order_token') ||
+    new URLSearchParams(window.location.hash.split('?')[1] || '').get('order_token') ||
     localStorage.getItem('hdfc_order_token');
 
   const storedAmount =
     sessionStorage.getItem('hdfc_payment_amount') ||
     localStorage.getItem('hdfc_payment_amount');
 
-  // Try to verify payment status via edge function (ONE attempt only)
+  // Guard: only try verification ONCE
   const verifiedRef = useRef(false);
 
-  const verifyPayment = async (oid: string) => {
-    if (verifiedRef.current) return; // Only try once
+  const verifyPayment = useCallback(async (oid: string, attempt: number = 1) => {
+    if (verifiedRef.current && attempt === 1) return;
     verifiedRef.current = true;
 
     try {
-      // Use callback_mode — no auth required.
-      // order_token provides IDOR protection in callback mode.
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -138,7 +160,7 @@ export default function PaymentCallback() {
           sessionStorage.removeItem(key);
           localStorage.removeItem(key);
         });
-      } else if (['AUTHORIZATION_FAILED', 'AUTHENTICATION_FAILED', 'JUSPAY_DECLINED'].includes(result.status)) {
+      } else if (['AUTHORIZATION_FAILED', 'AUTHENTICATION_FAILED', 'JUSPAY_DECLINED', 'FAILED', 'DECLINED', 'TXN_FAILED'].includes(result.status)) {
         setStatus('failed');
         setErrorMsg(`Payment was not successful. Status: ${result.status}`);
         ['hdfc_order_id', 'hdfc_order_token'].forEach(key => {
@@ -146,13 +168,25 @@ export default function PaymentCallback() {
           localStorage.removeItem(key);
         });
       } else {
-        setStatus('pending');
+        // Status is still pending/processing — retry up to 3 times with increasing delays
+        if (attempt < 3) {
+          setRetryCount(attempt);
+          const delay = attempt * 4000; // 4s, 8s
+          setTimeout(() => verifyPayment(oid, attempt + 1), delay);
+        } else {
+          // After 3 attempts, show pending with order info
+          setStatus('pending');
+        }
       }
     } catch {
-      // Verification failed — show pending, webhook handles the rest
-      setStatus('pending');
+      // Verification failed — show pending, webhook will handle it
+      if (attempt < 2) {
+        setTimeout(() => verifyPayment(oid, attempt + 1), 3000);
+      } else {
+        setStatus('pending');
+      }
     }
-  };
+  }, [orderToken]);
 
   useEffect(() => {
     if (!orderId) {
@@ -161,22 +195,21 @@ export default function PaymentCallback() {
       return;
     }
 
-    // Try to verify once after a small delay for auth to restore
+    // Start verification after a short delay to let auth restore
     const timer = setTimeout(() => {
       verifyPayment(orderId);
     }, 1500);
 
-    // Fallback: if still loading after 6s, show pending
+    // Fallback: if still loading after 20s (accounting for retries), show pending
     const fallback = setTimeout(() => {
       setStatus(prev => prev === 'loading' ? 'pending' : prev);
-    }, 6000);
+    }, 20000);
 
     return () => {
       clearTimeout(timer);
       clearTimeout(fallback);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId]);
+  }, [orderId, verifyPayment]);
 
   const handleDownloadReceipt = () => {
     downloadReceipt({
@@ -190,7 +223,6 @@ export default function PaymentCallback() {
   };
 
   const goToDashboard = () => {
-    // Navigate to the main page — the router will redirect to the student's dashboard
     navigate('/');
   };
 
@@ -206,6 +238,11 @@ export default function PaymentCallback() {
             <h1 className="text-2xl font-bold text-foreground mb-2">Verifying Payment</h1>
             <p className="text-muted-foreground mb-4">
               Please wait while we confirm your payment with HDFC Bank...
+              {retryCount > 0 && (
+                <span className="block text-xs mt-1 text-primary">
+                  Attempt {retryCount + 1} of 3...
+                </span>
+              )}
             </p>
             <div className="flex items-center justify-center gap-2">
               <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0ms' }} />
