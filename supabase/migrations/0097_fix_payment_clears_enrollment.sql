@@ -128,7 +128,7 @@ BEGIN
     SELECT * INTO _request
     FROM clearance_requests
     WHERE student_id = _student_id
-      AND current_stage IN ('faculty_review', 'pending')
+      AND current_stage IN ('faculty_review', 'student_application')
       AND status != 'completed'
     ORDER BY created_at DESC
     LIMIT 1
