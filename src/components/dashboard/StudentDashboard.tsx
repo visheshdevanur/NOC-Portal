@@ -252,12 +252,12 @@ export default function StudentDashboard() {
   const isFirstYear = useMemo(() => isFirstYearSem(semesterName), [semesterName]);
   const isHodApproved = request?.current_stage === 'cleared';
   // A subject is "faculty cleared" when ANY of these is true:
-  // 1. Faculty marked it 'completed' (attendance >= 85%)
+  // 1. Faculty marked it 'completed' (attendance >= 85%) AND no outstanding fine
   // 2. The attendance fine has been paid (verified by HDFC/cash)
-  // 3. Status is 'rejected' but fine was imposed and paid
   // A subject with status='pending' is NOT cleared (faculty hasn't reviewed it yet)
+  // A subject with an unpaid attendance fine is NOT cleared (even if status is 'completed')
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(
-    e => e.status === 'completed' || e.attendance_fee_verified === true
+    e => (e.status === 'completed' || e.attendance_fee_verified === true) && ((e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true)
   ), [enrollments]);
   const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
   const isLibraryPermitted = useMemo(() => libraryDue ? (libraryDue.has_dues && libraryDue.permitted) : false, [libraryDue]);
