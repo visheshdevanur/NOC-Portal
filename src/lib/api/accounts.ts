@@ -110,22 +110,16 @@ export const updateStudentDueFee = async (dueId: string, fineAmount: number, pai
 };
 
 /**
- * Upsert a student_dues record. If dueId is provided, update by id.
- * If dueId is null (student has no dues row yet), create one using studentId.
+ * Upsert a student_dues record via SECURITY DEFINER RPC.
+ * Always uses the RPC for consistent handling of all fields
+ * (fine_amount, paid_amount, status, permitted_until).
  */
-export const upsertStudentDue = async (dueId: string | null, studentId: string, updates: Record<string, any>) => {
-  if (dueId) {
-    // Existing row — direct update is fine (RLS USING passes for existing rows)
-    const { error } = await supabase.from('student_dues').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', dueId);
-    if (error) throw error;
-  } else {
-    // No existing row — use SECURITY DEFINER RPC to bypass RLS
-    const { error } = await supabase.rpc('rpc_upsert_student_due', {
-      p_student_id: studentId,
-      p_updates: updates,
-    });
-    if (error) throw error;
-  }
+export const upsertStudentDue = async (_dueId: string | null, studentId: string, updates: Record<string, any>) => {
+  const { error } = await supabase.rpc('rpc_upsert_student_due', {
+    p_student_id: studentId,
+    p_updates: updates,
+  });
+  if (error) throw error;
 };
 
 // =======================
