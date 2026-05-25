@@ -199,7 +199,10 @@ export const getImportedTeachersForDept = async (departmentId: string) => {
 };
 
 export const importTeachersToDept = async (departmentId: string, teacherIds: string[], userId: string) => {
-  const records = teacherIds.map(id => ({ department_id: departmentId, teacher_id: id, created_by: userId }));
+  // Fetch tenant_id from user's profile (required by RLS policy)
+  const { data: userProfile } = await supabase.from('profiles').select('tenant_id').eq('id', userId).single();
+  const tenantId = userProfile?.tenant_id || null;
+  const records = teacherIds.map(id => ({ department_id: departmentId, teacher_id: id, created_by: userId, tenant_id: tenantId }));
   const { error } = await supabase.from('imported_teachers').insert(records);
   if (error) throw error;
 };
