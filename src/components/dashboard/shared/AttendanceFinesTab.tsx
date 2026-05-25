@@ -73,12 +73,13 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     setLoadingCategories(true);
     try {
       if (isAdminGlobal) {
-        // Admin: fetch ALL categories across all depts (pick from first dept to avoid duplicates)
+        // Admin: fetch categories from first dept, pick is_first_year=false to avoid duplicates
         if (allDepartments.length > 0) {
           const { data, error } = await supabase
             .from('attendance_fine_categories')
             .select('*')
             .eq('department_id', allDepartments[0].id)
+            .eq('is_first_year', false)
             .order('min_pct');
           if (error) throw error;
           setCategories(data || []);
