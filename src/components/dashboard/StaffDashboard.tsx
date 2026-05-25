@@ -1,10 +1,10 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import {
   getUsersByDeptAndRoles,
   getSubjectsByDepartment, createSubject, deleteSubject, getDepartmentSections,
-  assignTeacherToSection, updateSubjectAPI, getDepartmentById, getStaffAttendanceFines, getSemestersByDepartment, updateUserAPI,
+  assignTeacherToSection, updateSubjectAPI, getDepartmentById, getSemestersByDepartment, updateUserAPI,
   updateStudentPaidAmount, getAllDepartments
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
@@ -101,33 +101,6 @@ export default function StaffDashboard() {
   const [assigning, setAssigning] = useState(false);
   const [sectionError, setSectionError] = useState<string | null>(null);
   const [sectionSuccess, setSectionSuccess] = useState<string | null>(null);
-  // Attendances State
-  const [attendanceFines, setAttendanceFines] = useState<any[]>([]);
-  const [loadingAttendances, setLoadingAttendances] = useState(false);
-  
-  // Attendance Categories State
-  const [categories, setCategories] = useState<any[]>([]);
-  const [loadingCategories, setLoadingCategories] = useState(false);
-  const [showCatModal, setShowCatModal] = useState(false);
-  const [editingCat, setEditingCat] = useState<any>(null);
-  const [catForm, setCatForm] = useState({ label: '', minPct: '', maxPct: '', amount: '' });
-  const [catError, setCatError] = useState<string | null>(null);
-  const [catSaving, setCatSaving] = useState(false);
-  const [massFineResult, setMassFineResult] = useState<string | null>(null);
-  
-  // Reduce Fine State
-  const [reduceFineId, setReduceFineId] = useState<string | null>(null);
-  const [reduceFineAmount, setReduceFineAmount] = useState('');
-  const [reduceFineLoading, setReduceFineLoading] = useState(false);
-  const [clearFineLoading, setClearFineLoading] = useState<string | null>(null);
-   
-  // Attendances CSV State
-  const [attCsvUploading, setAttCsvUploading] = useState(false);
-  const [attCsvError, setAttCsvError] = useState<string | null>(null);
-  const [attCsvSuccess, setAttCsvSuccess] = useState<string | null>(null);
-
-  // Search states for tabs
-  const [searchAttendances, setSearchAttendances] = useState('');
   const [searchDues, setSearchDues] = useState('');
   const [searchSubjects, setSearchSubjects] = useState('');
 
@@ -315,151 +288,6 @@ export default function StaffDashboard() {
     s.roll_number?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
     s.section?.toLowerCase().includes(studentDuesSearch.toLowerCase())
   );
-
-  // ==================== ATTENDANCES ======================
-  const fetchAttendances = async () => {
-    if (!profile?.department_id) return;
-    setLoadingAttendances(true);
-    try {
-      const data = await getStaffAttendanceFines(profile.department_id);
-      // Staff excludes 1st/2nd sem students (Clerk handles those)
-      const filtered = (data || []).filter((item: any) => {
-        const semName = item.profiles?.semesters?.name || '';
-        return !isFirstYearSem(semName);
-      });
-      setAttendanceFines(filtered);
-    } catch (err) { console.error(err); }
-    finally { setLoadingAttendances(false); }
-  };
-
-  const fetchCategories = async () => {
-    if (!profile?.department_id) return;
-    setLoadingCategories(true);
-    try {
-      const { getAttendanceCategories } = await import('../../lib/api');
-      const data = await getAttendanceCategories(profile.department_id);
-      setCategories(data);
-    } catch (err) { console.error(err); }
-    finally { setLoadingCategories(false); }
-  };
-
-  const downloadAttendanceDueTemplate = () => {
-    const csvContent = "USN,Subject Code,Fine Amount\n1AB23CS001,CS101,500\n";
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = "Attendance_Dues_Template.csv";
-    link.click();
-  };
-
-  const handleAttendanceDueCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !profile?.department_id) return;
-    setAttCsvUploading(true);
-    setAttCsvError(null);
-    setAttCsvSuccess(null);
-
-    try {
-      const text = await file.text();
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-      if (lines.length < 2) throw new Error('CSV is empty or missing data rows.');
-      const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
-      
-      const usnIdx = headers.findIndex(h => h.includes('usn') || h.includes('roll'));
-      const subIdx = headers.findIndex(h => h.includes('subject'));
-      const amtIdx = headers.findIndex(h => h.includes('amount') || h.includes('fine'));
-      
-      if (usnIdx === -1 || subIdx === -1 || amtIdx === -1) {
-        throw new Error('CSV must have columns for USN, Subject Code, and Fine Amount.');
-      }
-
-      const rows = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim());
-        const amount = parseInt(cols[amtIdx]);
-        if (cols[usnIdx] && cols[subIdx] && !isNaN(amount) && amount > 0) {
-          rows.push({
-            roll_number: cols[usnIdx],
-            subject_code: cols[subIdx],
-            amount
-          });
-        }
-      }
-
-      if (rows.length === 0) throw new Error('No valid rows found to process.');
-      
-      const { bulkSetAttendanceDuesCSV } = await import('../../lib/api');
-      const result = await bulkSetAttendanceDuesCSV(profile.department_id, rows);
-      
-      if (result.errors.length > 0) {
-        setAttCsvError(`Updated ${result.updated}/${rows.length}. Errors: ${result.errors.slice(0, 3).join(' | ')}${result.errors.length > 3 ? '...' : ''}`);
-      } else {
-        setAttCsvSuccess(`Successfully assigned attendance dues for ${result.updated} records!`);
-      }
-      fetchAttendances();
-    } catch (err: any) {
-      setAttCsvError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
-    } finally {
-      setAttCsvUploading(false);
-      e.target.value = '';
-    }
-  };
-
-  const handleSaveCategory = async () => {
-    const label = catForm.label.trim();
-    const minPct = Number(catForm.minPct);
-    const maxPct = Number(catForm.maxPct);
-    const amount = Number(catForm.amount);
-    if (!label) { setCatError('Label is required'); return; }
-    if (isNaN(minPct) || isNaN(maxPct) || minPct < 0 || maxPct > 100 || minPct > maxPct) { setCatError('Invalid percentage range (0-100, min â‰¤ max)'); return; }
-    if (isNaN(amount) || amount < 0) { setCatError('Fine amount must be â‰¥ 0'); return; }
-    
-    setCatSaving(true); setCatError(null);
-    try {
-      if (editingCat) {
-        const { updateAttendanceCategory } = await import('../../lib/api');
-        await updateAttendanceCategory(editingCat.id, label, minPct, maxPct, amount);
-      } else {
-        const { createAttendanceCategory } = await import('../../lib/api');
-        await createAttendanceCategory(profile?.department_id || '', label, minPct, maxPct, amount);
-      }
-      setShowCatModal(false);
-      setEditingCat(null);
-      setCatForm({ label: '', minPct: '', maxPct: '', amount: '' });
-      fetchCategories();
-    } catch (err: any) {
-      setCatError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
-    } finally {
-      setCatSaving(false);
-    }
-  };
-
-  const handleReduceFine = async (enrollmentId: string) => {
-    const amt = Number(reduceFineAmount);
-    if (isNaN(amt) || amt < 0) { alert('Enter a valid amount (â‰¥ 0)'); return; }
-    setReduceFineLoading(true);
-    try {
-      const { reduceStudentFine } = await import('../../lib/api');
-      await reduceStudentFine(enrollmentId, amt);
-      setReduceFineId(null);
-      setReduceFineAmount('');
-      fetchAttendances();
-    } catch (err: any) {
-      alert('Failed: ' + await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
-    } finally { setReduceFineLoading(false); }
-  };
-
-  const handleClearFine = async (enrollmentId: string) => {
-    if (!confirm('Are you sure you want to mark this fine as PAID via cash? This will clear the student\'s attendance due.')) return;
-    setClearFineLoading(enrollmentId);
-    try {
-      const { clearStudentFine } = await import('../../lib/api');
-      await clearStudentFine(enrollmentId);
-      await fetchAttendances();
-      alert('Fine successfully cleared!');
-    } catch (err: any) { alert('Failed to clear fine: ' + (err?.message || 'Unknown')); }
-    finally { setClearFineLoading(null); }
-  };
 
   // ==================== USERS ======================
   const fetchUsers = async () => {
