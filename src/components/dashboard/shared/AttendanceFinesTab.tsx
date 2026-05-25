@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Pencil, Plus, Trash2, Search, X, CheckCircle2 } from 'lucide-react';
+import { Pencil, Plus, Trash2, Search, X, CheckCircle2, ChevronDown, ChevronRight, Building2, Banknote, Globe, Wallet } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { 
   getStaffAttendanceFines, 
@@ -14,7 +14,7 @@ import {
 
 interface AttendanceFinesTabProps {
   departmentId?: string;
-  role: 'hod' | 'fyc' | 'staff' | 'clerk';
+  role: 'hod' | 'fyc' | 'staff' | 'clerk' | 'admin';
 }
 
 export default function AttendanceFinesTab({ departmentId, role }: AttendanceFinesTabProps) {
@@ -39,15 +39,24 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   const [clearFineLoading, setClearFineLoading] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // FYC needs all departments to create categories globally
+  // FYC/Admin needs all departments to create categories globally
   const [allDepartments, setAllDepartments] = useState<any[]>([]);
 
-  const isFycGlobal = role === 'fyc' && !departmentId;
-  const canManageCategories = role === 'hod' || role === 'fyc';
+  // Fine collection summary state
+  const [fineSummary, setFineSummary] = useState<any[]>([]);
+  const [loadingFineSummary, setLoadingFineSummary] = useState(false);
+  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
 
-  // Load departments for FYC (needed for global category creation)
+  const isFycGlobal = role === 'fyc' && !departmentId;
+  const isAdminGlobal = role === 'admin';
+  const canManageCategories = role === 'admin';
+  const canViewCategories = role === 'admin' || role === 'hod' || role === 'fyc';
+  const canModifyFines = role === 'admin' || role === 'hod' || role === 'fyc';
+  const showFineSummary = role === 'admin' || role === 'hod' || role === 'fyc';
+
+  // Load departments for FYC/Admin (needed for global category creation)
   useEffect(() => {
-    if (isFycGlobal) {
+    if (isFycGlobal || isAdminGlobal) {
       getAllDepartments().then(depts => {
         setAllDepartments(depts || []);
       }).catch(console.error);
@@ -55,16 +64,29 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   }, [role, departmentId]);
 
   useEffect(() => {
-    if (canManageCategories) fetchAttendanceCategories();
+    if (canViewCategories) fetchAttendanceCategories();
     fetchAttendanceFines();
+    if (showFineSummary) fetchFineSummary();
   }, [departmentId, role, allDepartments]);
 
   const fetchAttendanceCategories = async () => {
     setLoadingCategories(true);
     try {
-      if (isFycGlobal) {
-        // FYC: fetch all first-year categories (RLS filters to is_first_year=true)
-        // Since identical categories exist in all depts, pick from the first dept to avoid duplicates
+      if (isAdminGlobal) {
+        // Admin: fetch ALL categories across all depts (pick from first dept to avoid duplicates)
+        if (allDepartments.length > 0) {
+          const { data, error } = await supabase
+            .from('attendance_fine_categories')
+            .select('*')
+            .eq('department_id', allDepartments[0].id)
+            .order('min_pct');
+          if (error) throw error;
+          setCategories(data || []);
+        } else {
+          setCategories([]);
+        }
+      } else if (isFycGlobal) {
+        // FYC: fetch all first-year categories
         if (allDepartments.length > 0) {
           const { data, error } = await supabase
             .from('attendance_fine_categories')
@@ -78,7 +100,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           setCategories([]);
         }
       } else if (departmentId) {
-        // HOD/Staff: fetch non-first-year categories for their department
+        // HOD: fetch non-first-year categories for their department
         const { data, error } = await supabase
           .from('attendance_fine_categories')
           .select('*')
@@ -99,7 +121,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       if (departmentId) {
         allData = await getStaffAttendanceFines(departmentId);
       } else {
-        // FYC: fetch all fined/rejected enrollments across all departments
+        // FYC/Admin: fetch all fined/rejected enrollments across all departments
         const { data, error } = await supabase
           .from('subject_enrollment')
           .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
@@ -109,6 +131,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       }
       const filtered = (allData || []).filter((item: any) => {
         const semName = item.profiles?.semesters?.name || '';
+        if (role === 'admin') return true; // Admin sees all semesters
         if (role === 'staff' || role === 'hod') return !isFirstYearSem(semName);
         if (role === 'clerk' || role === 'fyc') return isFirstYearSem(semName);
         return true;
@@ -137,22 +160,42 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
         console.log('Updating category:', editingCat.id, { label: catForm.label, min, max, amt });
         await updateAttendanceCategory(editingCat.id, catForm.label, min, max, amt);
         console.log('Category updated successfully');
-        // FYC: also update matching categories in other departments
-        if (isFycGlobal) {
-          const { data: matching } = await supabase
+        // FYC/Admin: also update matching categories in other departments
+        if (isFycGlobal || isAdminGlobal) {
+          const matchFilter = supabase
             .from('attendance_fine_categories')
             .select('id')
             .eq('label', editingCat.label)
             .eq('min_pct', editingCat.min_pct)
             .eq('max_pct', editingCat.max_pct)
-            .eq('is_first_year', true)
             .neq('id', editingCat.id);
+          if (isFycGlobal) matchFilter.eq('is_first_year', true);
+          const { data: matching } = await matchFilter;
           for (const m of (matching || [])) {
             await updateAttendanceCategory(m.id, catForm.label, min, max, amt);
           }
         }
       } else {
-        if (isFycGlobal) {
+        if (isAdminGlobal) {
+          // Admin: create in ALL departments for BOTH first_year and non-first_year
+          if (allDepartments.length === 0) {
+            setCatError('No departments loaded. Please try again.');
+            setCatSaving(false);
+            return;
+          }
+          let created = 0;
+          for (const dept of allDepartments) {
+            for (const isfy of [true, false]) {
+              try {
+                await createAttendanceCategory(dept.id, catForm.label, min, max, amt, isfy);
+                created++;
+              } catch (err: any) {
+                console.warn(`Failed for ${dept.name} (fy=${isfy}):`, err.message);
+              }
+            }
+          }
+          if (created === 0) throw new Error('Failed to create category in any department.');
+        } else if (isFycGlobal) {
           if (allDepartments.length === 0) {
             setCatError('No departments loaded. Please try again.');
             setCatSaving(false);
@@ -196,7 +239,19 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
 
   const reapplyAllCategoryFines = async (): Promise<number> => {
     let totalUpdated = 0;
-    if (isFycGlobal && allDepartments.length > 0) {
+    if (isAdminGlobal && allDepartments.length > 0) {
+      // Admin: apply fines across ALL depts for both first_year and non-first_year
+      for (const dept of allDepartments) {
+        for (const isfy of [true, false]) {
+          const { data, error } = await supabase.rpc('rpc_apply_mass_fines', {
+            p_department_id: dept.id,
+            p_is_first_year: isfy,
+          });
+          if (error) console.warn(`Failed for ${dept.name} (fy=${isfy}):`, error.message);
+          else totalUpdated += (data as any)?.updated || 0;
+        }
+      }
+    } else if (isFycGlobal && allDepartments.length > 0) {
       for (const dept of allDepartments) {
         const { data, error } = await supabase.rpc('rpc_apply_mass_fines', {
           p_department_id: dept.id,
@@ -223,21 +278,102 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     try {
       await deleteAttendanceCategory(cat.id);
       
-      // FYC: also delete matching categories in other departments
-      if (isFycGlobal) {
-        const { data: matching } = await supabase
+      // Admin/FYC: also delete matching categories in other departments
+      if (isAdminGlobal || isFycGlobal) {
+        const matchFilter = supabase
           .from('attendance_fine_categories')
           .select('id')
           .eq('label', cat.label)
           .eq('min_pct', cat.min_pct)
-          .eq('max_pct', cat.max_pct)
-          .eq('is_first_year', true);
+          .eq('max_pct', cat.max_pct);
+        if (isFycGlobal) matchFilter.eq('is_first_year', true);
+        const { data: matching } = await matchFilter;
         for (const m of (matching || [])) {
           if (m.id !== cat.id) await deleteAttendanceCategory(m.id);
         }
       }
       fetchAttendanceCategories();
     } catch (err) { console.error(err); }
+  };
+
+  // ==================== FINE COLLECTION SUMMARY ====================
+  const fetchFineSummary = async () => {
+    setLoadingFineSummary(true);
+    try {
+      // 1. Fetch all enrollments with attendance_fee > 0
+      let allFines: any[] = [];
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('subject_enrollment')
+          .select('id, attendance_fee, attendance_fee_verified, profiles!subject_enrollment_student_id_fkey!inner(department_id, departments!profiles_department_id_fkey(name), semester_id, semesters(name))')
+          .gt('attendance_fee', 0)
+          .range(from, from + 999);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allFines = allFines.concat(data);
+        if (data.length < 1000) break;
+        from += 1000;
+      }
+
+      // 2. Fetch all paid payment_orders for attendance fines
+      const { data: paidOrders, error: poErr } = await supabase
+        .from('payment_orders')
+        .select('enrollment_id, enrollment_ids, amount_paid')
+        .eq('status', 'paid')
+        .in('due_type', ['attendance_fine', 'attendance_fine_bulk']);
+      if (poErr) throw poErr;
+
+      // Build set of enrollment_ids that were paid online
+      const onlinePaidIds = new Set<string>();
+      for (const order of (paidOrders || [])) {
+        if (order.enrollment_id) onlinePaidIds.add(order.enrollment_id);
+        if (order.enrollment_ids && Array.isArray(order.enrollment_ids)) {
+          for (const eid of order.enrollment_ids) onlinePaidIds.add(eid);
+        }
+      }
+
+      // 3. Filter by role
+      const filtered = allFines.filter((item: any) => {
+        const semName = item.profiles?.semesters?.name || '';
+        if (role === 'hod' && departmentId) return item.profiles?.department_id === departmentId && !isFirstYearSem(semName);
+        if (role === 'fyc') return isFirstYearSem(semName);
+        return true; // admin sees all
+      });
+
+      // 4. Group by department
+      const deptMap: Record<string, { name: string, cashPaid: number, cashCount: number, onlinePaid: number, onlineCount: number, pendingAmount: number, pendingCount: number }> = {};
+      for (const item of filtered) {
+        const deptName = item.profiles?.departments?.name || 'Unassigned';
+        const deptId = item.profiles?.department_id || 'unknown';
+        if (!deptMap[deptId]) deptMap[deptId] = { name: deptName, cashPaid: 0, cashCount: 0, onlinePaid: 0, onlineCount: 0, pendingAmount: 0, pendingCount: 0 };
+
+        const fee = item.attendance_fee || 0;
+        if (item.attendance_fee_verified) {
+          if (onlinePaidIds.has(item.id)) {
+            deptMap[deptId].onlinePaid += fee;
+            deptMap[deptId].onlineCount++;
+          } else {
+            deptMap[deptId].cashPaid += fee;
+            deptMap[deptId].cashCount++;
+          }
+        } else {
+          deptMap[deptId].pendingAmount += fee;
+          deptMap[deptId].pendingCount++;
+        }
+      }
+
+      const summary = Object.entries(deptMap).map(([id, data]) => ({ deptId: id, ...data })).sort((a, b) => a.name.localeCompare(b.name));
+      setFineSummary(summary);
+    } catch (err) { console.error('Failed to fetch fine summary:', err); }
+    finally { setLoadingFineSummary(false); }
+  };
+
+  const toggleDept = (deptId: string) => {
+    const next = new Set(expandedDepts);
+    if (next.has(deptId)) next.delete(deptId);
+    else next.add(deptId);
+    setExpandedDepts(next);
   };
 
 
@@ -268,22 +404,110 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
 
   return (
     <div className="space-y-6">
-      {canManageCategories && (
+      {/* ==================== FINE COLLECTION SUMMARY ==================== */}
+      {showFineSummary && (
+        <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-primary" />
+                Fine Collection Summary
+                {isAdminGlobal && <span className="text-xs font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full ml-2">All Departments</span>}
+                {role === 'hod' && <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full ml-2">Your Department</span>}
+                {role === 'fyc' && <span className="text-xs font-medium bg-violet-500/10 text-violet-600 px-2 py-0.5 rounded-full ml-2">Sem 1 & 2</span>}
+              </h2>
+              <p className="text-muted-foreground text-sm mt-1">Attendance fine collection breakdown by department — Cash vs Online Payment.</p>
+            </div>
+          </div>
+
+          {loadingFineSummary ? (
+            <div className="p-6 text-center text-muted-foreground animate-pulse text-sm">Loading fine summary...</div>
+          ) : fineSummary.length === 0 ? (
+            <div className="p-6 text-center border-2 border-dashed border-border rounded-2xl">
+              <p className="text-muted-foreground text-sm">No attendance fines found.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* Totals row */}
+              {fineSummary.length > 1 && (() => {
+                const totalCash = fineSummary.reduce((s, d) => s + d.cashPaid, 0);
+                const totalOnline = fineSummary.reduce((s, d) => s + d.onlinePaid, 0);
+                const totalPending = fineSummary.reduce((s, d) => s + d.pendingAmount, 0);
+                return (
+                  <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10 mb-3">
+                    <div className="flex flex-wrap gap-6 items-center">
+                      <span className="font-bold text-foreground">College Total</span>
+                      <span className="flex items-center gap-1.5 text-sm"><Wallet className="w-4 h-4 text-emerald-500" /><span className="font-bold text-emerald-600">Cash: ₹{totalCash.toLocaleString()}</span></span>
+                      <span className="flex items-center gap-1.5 text-sm"><Globe className="w-4 h-4 text-blue-500" /><span className="font-bold text-blue-600">Online: ₹{totalOnline.toLocaleString()}</span></span>
+                      <span className="flex items-center gap-1.5 text-sm"><Banknote className="w-4 h-4 text-amber-500" /><span className="font-bold text-amber-600">Pending: ₹{totalPending.toLocaleString()}</span></span>
+                      <span className="font-bold text-foreground ml-auto">Collected: ₹{(totalCash + totalOnline).toLocaleString()}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {fineSummary.map(dept => (
+                <div key={dept.deptId} className="border border-border rounded-2xl overflow-hidden">
+                  <button
+                    onClick={() => toggleDept(dept.deptId)}
+                    className="w-full flex items-center justify-between p-4 hover:bg-secondary/30 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      {expandedDepts.has(dept.deptId) ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                      <span className="font-bold text-foreground">{dept.name}</span>
+                      <span className="text-xs bg-secondary px-2 py-0.5 rounded-md text-muted-foreground">
+                        {dept.cashCount + dept.onlineCount + dept.pendingCount} fines
+                      </span>
+                    </div>
+                    <span className="font-bold text-foreground">₹{(dept.cashPaid + dept.onlinePaid).toLocaleString()}</span>
+                  </button>
+                  {expandedDepts.has(dept.deptId) && (
+                    <div className="px-4 pb-4 pt-0 grid grid-cols-1 md:grid-cols-3 gap-3 border-t border-border bg-secondary/10">
+                      <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Wallet className="w-3 h-3" /> Cash Collected</div>
+                        <div className="text-lg font-bold text-emerald-600">₹{dept.cashPaid.toLocaleString()}</div>
+                        <div className="text-xs text-muted-foreground">{dept.cashCount} student(s)</div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/10">
+                        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Globe className="w-3 h-3" /> Online Payment</div>
+                        <div className="text-lg font-bold text-blue-600">₹{dept.onlinePaid.toLocaleString()}</div>
+                        <div className="text-xs text-muted-foreground">{dept.onlineCount} student(s)</div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
+                        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Banknote className="w-3 h-3" /> Pending</div>
+                        <div className="text-lg font-bold text-amber-600">₹{dept.pendingAmount.toLocaleString()}</div>
+                        <div className="text-xs text-muted-foreground">{dept.pendingCount} student(s)</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ==================== CATEGORIES (view for hod/fyc, manage for admin) ==================== */}
+      {canViewCategories && (
         <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
             <div>
               <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                 <Pencil className="w-5 h-5 text-amber-500" />
                 Attendance Fine Categories
+                {isAdminGlobal && <span className="text-xs font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full ml-2">All Semesters · All Departments</span>}
                 {isFycGlobal && <span className="text-xs font-medium bg-violet-500/10 text-violet-600 px-2 py-0.5 rounded-full ml-2">Sem 1 & 2 · All Departments</span>}
                 {role === 'hod' && <span className="text-xs font-medium bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full ml-2">Sem 3–8 · Your Department</span>}
               </h2>
               <p className="text-muted-foreground text-sm mt-1">
-                {isFycGlobal
-                  ? 'Define fine categories for all first-year students (Sem 1 & 2). These apply to every branch automatically.'
-                  : 'Define attendance % ranges and their corresponding fine amounts for your department (Sem 3–8).'}
+                {isAdminGlobal
+                  ? 'Manage fine categories for all students (Sem 1–8) across every department.'
+                  : isFycGlobal
+                  ? 'View fine categories for first-year students (Sem 1 & 2).'
+                  : 'View attendance % ranges and their corresponding fine amounts for your department (Sem 3–8).'}
               </p>
             </div>
+            {canManageCategories && (
               <button
                 onClick={() => { setEditingCat(null); setCatForm({ label: '', minPct: '', maxPct: '', amount: '' }); setCatError(null); setShowCatModal(true); }}
                 className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
@@ -291,6 +515,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                 <Plus className="w-4 h-4" />
                 Add Category
               </button>
+            )}
           </div>
 
           {/* Success feedback */}
@@ -305,7 +530,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
             <div className="p-4 text-center text-muted-foreground animate-pulse text-sm">Loading categories...</div>
           ) : categories.length === 0 ? (
             <div className="p-6 text-center border-2 border-dashed border-border rounded-2xl">
-              <p className="text-muted-foreground text-sm">No categories configured yet. Create categories to enable mass fine assignment.</p>
+              <p className="text-muted-foreground text-sm">{canManageCategories ? 'No categories configured yet. Create categories to enable mass fine assignment.' : 'No categories configured yet.'}</p>
             </div>
           ) : (
             <>
@@ -317,7 +542,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                     <th className="p-3 font-semibold text-center">Min %</th>
                     <th className="p-3 font-semibold text-center">Max %</th>
                     <th className="p-3 font-semibold text-center">Fine (₹)</th>
-                    <th className="p-3 font-semibold text-right">Actions</th>
+                    {canManageCategories && <th className="p-3 font-semibold text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -327,15 +552,17 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                       <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.min_pct}%</span></td>
                       <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.max_pct}%</span></td>
                       <td className="p-3 text-center font-bold text-amber-600">₹{cat.fine_amount}</td>
-                      <td className="p-3 text-right">
-                        <button
-                          onClick={() => handleDeleteCategory(cat)}
-                          className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
+                      {canManageCategories && (
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() => handleDeleteCategory(cat)}
+                            className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -427,7 +654,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                     <th className="p-4 font-semibold text-center">Attendance %</th>
                     <th className="p-4 font-semibold text-center">Fine (₹)</th>
                     <th className="p-4 font-semibold text-center">Status</th>
-                    <th className="p-4 font-semibold text-right">Actions</th>
+                    {canModifyFines && <th className="p-4 font-semibold text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -461,6 +688,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                           <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
                         )}
                       </td>
+                      {canModifyFines && (
                       <td className="p-4 text-right">
                         {reduceFineId === item.id ? (
                           <div className="flex items-center gap-2 justify-end">
@@ -500,6 +728,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                           </div>
                         )}
                       </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -5,11 +5,12 @@ import { supabase } from '../../lib/supabase';
 import {
   ShieldCheck, Users, Activity, BookOpen, AlertTriangle,
   Plus, Trash2, Search, UserPlus, X, Building2,
-  Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft, ArrowUpCircle
+  Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft, ArrowUpCircle, FileWarning
 } from 'lucide-react';
 import { logAndFormatError } from '../../lib/errorHandler';
+import AttendanceFinesTab from './shared/AttendanceFinesTab';
 
-type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'logs' | 'academic';
+type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'logs' | 'academic' | 'attendanceFines';
 
 type Department = {
   id: string;
@@ -737,6 +738,7 @@ export default function AdminDashboard() {
     { id: 'departments', label: 'Departments', icon: <Building2 className="w-4 h-4" /> },
     { id: 'hods', label: 'Core Staff', icon: <UserPlus className="w-4 h-4" /> },
     { id: 'subjects', label: 'Subjects / Semester', icon: <BookOpen className="w-4 h-4" /> },
+    { id: 'attendanceFines', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4" /> },
     { id: 'allusers', label: 'All Users', icon: <Eye className="w-4 h-4" /> },
 
     { id: 'logs', label: 'Activity Logs', icon: <Activity className="w-4 h-4" /> },
@@ -1567,6 +1569,11 @@ export default function AdminDashboard() {
         </div>
       )}
 
+
+      {/* ========= ATTENDANCE FINES TAB ========= */}
+      {activeTab === 'attendanceFines' && (
+        <AttendanceFinesTab role="admin" />
+      )}
 
       {/* Logs Tab */}
       {activeTab === 'logs' && (
