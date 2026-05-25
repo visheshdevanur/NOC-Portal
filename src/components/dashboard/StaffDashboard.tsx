@@ -289,7 +289,6 @@ export default function StaffDashboard() {
     s.section?.toLowerCase().includes(studentDuesSearch.toLowerCase())
   );
 
-  };
 
   // ==================== USERS ======================
   const fetchUsers = async () => {
