@@ -73,7 +73,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     setLoadingCategories(true);
     try {
       if (isAdminGlobal) {
-        // Admin: fetch categories from first dept, pick is_first_year=false to avoid duplicates
+        // Admin: fetch categories from first dept, deduplicate by key fields
         if (allDepartments.length > 0) {
           const { data, error } = await supabase
             .from('attendance_fine_categories')
@@ -82,7 +82,15 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
             .eq('is_first_year', false)
             .order('min_pct');
           if (error) throw error;
-          setCategories(data || []);
+          // Deduplicate by label+min+max+amount in case of duplicate DB rows
+          const seen = new Set<string>();
+          const unique = (data || []).filter(c => {
+            const key = `${c.label}|${c.min_pct}|${c.max_pct}|${c.fine_amount}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          setCategories(unique);
         } else {
           setCategories([]);
         }
