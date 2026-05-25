@@ -936,7 +936,7 @@ export default function HodDashboard() {
                               </span>
                             </div>
                           </td>
-                          <td className="p-4 text-muted-foreground text-sm">—</td>
+                          <td className="p-4 text-muted-foreground text-sm">{t.roll_number || '—'}</td>
                           <td className="p-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${roleColors[t.role] || 'bg-secondary text-foreground'}`}>
                               {t.role}

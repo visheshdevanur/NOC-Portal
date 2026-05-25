@@ -192,7 +192,7 @@ export const getImportableTeachers = async (departmentId: string) => {
 };
 
 export const getImportedTeachersForDept = async (departmentId: string) => {
-  const { data, error } = await supabase.from('imported_teachers').select('teacher_id, created_at, profiles!inner(id, full_name, email, role, departments!profiles_department_id_fkey(name))').eq('department_id', departmentId);
+  const { data, error } = await supabase.from('imported_teachers').select('teacher_id, created_at, profiles!inner(id, full_name, email, role, roll_number, departments!profiles_department_id_fkey(name))').eq('department_id', departmentId);
   if (error && error.code === '42P01') return [];
   if (error) throw error;
   return data || [];
