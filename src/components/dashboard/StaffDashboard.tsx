@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import {
@@ -39,7 +39,7 @@ type Subject = {
   semesters?: { name: string } | null;
 };
 
-type TabType = 'users' | 'subjects' | 'sections' | 'attendances' | 'dues' | 'logs' | 'studentdues' | 'managesections';
+type TabType = 'users' | 'subjects' | 'sections' | 'dues' | 'logs' | 'studentdues' | 'managesections';
 
 type Semester = {
   id: string;
@@ -51,7 +51,7 @@ type Semester = {
 const isFirstYearSem = (name: string) => {
   if (!name) return false;
   const trimmed = name.trim();
-  // Semester names are "1", "2", "3", etc. — only 1 and 2 are first year
+  // Semester names are "1", "2", "3", etc. â€” only 1 and 2 are first year
   return trimmed === '1' || trimmed === '2';
 };
 
@@ -179,7 +179,6 @@ export default function StaffDashboard() {
     if (activeTab === 'users' || activeTab === 'sections') { fetchUsers(); fetchSemesters(); }
     if (activeTab === 'sections') fetchSectionData();
     if (activeTab === 'subjects') fetchSubjects();
-    if (activeTab === 'attendances') { fetchAttendances(); fetchCategories(); }
     if (activeTab === 'dues') fetchDues();
     if (activeTab === 'logs') fetchStaffLogs();
     if (activeTab === 'studentdues') { fetchStudentDuesOverview(); fetchSemesters(); }
@@ -412,8 +411,8 @@ export default function StaffDashboard() {
     const maxPct = Number(catForm.maxPct);
     const amount = Number(catForm.amount);
     if (!label) { setCatError('Label is required'); return; }
-    if (isNaN(minPct) || isNaN(maxPct) || minPct < 0 || maxPct > 100 || minPct > maxPct) { setCatError('Invalid percentage range (0-100, min ≤ max)'); return; }
-    if (isNaN(amount) || amount < 0) { setCatError('Fine amount must be ≥ 0'); return; }
+    if (isNaN(minPct) || isNaN(maxPct) || minPct < 0 || maxPct > 100 || minPct > maxPct) { setCatError('Invalid percentage range (0-100, min â‰¤ max)'); return; }
+    if (isNaN(amount) || amount < 0) { setCatError('Fine amount must be â‰¥ 0'); return; }
     
     setCatSaving(true); setCatError(null);
     try {
@@ -437,7 +436,7 @@ export default function StaffDashboard() {
 
   const handleReduceFine = async (enrollmentId: string) => {
     const amt = Number(reduceFineAmount);
-    if (isNaN(amt) || amt < 0) { alert('Enter a valid amount (≥ 0)'); return; }
+    if (isNaN(amt) || amt < 0) { alert('Enter a valid amount (â‰¥ 0)'); return; }
     setReduceFineLoading(true);
     try {
       const { reduceStudentFine } = await import('../../lib/api');
@@ -468,7 +467,7 @@ export default function StaffDashboard() {
     setLoadingUsers(true);
     try {
       const data = await getUsersByDeptAndRoles(profile.department_id, ['teacher', 'faculty', 'student']);
-      // Staff only handles higher semesters (not 1st/2nd) — also exclude FYC-managed teachers
+      // Staff only handles higher semesters (not 1st/2nd) â€” also exclude FYC-managed teachers
       const sems = await getSemestersByDepartment(profile.department_id);
       const firstYearSemIds = new Set(sems.filter(s => isFirstYearSem(s.name)).map(s => s.id));
       const filtered = (data as UserProfile[]).filter(u => {
@@ -1270,7 +1269,6 @@ export default function StaffDashboard() {
   };
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
-    { id: 'attendances', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4 text-destructive" /> },
     { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
     { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'sections', label: 'Section Assign', icon: <Link2 className="w-4 h-4" /> },
@@ -1288,7 +1286,7 @@ export default function StaffDashboard() {
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
               <GraduationCap className="w-8 h-8 mr-3 text-amber-500" />
-              {profile?.full_name} — {deptName}
+              {profile?.full_name} â€” {deptName}
             </h1>
             <p className="text-muted-foreground">Manage users, subjects, and teacher assignments.</p>
           </div>
@@ -1314,235 +1312,6 @@ export default function StaffDashboard() {
       </div>
 
 
-      {/* ========= ATTENDANCES TAB ========= */}
-      {activeTab === 'attendances' && (
-        <div className="space-y-6">
-          {/* Attendance Categories Panel */}
-          <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
-                  <Settings className="w-5 h-5 text-amber-500" />
-                  Attendance Fine Categories
-                </h2>
-                <p className="text-muted-foreground text-sm mt-1">Define attendance % ranges and their corresponding fine amounts.</p>
-              </div>
-            </div>
-
-            {loadingCategories ? (
-              <div className="p-4 text-center text-muted-foreground animate-pulse text-sm">Loading categories...</div>
-            ) : categories.length === 0 ? (
-              <div className="p-6 text-center border-2 border-dashed border-border rounded-2xl">
-                <p className="text-muted-foreground text-sm">No categories configured yet. Create categories to enable mass fine assignment.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
-                      <th className="p-3 font-semibold">Label</th>
-                      <th className="p-3 font-semibold text-center">Min %</th>
-                      <th className="p-3 font-semibold text-center">Max %</th>
-                      <th className="p-3 font-semibold text-center">Fine (₹)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {categories.map((cat: any) => (
-                      <tr key={cat.id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="p-3 font-medium text-foreground">{cat.label}</td>
-                        <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.min_pct}%</span></td>
-                        <td className="p-3 text-center"><span className="px-2 py-1 bg-blue-500/10 text-blue-600 rounded-md text-xs font-bold">{cat.max_pct}%</span></td>
-                        <td className="p-3 text-center font-bold text-amber-600">₹{cat.fine_amount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Category Modal */}
-          {showCatModal && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-              <div className="bg-card rounded-3xl p-8 shadow-2xl border border-border w-full max-w-md">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-foreground">{editingCat ? 'Edit Category' : 'Add Category'}</h3>
-                  <button onClick={() => setShowCatModal(false)} className="p-2 rounded-xl hover:bg-secondary transition-colors"><X className="w-5 h-5 text-muted-foreground" /></button>
-                </div>
-                {catError && <div className="p-3 mb-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm">{catError}</div>}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Label</label>
-                    <input type="text" placeholder="e.g. Moderate Shortage" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={catForm.label} onChange={e => setCatForm({...catForm, label: e.target.value})} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1.5">Min Attendance %</label>
-                      <input type="number" min="0" max="100" placeholder="e.g. 65" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={catForm.minPct} onChange={e => setCatForm({...catForm, minPct: e.target.value})} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1.5">Max Attendance %</label>
-                      <input type="number" min="0" max="100" placeholder="e.g. 79" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={catForm.maxPct} onChange={e => setCatForm({...catForm, maxPct: e.target.value})} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Fine Amount (₹)</label>
-                    <input type="number" min="0" placeholder="e.g. 500" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={catForm.amount} onChange={e => setCatForm({...catForm, amount: e.target.value})} />
-                  </div>
-                </div>
-                <div className="flex gap-3 mt-8">
-                  <button onClick={() => setShowCatModal(false)} className="flex-1 py-3 px-4 rounded-xl border border-border font-medium hover:bg-secondary">Cancel</button>
-                  <button onClick={handleSaveCategory} disabled={catSaving} className="flex-1 py-3 px-4 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600 disabled:opacity-50">
-                    {catSaving ? 'Saving...' : editingCat ? 'Update' : 'Create'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons Row */}
-          <div className="flex flex-col md:flex-row gap-4 justify-between">
-            <div className="relative w-full md:max-w-xs">
-              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search by student or subject..."
-                className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 w-full"
-                value={searchAttendances}
-                onChange={e => setSearchAttendances(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                onClick={downloadAttendanceDueTemplate}
-                className="flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 border border-border px-4 py-3 rounded-xl font-medium transition-all shadow-sm text-sm"
-              >
-                <Download className="w-4 h-4" />
-                Template
-              </button>
-              <label className="flex items-center gap-2 bg-amber-500/20 text-amber-600 hover:bg-amber-500/30 border border-amber-500/30 px-4 py-3 rounded-xl font-bold transition-all shadow-sm text-sm cursor-pointer disabled:opacity-50">
-                <Upload className="w-4 h-4" />
-                {attCsvUploading ? 'Uploading...' : 'Bulk CSV'}
-                <input type="file" accept=".csv" className="hidden" onChange={handleAttendanceDueCSVUpload} disabled={attCsvUploading} />
-              </label>
-            </div>
-          </div>
-          
-          {/* Status Messages */}
-          {massFineResult && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>✅ {massFineResult}</span><button onClick={() => setMassFineResult(null)}><X className="w-4 h-4" /></button></div>}
-          {attCsvSuccess && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>✅ {attCsvSuccess}</span><button onClick={() => setAttCsvSuccess(null)}><X className="w-4 h-4" /></button></div>}
-          {attCsvError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center"><span><strong>Error:</strong> {attCsvError}</span><button onClick={() => setAttCsvError(null)}><X className="w-4 h-4" /></button></div>}
-          
-          {/* Students Table */}
-          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-            {loadingAttendances ? (
-              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading rejected attendances...</div>
-            ) : (() => {
-              const filtered = attendanceFines.filter(item =>
-                item.profiles?.full_name?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
-                item.subjects?.subject_name?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
-                item.subjects?.subject_code?.toLowerCase().includes(searchAttendances.toLowerCase())
-              );
-              return filtered.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">No students are currently rejected due to low attendance.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
-                        <th className="p-4 font-semibold">Student Name</th>
-                        <th className="p-4 font-semibold">USN</th>
-                        <th className="p-4 font-semibold">Section</th>
-                        <th className="p-4 font-semibold">Subject</th>
-                        <th className="p-4 font-semibold text-center">Attendance %</th>
-                        <th className="p-4 font-semibold text-center">Fine (₹)</th>
-                        <th className="p-4 font-semibold text-center">Status</th>
-                        <th className="p-4 font-semibold text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filtered.map(item => (
-                        <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
-                          <td className="p-4 font-medium text-foreground">{item.profiles?.full_name}</td>
-                          <td className="p-4 text-sm font-mono text-muted-foreground">{item.profiles?.roll_number || '—'}</td>
-                          <td className="p-4"><span className="px-2 py-1 bg-secondary rounded-md text-xs font-medium">{item.profiles?.section || 'None'}</span></td>
-                          <td className="p-4">
-                            <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
-                            <div className="text-xs text-muted-foreground">{item.subjects?.subject_code}</div>
-                          </td>
-                          <td className="p-4 text-center">
-                            <span className="text-destructive font-bold">{item.attendance_pct}%</span>
-                          </td>
-                          <td className="p-4 text-center">
-                            {item.attendance_fee > 0 ? (
-                              <span className={`px-3 py-1 rounded-lg font-bold whitespace-nowrap ${item.attendance_fee_verified ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
-                                ₹{item.attendance_fee}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">Not set</span>
-                            )}
-                          </td>
-                          <td className="p-4 text-center">
-                            {item.attendance_fee_verified ? (
-                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">Paid</span>
-                            ) : item.attendance_fee > 0 ? (
-                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">Pending</span>
-                            ) : (
-                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
-                            )}
-                          </td>
-                          <td className="p-4 text-right">
-                            {reduceFineId === item.id ? (
-                              <div className="flex items-center gap-2 justify-end">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  placeholder="₹"
-                                  className="w-24 p-2 border border-border rounded-xl text-sm bg-background focus:ring-2 focus:ring-amber-500 focus:outline-none font-bold"
-                                  value={reduceFineAmount}
-                                  onChange={e => setReduceFineAmount(e.target.value)}
-                                  autoFocus
-                                />
-                                <button onClick={() => handleReduceFine(item.id)} disabled={reduceFineLoading} className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors">
-                                  {reduceFineLoading ? '...' : 'Set'}
-                                </button>
-                                <button onClick={() => { setReduceFineId(null); setReduceFineAmount(''); }} className="px-2 py-2 bg-secondary hover:bg-secondary/80 rounded-xl transition-colors">
-                                  <X className="w-4 h-4" />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2 justify-end">
-                                <button
-                                  onClick={() => { setReduceFineId(item.id); setReduceFineAmount(String(item.attendance_fee || 0)); }}
-                                  className="px-3 py-2 bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap"
-                                  title="Modify/Reduce Fine"
-                                >
-                                  Modify Fine
-                                </button>
-                                {item.attendance_fee > 0 && !item.attendance_fee_verified && (
-                                  <button
-                                    onClick={() => handleClearFine(item.id)}
-                                    disabled={clearFineLoading === item.id}
-                                    className="px-3 py-2 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap disabled:opacity-50"
-                                    title="Mark as Paid (Cash)"
-                                  >
-                                    {clearFineLoading === item.id ? '...' : 'Clear Fine'}
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
       {/* ========= USERS TAB ========= */}
       {activeTab === 'users' && (
         <div className="space-y-6">
@@ -1554,7 +1323,7 @@ export default function StaffDashboard() {
           )}
           {userSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>✓ {userSuccess}</span>
+              <span>âœ“ {userSuccess}</span>
               <button onClick={() => setUserSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -1775,14 +1544,14 @@ export default function StaffDashboard() {
                     {filteredUsers.map(u => (
                       <tr key={u.id} className="hover:bg-secondary/20 transition-colors">
                         <td className="p-4 font-medium text-foreground">{u.full_name}</td>
-                        <td className="p-4 text-muted-foreground font-mono text-sm">{u.roll_number || '—'}</td>
+                        <td className="p-4 text-muted-foreground font-mono text-sm">{u.roll_number || 'â€”'}</td>
                         <td className="p-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${roleColors[u.role] || 'bg-secondary text-foreground'}`}>
                             {u.role}
                           </span>
                         </td>
-                        <td className="p-4 text-muted-foreground text-sm">{(u).semesters?.name || '—'}</td>
-                        <td className="p-4 text-muted-foreground">{u.section || '—'}</td>
+                        <td className="p-4 text-muted-foreground text-sm">{(u).semesters?.name || 'â€”'}</td>
+                        <td className="p-4 text-muted-foreground">{u.section || 'â€”'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1799,7 +1568,7 @@ export default function StaffDashboard() {
         <div className="space-y-6">
           {subjectSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>✓ {subjectSuccess}</span>
+              <span>âœ“ {subjectSuccess}</span>
               <button onClick={() => setSubjectSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -2009,7 +1778,7 @@ export default function StaffDashboard() {
                           );
                         })}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">{importSelectedSubjects.length} selected · Duplicates will be skipped</p>
+                      <p className="text-xs text-muted-foreground mt-2">{importSelectedSubjects.length} selected Â· Duplicates will be skipped</p>
                     </div>
                   ) : importSourceDeptId ? (
                     <div className="p-4 text-center text-muted-foreground text-sm border-2 border-dashed border-border rounded-xl">No subjects found in this department (Semester 3-8).</div>
@@ -2100,7 +1869,7 @@ export default function StaffDashboard() {
           )}
           {sectionSuccess && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center">
-              <span>✓ {sectionSuccess}</span>
+              <span>âœ“ {sectionSuccess}</span>
               <button onClick={() => setSectionSuccess(null)}><X className="w-4 h-4" /></button>
             </div>
           )}
@@ -2110,7 +1879,7 @@ export default function StaffDashboard() {
               <div>
                 <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                   <Link2 className="w-5 h-5 text-amber-500" />
-                  Bulk Section → Teacher Assignment
+                  Bulk Section â†’ Teacher Assignment
                 </h2>
                 <p className="text-muted-foreground text-sm mt-1">
                   Select a subject, section, and teacher. All students in the section will be enrolled and assigned to the teacher for that subject.
@@ -2156,7 +1925,7 @@ export default function StaffDashboard() {
                 >
                   <option value="">Select...</option>
                   {deptSubjects.filter((s: any) => s.semester_id === selectedSemesterForAssign).map(s => (
-                    <option key={s.id} value={s.id}>{s.subject_code} — {s.subject_name}</option>
+                    <option key={s.id} value={s.id}>{s.subject_code} â€” {s.subject_name}</option>
                   ))}
                 </select>
               </div>
@@ -2251,8 +2020,8 @@ export default function StaffDashboard() {
                           <th className="p-4 font-semibold">Student Name</th>
                           <th className="p-4 font-semibold">Roll Number</th>
                           <th className="p-4 font-semibold">Section & Sem</th>
-                          <th className="p-4 font-semibold">Fine (₹)</th>
-                          <th className="p-4 font-semibold">Paid (₹)</th>
+                          <th className="p-4 font-semibold">Fine (â‚¹)</th>
+                          <th className="p-4 font-semibold">Paid (â‚¹)</th>
                           <th className="p-4 font-semibold text-right">Actions</th>
                         </tr>
                       </thead>
@@ -2260,12 +2029,12 @@ export default function StaffDashboard() {
                         {filtered.map(d => (
                           <tr key={d.id} className="hover:bg-secondary/20 transition-colors">
                             <td className="p-4 font-medium text-foreground">{d.profiles?.full_name}</td>
-                            <td className="p-4 text-muted-foreground font-mono">{d.profiles?.roll_number || '—'}</td>
+                            <td className="p-4 text-muted-foreground font-mono">{d.profiles?.roll_number || 'â€”'}</td>
                             <td className="p-4 text-muted-foreground">
-                              {d.profiles?.section ? `Sec ${d.profiles.section}` : '—'}
-                              {d.profiles?.semesters?.name ? ` · ${d.profiles.semesters.name}` : ''}
+                              {d.profiles?.section ? `Sec ${d.profiles.section}` : 'â€”'}
+                              {d.profiles?.semesters?.name ? ` Â· ${d.profiles.semesters.name}` : ''}
                             </td>
-                            <td className="p-4 font-bold text-destructive">₹{d.fine_amount || 0}</td>
+                            <td className="p-4 font-bold text-destructive">â‚¹{d.fine_amount || 0}</td>
                             <td className="p-4">
                               <input
                                 type="number"
@@ -2419,7 +2188,7 @@ export default function StaffDashboard() {
                     <th className="p-4 font-semibold">Semester</th>
                     <th className="p-4 font-semibold text-center">Library Dues</th>
                     <th className="p-4 font-semibold text-center">College Fee Status</th>
-                    <th className="p-4 font-semibold">Attendance Fines (₹)</th>
+                    <th className="p-4 font-semibold">Attendance Fines (â‚¹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -2450,9 +2219,9 @@ export default function StaffDashboard() {
                         <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
                           <td className="p-4 text-sm text-muted-foreground">{idx + 1}</td>
                           <td className="p-4 font-medium text-foreground">{s.full_name}</td>
-                          <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
-                          <td className="p-4 text-muted-foreground">{s.section || '—'}</td>
-                          <td className="p-4 text-muted-foreground text-sm">{s.semesters?.name || '—'}</td>
+                          <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || 'â€”'}</td>
+                          <td className="p-4 text-muted-foreground">{s.section || 'â€”'}</td>
+                          <td className="p-4 text-muted-foreground text-sm">{s.semesters?.name || 'â€”'}</td>
                           <td className="p-4 text-center">
                             {libPermitted ? (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-violet-500/15 text-violet-600 dark:text-violet-400">
@@ -2487,11 +2256,11 @@ export default function StaffDashboard() {
                           </td>
                           <td className="p-4 font-bold text-sm">
                             {attFineUnpaid > 0 ? (
-                              <span className="text-amber-600 dark:text-amber-400">₹{attFineUnpaid} (Pending)</span>
+                              <span className="text-amber-600 dark:text-amber-400">â‚¹{attFineUnpaid} (Pending)</span>
                             ) : attFinePaid > 0 ? (
-                              <span className="text-emerald-600 dark:text-emerald-400">₹{attFinePaid} (Paid)</span>
+                              <span className="text-emerald-600 dark:text-emerald-400">â‚¹{attFinePaid} (Paid)</span>
                             ) : (
-                              <span className="text-muted-foreground">—</span>
+                              <span className="text-muted-foreground">â€”</span>
                             )}
                           </td>
                         </tr>
@@ -2573,7 +2342,7 @@ export default function StaffDashboard() {
                         </td>
                         <td className="p-5 font-bold text-foreground">{log.user_name || 'System User'}</td>
                         <td className="p-5 text-sm font-medium text-primary">{log.action}</td>
-                        <td className="p-5 text-sm text-foreground max-w-sm truncate" title={log.details || ''}>{log.details || '—'}</td>
+                        <td className="p-5 text-sm text-foreground max-w-sm truncate" title={log.details || ''}>{log.details || 'â€”'}</td>
                       </tr>
                     ))
                   )}
@@ -2592,7 +2361,7 @@ export default function StaffDashboard() {
       {/* ========= MANAGE SECTIONS TAB ========= */}
       {activeTab === 'managesections' && (
         <div className="space-y-6">
-          {mgSuccess && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>✓ {mgSuccess}</span><button onClick={() => setMgSuccess(null)}><X className="w-4 h-4" /></button></div>}
+          {mgSuccess && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm flex justify-between items-center"><span>âœ“ {mgSuccess}</span><button onClick={() => setMgSuccess(null)}><X className="w-4 h-4" /></button></div>}
           {mgError && <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center"><span><strong>Error:</strong> {mgError}</span><button onClick={() => setMgError(null)}><X className="w-4 h-4" /></button></div>}
 
           {/* Semester Selector */}
@@ -2722,7 +2491,7 @@ export default function StaffDashboard() {
                           return (
                             <tr key={s.id} className={`transition-colors ${isChanged ? 'bg-amber-500/5' : 'hover:bg-secondary/20'}`}>
                               <td className="p-4 font-medium text-foreground">{s.full_name}</td>
-                              <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
+                              <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || 'â€”'}</td>
                               <td className="p-4">
                                 <select 
                                   className={`px-3 py-1.5 bg-background border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 ${isChanged ? 'border-amber-500 text-amber-700 dark:text-amber-400 font-bold' : 'border-border'}`}
