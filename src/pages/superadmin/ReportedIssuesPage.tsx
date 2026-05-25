@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Flag, Search, Filter, ChevronDown, ChevronUp, Trash2, Eye, Clock, CheckCircle2, AlertCircle, BarChart3, ArrowUpDown, Globe, Monitor, Smartphone } from 'lucide-react';
 import { useSATheme } from './SuperAdminApp';
-import { getIssues, getIssueStats, updateIssueStatus, deleteIssue } from '../../lib/api/issues';
-import type { ReportedIssue, IssueFilters, IssueStats } from '../../lib/api/issues';
+import { getReportedIssues, getReportedIssueStats, updateReportedIssueStatus, deleteReportedIssue } from '../../lib/superAdminApi';
+import type { ReportedIssue, ReportedIssueFilters, ReportedIssueStats } from '../../lib/superAdminApi';
 
 const severityColors: Record<string, string> = {
   critical: 'bg-red-500/15 text-red-500 border-red-500/30',
@@ -26,19 +26,17 @@ const categoryLabels: Record<string, string> = {
   other: 'Other',
 };
 
-interface Props {
-  serviceClient: any;
-}
+interface Props {}
 
-export default function ReportedIssuesPage({ serviceClient }: Props) {
+export default function ReportedIssuesPage({}: Props) {
   const { theme } = useSATheme();
   const isDark = theme === 'dark';
 
   const [issues, setIssues] = useState<ReportedIssue[]>([]);
-  const [stats, setStats] = useState<IssueStats>({ total: 0, open: 0, in_progress: 0, resolved: 0 });
+  const [stats, setStats] = useState<ReportedIssueStats>({ total: 0, open: 0, in_progress: 0, resolved: 0 });
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<IssueFilters>({});
+  const [filters, setFilters] = useState<ReportedIssueFilters>({});
   const [sortKey, setSortKey] = useState<string>('created_at');
   const [sortAsc, setSortAsc] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -49,8 +47,8 @@ export default function ReportedIssuesPage({ serviceClient }: Props) {
     setLoading(true);
     try {
       const [issueData, statsData] = await Promise.all([
-        getIssues(serviceClient, filters),
-        getIssueStats(serviceClient),
+        getReportedIssues(filters),
+        getReportedIssueStats(),
       ]);
       setIssues(issueData);
       setStats(statsData);
@@ -66,14 +64,14 @@ export default function ReportedIssuesPage({ serviceClient }: Props) {
   const handleStatusChange = async (id: string, newStatus: string) => {
     setUpdatingId(id);
     try {
-      await updateIssueStatus(serviceClient, id, newStatus);
+      await updateReportedIssueStatus(id, newStatus);
       setIssues(prev => prev.map(i => i.id === id ? { ...i, status: newStatus } : i));
       setStats(prev => {
         const old = issues.find(i => i.id === id);
         if (!old) return prev;
         const s = { ...prev };
-        s[old.status as keyof IssueStats]--;
-        s[newStatus as keyof IssueStats]++;
+        s[old.status as keyof ReportedIssueStats]--;
+        s[newStatus as keyof ReportedIssueStats]++;
         return s;
       });
     } catch (err) {
@@ -87,14 +85,14 @@ export default function ReportedIssuesPage({ serviceClient }: Props) {
     if (!confirm('Delete this issue report? This cannot be undone.')) return;
     setDeletingId(id);
     try {
-      await deleteIssue(serviceClient, id);
+      await deleteReportedIssue(id);
       setIssues(prev => prev.filter(i => i.id !== id));
       const deleted = issues.find(i => i.id === id);
       if (deleted) {
         setStats(prev => ({
           ...prev,
           total: prev.total - 1,
-          [deleted.status as keyof IssueStats]: (prev[deleted.status as keyof IssueStats] as number) - 1,
+          [deleted.status as keyof ReportedIssueStats]: (prev[deleted.status as keyof ReportedIssueStats] as number) - 1,
         }));
       }
     } catch (err) {

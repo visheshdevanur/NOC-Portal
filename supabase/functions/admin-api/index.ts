@@ -323,6 +323,62 @@ serve(async (req) => {
         return jsonResponse({ data: { stats, total: stats.CRITICAL + stats.WARNING + stats.INFO } })
       }
 
+      // ─── REPORTED ISSUES ───
+      case 'get-issues': {
+        const { status, severity, tenant_id, date_from, date_to } = params
+        let query = adminClient
+          .from('reported_issues')
+          .select('*')
+          .order('created_at', { ascending: false })
+        if (status && status !== 'all') query = query.eq('status', status)
+        if (severity && severity !== 'all') query = query.eq('severity', severity)
+        if (tenant_id && tenant_id !== 'all') query = query.eq('tenant_id', tenant_id)
+        if (date_from) query = query.gte('created_at', date_from)
+        if (date_to) query = query.lte('created_at', date_to + 'T23:59:59')
+        const { data, error } = await query
+        if (error) throw error
+        return jsonResponse({ data })
+      }
+
+      case 'get-issue-stats': {
+        const { data, error } = await adminClient
+          .from('reported_issues')
+          .select('status')
+        if (error) throw error
+        const issues = data || []
+        return jsonResponse({ data: {
+          total: issues.length,
+          open: issues.filter((i: any) => i.status === 'open').length,
+          in_progress: issues.filter((i: any) => i.status === 'in_progress').length,
+          resolved: issues.filter((i: any) => i.status === 'resolved').length,
+        }})
+      }
+
+      case 'update-issue-status': {
+        const { id, status } = params
+        if (!id) return jsonResponse({ error: 'id required' }, 400)
+        if (!['open', 'in_progress', 'resolved'].includes(status)) {
+          return jsonResponse({ error: 'Invalid status' }, 400)
+        }
+        const { error } = await adminClient
+          .from('reported_issues')
+          .update({ status })
+          .eq('id', id)
+        if (error) throw error
+        return jsonResponse({ success: true })
+      }
+
+      case 'delete-issue': {
+        const { id } = params
+        if (!id) return jsonResponse({ error: 'id required' }, 400)
+        const { error } = await adminClient
+          .from('reported_issues')
+          .delete()
+          .eq('id', id)
+        if (error) throw error
+        return jsonResponse({ success: true })
+      }
+
       default:
         return jsonResponse({ error: `Unknown action: ${action}` }, 400)
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getPlatformStats, getAllTenants, getErrorStats, type Tenant, type PlatformStats, getTenantUserCount, getServiceClient } from '../../lib/superAdminApi';
+import { getPlatformStats, getAllTenants, getErrorStats, type Tenant, type PlatformStats, getTenantUserCount } from '../../lib/superAdminApi';
 import { superAdminLogout } from '../../lib/superAdminAuth';
 import { useSATheme } from './SuperAdminApp';
 import { Shield, Building2, Users, FileCheck, Plus, Eye, LogOut, Search, ChevronRight, Zap, Sun, Moon, AlertTriangle, Flag } from 'lucide-react';
@@ -114,7 +114,7 @@ export default function SuperAdminDashboard({ onLogout }: { onLogout: () => void
         {view === 'errors' && <ErrorLogPage />}
 
         {/* Reported Issues View */}
-        {view === 'issues' && <ReportedIssuesPage serviceClient={getServiceClient()} />}
+        {view === 'issues' && <ReportedIssuesPage />}
 
         {/* Overview View */}
         {view === 'overview' && (

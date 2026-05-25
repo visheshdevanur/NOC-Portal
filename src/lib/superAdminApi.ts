@@ -163,3 +163,57 @@ export async function logPlatformError(errorData: {
     console.error('Failed to log platform error');
   }
 }
+
+// ─── Reported Issues (routed through admin-api for service_role access) ───
+
+export type ReportedIssueFilters = {
+  status?: string;
+  severity?: string;
+  tenant_id?: string;
+  date_from?: string;
+  date_to?: string;
+};
+
+export type ReportedIssue = {
+  id: string;
+  issue_id: string;
+  tenant_id: string | null;
+  reporter_id: string | null;
+  reporter_name: string;
+  reporter_email: string;
+  reporter_role: string;
+  category: string;
+  severity: string;
+  description: string;
+  page_url: string | null;
+  page_name: string | null;
+  browser_info: string | null;
+  os_info: string | null;
+  device_info: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReportedIssueStats = {
+  total: number;
+  open: number;
+  in_progress: number;
+  resolved: number;
+};
+
+export async function getReportedIssues(filters?: ReportedIssueFilters): Promise<ReportedIssue[]> {
+  return invokeAdminApi<ReportedIssue[]>('get-issues', filters || {});
+}
+
+export async function getReportedIssueStats(): Promise<ReportedIssueStats> {
+  return invokeAdminApi<ReportedIssueStats>('get-issue-stats');
+}
+
+export async function updateReportedIssueStatus(id: string, status: string): Promise<void> {
+  await invokeAdminApi('update-issue-status', { id, status });
+}
+
+export async function deleteReportedIssue(id: string): Promise<void> {
+  await invokeAdminApi('delete-issue', { id });
+}
