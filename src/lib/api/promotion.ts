@@ -81,18 +81,47 @@ export const getStudentsNeedingSections = async (departmentId: string) => {
 };
 
 export const bulkAssignSections = async (assignments: { student_id: string; section: string }[]) => {
-  const { data, error } = await supabase.rpc('rpc_bulk_assign_sections', { p_assignments: assignments });
-  if (error) throw error;
-  const result = data as { updated?: number } | null;
-  return result?.updated || 0;
+  let updated = 0;
+  for (const { student_id, section } of assignments) {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ section: section ? section.toUpperCase() : null })
+      .eq('id', student_id);
+    if (error) throw error;
+    updated++;
+  }
+  logActivity('Bulk Section Assignment', `Assigned sections to ${updated} students`);
+  return updated;
 };
 
 export const bulkAssignSectionsCSV = async (departmentId: string, rows: { roll_number: string; section: string }[]) => {
-  const { data, error } = await supabase.rpc('rpc_bulk_assign_sections_csv', { p_department_id: departmentId, p_rows: rows });
-  if (error) throw error;
-  const result = data as { updated?: number; errors?: string[] } | null;
-  const updated = result?.updated || 0;
-  const errors = result?.errors || [];
+  let updated = 0;
+  const errors: string[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const { roll_number, section } = rows[i];
+    try {
+      const { data: students, error: findErr } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('department_id', departmentId)
+        .eq('roll_number', roll_number)
+        .eq('role', 'student')
+        .limit(1);
+      if (findErr) throw findErr;
+      if (!students || students.length === 0) {
+        errors.push(`Row ${i + 1}: Student '${roll_number}' not found`);
+        continue;
+      }
+      const { error: upErr } = await supabase
+        .from('profiles')
+        .update({ section: section ? section.toUpperCase() : null })
+        .eq('id', students[0].id);
+      if (upErr) throw upErr;
+      updated++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1} (${roll_number}): ${err.message}`);
+    }
+  }
   logActivity('CSV Section Assignment', `Assigned sections to ${updated}/${rows.length} students in department`);
   return { updated, errors };
 };

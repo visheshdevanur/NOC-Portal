@@ -819,20 +819,15 @@ export default function StaffDashboard() {
   const fetchSectionData = async () => {
     if (!profile?.department_id) return;
     try {
+      const { getAllFaculty } = await import('../../lib/api');
       const [secs, subs, allTeachers] = await Promise.all([
         getDepartmentSections(profile.department_id),
         getSubjectsByDepartment(profile.department_id),
-        getUsersByDeptAndRoles(profile.department_id, ['teacher', 'faculty']),
+        getAllFaculty(profile.department_id),
       ]);
       setSections(secs);
       setDeptSubjects(subs as Subject[]);
-      // Include teachers without created_by (admin-created) and teachers created by any staff/hod
-      const { data: staffHodUsers } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('role', ['staff', 'hod']);
-      const staffHodIds = new Set((staffHodUsers || []).map(s => s.id));
-      setDeptTeachers((allTeachers || []).filter((t: any) => !t.created_by || staffHodIds.has(t.created_by)));
+      setDeptTeachers(allTeachers || []);
     } catch (err) { console.error(err); }
   };
 
