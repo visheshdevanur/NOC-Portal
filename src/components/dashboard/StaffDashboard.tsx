@@ -523,6 +523,9 @@ export default function StaffDashboard() {
         updates.semester_id = editingUser.semester_id || null;
         updates.roll_number = editingUser.roll_number || null;
       }
+      if (editingUser.role === 'teacher' || editingUser.role === 'faculty') {
+        updates.roll_number = editingUser.roll_number || null;
+      }
 
       await updateUserAPI(editingUser.id, updates);
 
@@ -1330,10 +1333,16 @@ export default function StaffDashboard() {
                         <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 uppercase" placeholder="e.g. A, B, CSE-A" value={editingUser.section || ''} onChange={e => setEditingUser({ ...editingUser, section: e.target.value })} />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-foreground mb-1.5">Roll Number</label>
+                        <label className="block text-sm font-medium text-foreground mb-1.5">Roll Number (USN)</label>
                         <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 uppercase" placeholder="e.g. 21CS001" value={editingUser.roll_number || ''} onChange={e => setEditingUser({ ...editingUser, roll_number: e.target.value })} />
                       </div>
                     </>
+                  )}
+                  {(editingUser.role === 'teacher' || editingUser.role === 'faculty') && (
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1.5">Teacher ID</label>
+                      <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 uppercase" placeholder="e.g. FAC001" value={editingUser.roll_number || ''} onChange={e => setEditingUser({ ...editingUser, roll_number: e.target.value })} />
+                    </div>
                   )}
                 </div>
 
@@ -1363,6 +1372,7 @@ export default function StaffDashboard() {
                       <th className="p-4 font-semibold">Role</th>
                       <th className="p-4 font-semibold">Semester</th>
                       <th className="p-4 font-semibold">Section</th>
+                      <th className="p-4 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -1377,6 +1387,11 @@ export default function StaffDashboard() {
                         </td>
                         <td className="p-4 text-muted-foreground text-sm">{(u).semesters?.name || '—'}</td>
                         <td className="p-4 text-muted-foreground">{u.section || '—'}</td>
+                        <td className="p-4 text-right">
+                          <button onClick={() => { setUserError(null); setEditingUser({...u}); }} className="p-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white transition-colors" title="Edit">
+                            <Settings className="w-4 h-4" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

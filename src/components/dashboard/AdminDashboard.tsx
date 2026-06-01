@@ -639,6 +639,20 @@ export default function AdminDashboard() {
     setAcademicSuccess(null);
     setPromotionResult(null);
     try {
+      // Pre-flight: ensure all target semesters exist
+      const { validatePromotionReadiness } = await import('../../lib/api');
+      const validation = await validatePromotionReadiness();
+      if (!validation.valid) {
+        const details = validation.missing
+          .map((m: any) => `• "${m.department}": needs Semester ${m.requiredSem} (students currently in Sem ${m.currentSem})`)
+          .join('\n');
+        setAcademicError(
+          `Cannot promote: some target semesters do not exist yet.\n\n${details}\n\nPlease create the missing semesters in the "Subjects / Semester" tab first, then retry.`
+        );
+        setShowPromoteConfirm(false);
+        return;
+      }
+
       const { promoteAllStudents: doPromote } = await import('../../lib/api');
       const result = await doPromote();
       setPromotionResult(result);

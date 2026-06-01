@@ -10,6 +10,66 @@ export const getPrePromotionData = async () => {
   return data;
 };
 
+/**
+ * Pre-flight validation: checks that every department has all required
+ * "next" semesters before we call the promote RPC.
+ * Returns { valid: true } or { valid: false, missing: [...] }.
+ */
+export const validatePromotionReadiness = async () => {
+  // 1. Get all active students grouped by department + semester name
+  const { data: students, error: studErr } = await supabase
+    .from('profiles')
+    .select('department_id, semester_id, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)')
+    .eq('role', 'student')
+    .or('status.is.null,status.eq.active');
+  if (studErr) throw studErr;
+
+  // 2. Get all semesters in the system
+  const { data: allSemesters, error: semErr } = await supabase
+    .from('semesters')
+    .select('id, name, department_id');
+  if (semErr) throw semErr;
+
+  // Build a lookup: deptId -> Set of semester names
+  const semestersByDept = new Map<string, Set<string>>();
+  for (const sem of (allSemesters || [])) {
+    if (!semestersByDept.has(sem.department_id)) semestersByDept.set(sem.department_id, new Set());
+    semestersByDept.get(sem.department_id)!.add(sem.name);
+  }
+
+  // 3. For each student, check the "next" semester exists
+  const missing: { department: string; currentSem: string; requiredSem: string }[] = [];
+  const checked = new Set<string>(); // avoid duplicate checks
+
+  for (const s of (students || [])) {
+    const deptId = s.department_id;
+    const deptName = (s as any).departments?.name || deptId;
+    const semName = (s as any).semesters?.name;
+    if (!deptId || !semName) continue;
+
+    const currentNum = parseInt(semName);
+    if (isNaN(currentNum)) continue;
+
+    // 8th sem students graduate — no next semester needed
+    if (currentNum >= 8) continue;
+
+    const nextSemName = String(currentNum + 1);
+    const key = `${deptId}_${nextSemName}`;
+    if (checked.has(key)) continue;
+    checked.add(key);
+
+    const deptSems = semestersByDept.get(deptId);
+    if (!deptSems || !deptSems.has(nextSemName)) {
+      missing.push({ department: deptName, currentSem: semName, requiredSem: nextSemName });
+    }
+  }
+
+  if (missing.length > 0) {
+    return { valid: false as const, missing };
+  }
+  return { valid: true as const, missing: [] };
+};
+
 export const promoteAllStudents = async () => {
   const { data, error } = await supabase.rpc('promote_all_students');
   if (error) throw error;

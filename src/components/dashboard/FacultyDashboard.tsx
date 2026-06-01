@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
-import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Edit, Building2, Layers } from 'lucide-react';
+import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Edit, Building2, Layers, RefreshCw } from 'lucide-react';
 
 type SubjectEnrollment = {
   id: string;
@@ -96,6 +96,8 @@ export default function FacultyDashboard() {
       return { students: data as unknown as SubjectEnrollment[], ias: ias || [], subjects: subjects as TeacherSubject[] };
     },
     enabled: !!user,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   // Derive state from query data
@@ -104,10 +106,11 @@ export default function FacultyDashboard() {
 
   // Sync query data to local state (needed for local attendance edits)
   useEffect(() => {
-    if (studentsFromQuery.length > 0) {
-      setStudents(studentsFromQuery);
-      setTeacherSubjects(facultyData?.subjects || []);
+    // Always sync query data to local state (even when empty — students may have been removed)
+    setStudents(studentsFromQuery);
+    setTeacherSubjects(facultyData?.subjects || []);
 
+    if (studentsFromQuery.length > 0) {
       // Auto-select department for clearance tab
       if (!selectedDepartment) {
         const depts = Array.from(new Set(studentsFromQuery.map(s => s.subjects?.departments?.name || s.profiles?.departments?.name || 'Unassigned'))).sort();
@@ -564,6 +567,16 @@ export default function FacultyDashboard() {
             <h1 className="text-3xl font-bold text-foreground mb-2">Faculty Dashboard</h1>
             <p className="text-muted-foreground">Manage student clearance and internal assessments.</p>
           </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => refetchData()}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50"
+            title="Refresh data"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
           {activeTab === 'clearance' && (
             <div className="relative">
                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -576,6 +589,7 @@ export default function FacultyDashboard() {
                />
             </div>
           )}
+        </div>
         </div>
 
         {/* Tab Navigation */}
