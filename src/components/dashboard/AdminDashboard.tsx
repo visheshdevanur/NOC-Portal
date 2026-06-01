@@ -125,7 +125,7 @@ export default function AdminDashboard() {
     queryKey: ['adminAnalytics'],
     queryFn: async () => {
       const [studentsRes, facultyRes, reqsRes] = await Promise.all([
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'student'),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'student').or('status.is.null,status.eq.active'),
         supabase.from('profiles').select('*', { count: 'exact', head: true }).in('role', ['faculty', 'teacher']),
         supabase.from('clearance_requests').select('status, current_stage'),
       ]);
@@ -780,6 +780,35 @@ export default function AdminDashboard() {
 
       // Graduate ONLY students who were in Sem 8 BEFORE promotion started
       if (sem8Ids.length > 0) {
+        // 1. Clean up related data for graduating students
+        for (let i = 0; i < sem8Ids.length; i += 200) {
+          const chunk = sem8Ids.slice(i, i + 200);
+          // Get their enrollment IDs first
+          const { data: gradEnrollments } = await supabase
+            .from('subject_enrollment')
+            .select('id')
+            .in('student_id', chunk);
+          const gradEnrollmentIds = (gradEnrollments || []).map(e => e.id);
+
+          // Detach payment_orders from enrollments
+          if (gradEnrollmentIds.length > 0) {
+            for (let j = 0; j < gradEnrollmentIds.length; j += 200) {
+              const eChunk = gradEnrollmentIds.slice(j, j + 200);
+              await supabase.from('payment_orders').update({ enrollment_id: null }).in('enrollment_id', eChunk);
+            }
+          }
+
+          // Delete subject_enrollment records
+          await supabase.from('subject_enrollment').delete().in('student_id', chunk);
+          // Delete clearance_requests
+          await supabase.from('clearance_requests').delete().in('student_id', chunk);
+          // Delete student_dues
+          await supabase.from('student_dues').delete().in('student_id', chunk);
+          // Delete library_dues
+          await supabase.from('library_dues').delete().in('student_id', chunk);
+        }
+
+        // 2. Mark as graduated
         for (let i = 0; i < sem8Ids.length; i += 200) {
           const chunk = sem8Ids.slice(i, i + 200);
           const { error: gErr } = await supabase.from('profiles').update({ status: 'graduated' }).in('id', chunk);
