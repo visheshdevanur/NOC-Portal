@@ -700,6 +700,36 @@ export default function AdminDashboard() {
           continue;
         }
         try {
+          // Pre-cleanup: detach payment_orders from subject_enrollment to avoid FK violations
+          // Get student IDs in this department+semester
+          const { data: studentsInPair } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('department_id', pair.deptId)
+            .eq('semester_id', pair.semId)
+            .eq('role', 'student');
+          const studentIds = (studentsInPair || []).map(s => s.id);
+          
+          if (studentIds.length > 0) {
+            // Get enrollment IDs for these students
+            const { data: enrollments } = await supabase
+              .from('subject_enrollment')
+              .select('id')
+              .in('student_id', studentIds);
+            const enrollmentIds = (enrollments || []).map(e => e.id);
+            
+            if (enrollmentIds.length > 0) {
+              // Nullify enrollment_id FK in payment_orders (in batches)
+              for (let i = 0; i < enrollmentIds.length; i += 200) {
+                const chunk = enrollmentIds.slice(i, i + 200);
+                await supabase
+                  .from('payment_orders')
+                  .update({ enrollment_id: null })
+                  .in('enrollment_id', chunk);
+              }
+            }
+          }
+
           const promoted = await promoteStudents(pair.semId, targetSemId, pair.deptId);
           totalPromoted += (promoted || 0);
         } catch (err: any) {
