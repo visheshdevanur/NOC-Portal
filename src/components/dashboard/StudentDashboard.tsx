@@ -112,23 +112,35 @@ export default function StudentDashboard() {
       // Step 1: Create the clearance request
       await submitClearanceRequest(user!.id);
       
-      // Step 2: Create subject enrollments (WITHOUT teacher_id initially)
-      const enrollInserts: any[] = availableSubjects.map(sub => ({
-        student_id: user!.id,
-        subject_id: sub.id,
-        teacher_id: null,
-        attendance_pct: null,
-        status: 'pending',
-        remarks: null
-      }));
-      
-      // Use upsert to handle students who already have enrollments (re-applying)
-      const { error: enrollError } = await supabase
+      // Step 2: Create subject enrollments ONLY for subjects where the student
+      // doesn't already have an enrollment. NEVER overwrite existing records
+      // because they may already have teacher_id assigned via section assignment.
+      // Overwriting teacher_id to null causes students to disappear from faculty dashboards.
+      const { data: existingEnrollments } = await supabase
         .from('subject_enrollment')
-        .upsert(enrollInserts, { onConflict: 'student_id,subject_id' })
-        .select();
-      if (enrollError) {
-        console.error('Enrollment upsert error:', enrollError);
+        .select('subject_id')
+        .eq('student_id', user!.id);
+      const existingSubjectIds = new Set((existingEnrollments || []).map((e: any) => e.subject_id));
+      
+      const newEnrollments = availableSubjects
+        .filter(sub => !existingSubjectIds.has(sub.id))
+        .map(sub => ({
+          student_id: user!.id,
+          subject_id: sub.id,
+          teacher_id: null,
+          attendance_pct: null,
+          status: 'pending',
+          remarks: null
+        }));
+      
+      if (newEnrollments.length > 0) {
+        const { error: enrollError } = await supabase
+          .from('subject_enrollment')
+          .insert(newEnrollments)
+          .select();
+        if (enrollError) {
+          console.error('Enrollment insert error:', enrollError);
+        }
       }
 
       await refetch();
