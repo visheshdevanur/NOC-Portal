@@ -660,12 +660,22 @@ export default function AdminDashboard() {
 
       // Frontend-driven promotion: iterate each department+semester pair
       // This avoids the 409 FK constraint from the bulk RPC
-      const { data: allStudents, error: fetchErr } = await supabase
-        .from('profiles')
-        .select('department_id, semester_id, semesters!profiles_semester_id_fkey(name)')
-        .eq('role', 'student')
-        .or('status.is.null,status.eq.active');
-      if (fetchErr) throw fetchErr;
+      // Paginate to avoid Supabase 1000-row limit
+      let allStudents: any[] = [];
+      let offset = 0;
+      while (true) {
+        const { data: batch, error: fetchErr } = await supabase
+          .from('profiles')
+          .select('department_id, semester_id, semesters!profiles_semester_id_fkey(name)')
+          .eq('role', 'student')
+          .or('status.is.null,status.eq.active')
+          .range(offset, offset + 999);
+        if (fetchErr) throw fetchErr;
+        if (!batch || batch.length === 0) break;
+        allStudents = allStudents.concat(batch);
+        if (batch.length < 1000) break;
+        offset += 1000;
+      }
 
       // Group by department_id + semester_id
       const pairMap = new Map<string, { deptId: string; semId: string; semName: string; count: number }>();
