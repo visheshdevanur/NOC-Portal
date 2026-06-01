@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Pencil, Plus, Trash2, Search, X, CheckCircle2, ChevronDown, ChevronRight, Building2, Banknote, Globe, Wallet } from 'lucide-react';
+import { Pencil, Plus, Trash2, Search, X, CheckCircle2, ChevronDown, ChevronRight, Building2, Banknote, Globe, Wallet, Download } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { 
   getStaffAttendanceFines, 
@@ -411,6 +411,27 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
     }
   };
 
+  const handleExportFineSummary = () => {
+    if (fineSummary.length === 0) { alert('No fine data to export.'); return; }
+    const totalCash = fineSummary.reduce((s, d) => s + d.cashPaid, 0);
+    const totalOnline = fineSummary.reduce((s, d) => s + d.onlinePaid, 0);
+    const totalPending = fineSummary.reduce((s, d) => s + d.pendingAmount, 0);
+    const header = 'Department,Cash Collected (₹),Cash Students,Online Paid (₹),Online Students,Pending Amount (₹),Pending Students,Total Collected (₹)\n';
+    const rows = fineSummary.map(d =>
+      `"${d.name}",${d.cashPaid},${d.cashCount},${d.onlinePaid},${d.onlineCount},${d.pendingAmount},${d.pendingCount},${d.cashPaid + d.onlinePaid}`
+    ).join('\n');
+    const totalRow = `\n"TOTAL",${totalCash},${fineSummary.reduce((s, d) => s + d.cashCount, 0)},${totalOnline},${fineSummary.reduce((s, d) => s + d.onlineCount, 0)},${totalPending},${fineSummary.reduce((s, d) => s + d.pendingCount, 0)},${totalCash + totalOnline}`;
+    const blob = new Blob([header + rows + totalRow], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fine_collection_summary_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* ==================== FINE COLLECTION SUMMARY ==================== */}
@@ -427,6 +448,15 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
               </h2>
               <p className="text-muted-foreground text-sm mt-1">Attendance fine collection breakdown by department — Cash vs Online Payment.</p>
             </div>
+            {fineSummary.length > 0 && (
+              <button
+                onClick={handleExportFineSummary}
+                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-sm text-sm"
+              >
+                <Download className="w-4 h-4" />
+                Export CSV
+              </button>
+            )}
           </div>
 
           {loadingFineSummary ? (

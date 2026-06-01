@@ -530,14 +530,19 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteDepartment = async (deptId: string, deptName: string) => {
-    if (!confirm(`Delete department "${deptName}"? This will cascade-delete associated data.`)) return;
+    if (!confirm(`Delete department "${deptName}"? This will only work if the department has no students, teachers, subjects, or semesters attached.`)) return;
     try {
       const { error } = await supabase.from('departments').delete().eq('id', deptId);
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23503' || error.message?.includes('references') || (error as any).status === 409) {
+          throw new Error(`Cannot delete "${deptName}" because it still has students, teachers, subjects, or semesters attached. Please remove or reassign all related data first.`);
+        }
+        throw error;
+      }
       setDeptSuccess(`"${deptName}" deleted.`);
       fetchDepartments();
     } catch (err: any) {
-      setDeptError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
+      setDeptError(err.message || 'Failed to delete department.');
     }
   };
 
@@ -653,10 +658,76 @@ export default function AdminDashboard() {
         return;
       }
 
-      const { promoteAllStudents: doPromote } = await import('../../lib/api');
-      const result = await doPromote();
+      // Frontend-driven promotion: iterate each department+semester pair
+      // This avoids the 409 FK constraint from the bulk RPC
+      const { data: allStudents, error: fetchErr } = await supabase
+        .from('profiles')
+        .select('department_id, semester_id, semesters!profiles_semester_id_fkey(name)')
+        .eq('role', 'student')
+        .or('status.is.null,status.eq.active');
+      if (fetchErr) throw fetchErr;
+
+      // Group by department_id + semester_id
+      const pairMap = new Map<string, { deptId: string; semId: string; semName: string; count: number }>();
+      for (const s of (allStudents || [])) {
+        if (!s.department_id || !s.semester_id) continue;
+        const semName = (s as any).semesters?.name;
+        const semNum = parseInt(semName);
+        if (isNaN(semNum) || semNum >= 8) continue; // skip 8th sem (graduating)
+        const key = `${s.department_id}_${s.semester_id}`;
+        if (!pairMap.has(key)) pairMap.set(key, { deptId: s.department_id, semId: s.semester_id, semName, count: 0 });
+        pairMap.get(key)!.count++;
+      }
+
+      // Get all semesters to find target semester IDs
+      const { data: allSems, error: semErr } = await supabase.from('semesters').select('id, name, department_id');
+      if (semErr) throw semErr;
+      const semLookup = new Map<string, string>(); // "deptId_semName" -> semId
+      for (const s of (allSems || [])) {
+        semLookup.set(`${s.department_id}_${s.name}`, s.id);
+      }
+
+      let totalPromoted = 0;
+      let totalGraduated = 0;
+      const errors: string[] = [];
+      const { promoteStudents } = await import('../../lib/api');
+
+      for (const [, pair] of pairMap) {
+        const targetSemName = String(parseInt(pair.semName) + 1);
+        const targetSemId = semLookup.get(`${pair.deptId}_${targetSemName}`);
+        if (!targetSemId) {
+          errors.push(`Missing target semester ${targetSemName} for department.`);
+          continue;
+        }
+        try {
+          const promoted = await promoteStudents(pair.semId, targetSemId, pair.deptId);
+          totalPromoted += (promoted || 0);
+        } catch (err: any) {
+          errors.push(`Sem ${pair.semName}→${targetSemName}: ${err.message}`);
+        }
+      }
+
+      // Handle 8th semester students (graduate them)
+      const { data: gradStudents } = await supabase
+        .from('profiles')
+        .select('id, semester_id, semesters!profiles_semester_id_fkey(name)')
+        .eq('role', 'student')
+        .or('status.is.null,status.eq.active');
+      const toGraduate = (gradStudents || []).filter(s => (s as any).semesters?.name === '8');
+      if (toGraduate.length > 0) {
+        for (let i = 0; i < toGraduate.length; i += 200) {
+          const chunk = toGraduate.slice(i, i + 200).map(s => s.id);
+          const { error: gErr } = await supabase.from('profiles').update({ status: 'graduated' }).in('id', chunk);
+          if (gErr) errors.push(`Graduate batch error: ${gErr.message}`);
+          else totalGraduated += chunk.length;
+        }
+      }
+
+      const result = { total_promoted: totalPromoted, total_graduated: totalGraduated };
       setPromotionResult(result);
-      setAcademicSuccess(`Promotion complete! ${(result as any)?.total_promoted || 0} promoted, ${(result as any)?.total_graduated || 0} graduated.`);
+      let msg = `Promotion complete! ${totalPromoted} promoted, ${totalGraduated} graduated.`;
+      if (errors.length > 0) msg += `\n\nWarnings:\n${errors.join('\n')}`;
+      setAcademicSuccess(msg);
       setShowPromoteConfirm(false);
       fetchPromotionPreview();
       fetchGraduatedStudents();
