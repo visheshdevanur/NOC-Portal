@@ -702,8 +702,39 @@ export default function AdminDashboard() {
       const errors: string[] = [];
       const { promoteStudents } = await import('../../lib/api');
 
+      // IMPORTANT: Collect Sem 8 students BEFORE promotion starts
+      // Only these students should graduate — NOT students who arrive at Sem 8 during this run
+      const sem8Ids: string[] = [];
       for (const [, pair] of pairMap) {
-        const targetSemName = String(parseInt(pair.semName) + 1);
+        if (parseInt(pair.semName) === 8) continue; // skip, handled separately
+      }
+      // Find all current Sem 8 students across all departments
+      let gradOffset = 0;
+      while (true) {
+        const { data: batch } = await supabase
+          .from('profiles')
+          .select('id, semester_id, semesters!profiles_semester_id_fkey(name)')
+          .eq('role', 'student')
+          .or('status.is.null,status.eq.active')
+          .range(gradOffset, gradOffset + 999);
+        if (!batch || batch.length === 0) break;
+        for (const s of batch) {
+          if ((s as any).semesters?.name === '8') sem8Ids.push(s.id);
+        }
+        if (batch.length < 1000) break;
+        gradOffset += 1000;
+      }
+
+      // Sort pairs by DESCENDING semester order to prevent double-promotion
+      // e.g., promote Sem 7→8 first, then 6→7, then 5→6, etc.
+      // This ensures students don't get caught by a later promotion in the same run
+      const sortedPairs = Array.from(pairMap.values())
+        .sort((a, b) => parseInt(b.semName) - parseInt(a.semName));
+
+      for (const pair of sortedPairs) {
+        const semNum = parseInt(pair.semName);
+        if (semNum >= 8) continue; // Sem 8 students are graduated, not promoted
+        const targetSemName = String(semNum + 1);
         const targetSemId = semLookup.get(`${pair.deptId}_${targetSemName}`);
         if (!targetSemId) {
           errors.push(`Missing target semester ${targetSemName} for department.`);
@@ -747,16 +778,10 @@ export default function AdminDashboard() {
         }
       }
 
-      // Handle 8th semester students (graduate them)
-      const { data: gradStudents } = await supabase
-        .from('profiles')
-        .select('id, semester_id, semesters!profiles_semester_id_fkey(name)')
-        .eq('role', 'student')
-        .or('status.is.null,status.eq.active');
-      const toGraduate = (gradStudents || []).filter(s => (s as any).semesters?.name === '8');
-      if (toGraduate.length > 0) {
-        for (let i = 0; i < toGraduate.length; i += 200) {
-          const chunk = toGraduate.slice(i, i + 200).map(s => s.id);
+      // Graduate ONLY students who were in Sem 8 BEFORE promotion started
+      if (sem8Ids.length > 0) {
+        for (let i = 0; i < sem8Ids.length; i += 200) {
+          const chunk = sem8Ids.slice(i, i + 200);
           const { error: gErr } = await supabase.from('profiles').update({ status: 'graduated' }).in('id', chunk);
           if (gErr) errors.push(`Graduate batch error: ${gErr.message}`);
           else totalGraduated += chunk.length;
