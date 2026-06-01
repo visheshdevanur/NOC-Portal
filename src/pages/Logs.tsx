@@ -11,17 +11,38 @@ export default function Logs() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
+  const isAdmin = profile?.role === 'admin';
+  const isHod = profile?.role === 'hod';
+  const isStaff = profile?.role === 'staff';
+
   useEffect(() => {
-    if (user) fetchLogs();
-  }, [user]);
+    if (user && profile) fetchLogs();
+  }, [user, profile]);
 
   const fetchLogs = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('activity_logs')
         .select('*')
-        .eq('user_id', user!.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(10000);
+
+      if (isAdmin) {
+        // Admin sees logs from all key roles across system
+        query = query.in('user_role', ['librarian', 'hod', 'accounts', 'fyc', 'admin', 'faculty', 'teacher', 'staff']);
+      } else if (isHod || isStaff) {
+        // HOD/Staff see logs from their department
+        if (profile?.department_id) {
+          query = query.eq('department_id', profile.department_id);
+        } else {
+          query = query.eq('user_id', user!.id);
+        }
+      } else {
+        // Everyone else sees only their own logs
+        query = query.eq('user_id', user!.id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       setLogs(data || []);
     } catch (err) {
@@ -34,8 +55,17 @@ export default function Logs() {
   const filteredLogs = logs.filter(l => 
     l.action?.toLowerCase().includes(searchTerm.toLowerCase()) || 
     l.user_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    l.details?.toLowerCase().includes(searchTerm.toLowerCase())
+    l.details?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    l.user_role?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const showUserColumn = isAdmin || isHod || isStaff;
+  const pageTitle = isAdmin ? 'System Activity Logs' : isHod ? 'Department Activity Logs' : 'My Activity Logs';
+  const pageDesc = isAdmin
+    ? 'All system activity from staff across all departments.'
+    : isHod
+    ? 'Activity from your department staff and teachers.'
+    : 'Your personal activity history and audit trail.';
 
   return (
     <div className="space-y-6 fade-in max-w-7xl mx-auto">
@@ -51,12 +81,15 @@ export default function Logs() {
           </button>
           <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
             <ShieldCheck className="w-8 h-8 mr-3 text-primary" />
-            My Activity Logs
+            {pageTitle}
           </h1>
-          <p className="text-muted-foreground">Your personal activity history and audit trail.
+          <p className="text-muted-foreground">{pageDesc}
             {profile?.full_name && <span className="font-medium text-foreground ml-1">— {profile.full_name}</span>}
             {profile?.role && <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-bold uppercase bg-secondary text-foreground/70">{profile.role}</span>}
           </p>
+        </div>
+        <div className="text-sm text-muted-foreground font-medium bg-secondary/50 px-4 py-2 rounded-xl border border-border">
+          {filteredLogs.length} {filteredLogs.length === 1 ? 'entry' : 'entries'}
         </div>
       </div>
 
@@ -65,7 +98,7 @@ export default function Logs() {
           <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search logs by action, user, or details..."
+            placeholder="Search logs by action, user, role, or details..."
             className="pl-10 pr-4 py-3 bg-secondary/50 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary w-full max-w-md"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
@@ -81,20 +114,30 @@ export default function Logs() {
                  <Activity className="w-10 h-10 text-muted-foreground/50" />
                </div>
                <h3 className="text-xl font-bold text-foreground">No Activity Logs Found</h3>
-               <p className="text-muted-foreground mt-2">You don't have any recorded logs to view matching your criteria.</p>
+               <p className="text-muted-foreground mt-2">No recorded logs matching your criteria.</p>
              </div>
           ) : (
             <table className="w-full text-left border-collapse min-w-max">
               <thead>
                 <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
+                  {showUserColumn && <th className="p-4 font-semibold">User</th>}
+                  {showUserColumn && <th className="p-4 font-semibold">Role</th>}
                   <th className="p-4 font-semibold">Action</th>
-                  <th className="p-4 font-semibold w-1/2">Details</th>
+                  <th className="p-4 font-semibold w-1/3">Details</th>
                   <th className="p-4 font-semibold text-right">Timestamp</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filteredLogs.map(log => (
                   <tr key={log.id} className="hover:bg-secondary/20 transition-colors">
+                    {showUserColumn && (
+                      <td className="p-4 font-bold text-foreground text-sm">{log.user_name || 'Unknown'}</td>
+                    )}
+                    {showUserColumn && (
+                      <td className="p-4">
+                        <span className="text-xs px-2 py-1 rounded-full font-medium bg-primary/10 text-primary capitalize">{log.user_role || '—'}</span>
+                      </td>
+                    )}
                     <td className="p-4 font-bold text-foreground">{log.action}</td>
                     <td className="p-4 text-sm text-muted-foreground max-w-sm xl:max-w-md truncate" title={log.details || ''}>{log.details || '—'}</td>
                     <td className="p-4 text-sm text-muted-foreground text-right whitespace-nowrap">
