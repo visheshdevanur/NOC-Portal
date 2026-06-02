@@ -134,6 +134,29 @@ export function useAuth() {
         }
         throw error;
       }
+
+      // Check if user's tenant is suspended (skip for platform admins / super_admins)
+      if (data.tenant_id && data.role !== 'super_admin' && !data.is_platform_admin) {
+        try {
+          const { data: tenantData } = await supabase
+            .from('tenants')
+            .select('status')
+            .eq('id', data.tenant_id)
+            .single();
+
+          if (tenantData && (tenantData.status === 'suspended')) {
+            console.warn('Tenant is suspended. Forcing logout.');
+            setUser(null);
+            setProfile(null);
+            await supabase.auth.signOut();
+            alert('Your institution has been suspended. Please contact the platform administrator.');
+            return;
+          }
+        } catch {
+          // If tenant check fails, allow login (don't block due to network errors)
+        }
+      }
+
       setProfile(data);
     } catch (error) {
       console.error('Error fetching profile:', error);
