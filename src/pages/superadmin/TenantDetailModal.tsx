@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { type Tenant, getTenantDetails, toggleTenantStatus, editTenant, deleteTenant } from '../../lib/superAdminApi';
-import { X, Building2, Users, FileCheck, Power, Shield, Clock, Mail, Tag, Crown, ChevronLeft, Save, Pencil, Loader2, Trash2, AlertTriangle } from 'lucide-react';
+import { type Tenant, getTenantDetails, toggleTenantStatus, editTenant, deleteTenant, requestTenantDeletion, cancelTenantDeletion } from '../../lib/superAdminApi';
+import { X, Building2, Users, FileCheck, Power, Shield, Clock, Mail, Tag, Crown, ChevronLeft, Save, Pencil, Loader2, Trash2, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 
 type TenantUser = { id: string; full_name: string; role: string; roll_number: string | null; section: string | null; created_at: string };
 type ViewMode = 'detail' | 'edit' | 'role-users';
@@ -43,19 +43,48 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
   const handleToggle = async () => { setToggling(true); try { const ns = status === 'active' ? 'suspended' as const : 'active' as const; await toggleTenantStatus(tenant.id, ns); setStatus(ns); } catch {} finally { setToggling(false); } };
   const handleSave = async () => { setSaving(true); setSaveMsg(null); try { await editTenant(tenant.id, { name: editName, slug: editSlug, plan: editPlan, max_users: editMaxUsers, admin_email: editAdminEmail }); setSaveMsg({ type: 'ok', text: 'Saved!' }); setTimeout(() => { setSaveMsg(null); setView('detail'); }, 1000); } catch (err: any) { setSaveMsg({ type: 'err', text: err.message }); } finally { setSaving(false); } };
 
+  const handleRequestDeletion = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await requestTenantDeletion(tenant.id);
+      setStatus('pending_deletion');
+      setShowDeleteConfirm(false);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to request deletion');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleCancelDeletion = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await cancelTenantDeletion(tenant.id);
+      setStatus('active');
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to cancel deletion');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleDeleteTenant = async () => {
     if (deleteConfirmText !== tenant.name) return;
     setDeleting(true);
     setDeleteError(null);
     try {
       await deleteTenant(tenant.id);
-      onClose(); // Close modal and refresh parent
+      onClose();
     } catch (err: any) {
-      setDeleteError(err.message || 'Failed to delete tenant');
+      setDeleteError(err.message || 'Failed to delete tenant. Admin approval may be required.');
     } finally {
       setDeleting(false);
     }
   };
+
+  const isDeletionApproved = !!tenant.deletion_approved_at;
 
   const roleCounts: Record<string, number> = {};
   users.forEach(u => { roleCounts[u.role] = (roleCounts[u.role] || 0) + 1; });
@@ -223,18 +252,62 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
 
         {/* Delete Tenant Section */}
         <div style={s({ marginTop: 16, padding: 16, background: '#dc262608', border: '1px solid #dc262620', borderRadius: 12 })}>
-          {!showDeleteConfirm ? (
+          {deleteError && (
+            <div style={s({ padding: '8px 12px', borderRadius: 8, fontSize: 12, background: '#dc262612', color: 'var(--sa-danger)', border: '1px solid #dc262620', marginBottom: 10 })}>{deleteError}</div>
+          )}
+
+          {/* State 1: Not yet requested — show Request Deletion button */}
+          {status !== 'pending_deletion' && !showDeleteConfirm && (
             <button onClick={() => setShowDeleteConfirm(true)} style={s({ width: '100%', padding: 11, borderRadius: 10, fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', border: '1px solid #dc262630', background: '#dc262610', color: 'var(--sa-danger)', transition: 'all 0.2s' })}>
-              <Trash2 size={14} /> Delete Tenant Permanently
+              <Trash2 size={14} /> Request Tenant Deletion
             </button>
-          ) : (
-            <div style={s({ space: 12 })}>
+          )}
+
+          {/* Confirm request */}
+          {status !== 'pending_deletion' && showDeleteConfirm && (
+            <div>
               <div style={s({ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 })}>
                 <AlertTriangle size={16} color="#dc2626" />
-                <span style={s({ fontSize: 13, fontWeight: 700, color: 'var(--sa-danger)' })}>This action is irreversible!</span>
+                <span style={s({ fontSize: 13, fontWeight: 700, color: 'var(--sa-danger)' })}>Request Tenant Deletion</span>
+              </div>
+              <p style={s({ fontSize: 12, color: 'var(--sa-text-muted)', margin: '0 0 12px', lineHeight: 1.5 })}>
+                This will send a deletion request to the tenant admin of <strong style={s({ color: 'var(--sa-text)' })}>{tenant.name}</strong>. The admin must approve the request before the tenant can be permanently deleted.
+              </p>
+              <div style={s({ display: 'flex', gap: 10 })}>
+                <button onClick={() => { setShowDeleteConfirm(false); setDeleteError(null); }} style={s({ flex: 1, padding: 10, background: 'var(--sa-bg-elevated)', border: '1px solid var(--sa-border)', borderRadius: 10, cursor: 'pointer', color: 'var(--sa-text-secondary)', fontSize: 12, fontWeight: 500 })}>Cancel</button>
+                <button onClick={handleRequestDeletion} disabled={deleting} style={s({ flex: 1, padding: 10, background: '#dc2626', border: 'none', borderRadius: 10, cursor: 'pointer', color: 'white', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: deleting ? 0.5 : 1 })}>
+                  {deleting ? <Loader2 size={14} className="animate-spin" /> : <AlertTriangle size={14} />}
+                  {deleting ? 'Requesting...' : 'Send Deletion Request'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* State 2: Pending — waiting for admin approval */}
+          {status === 'pending_deletion' && !isDeletionApproved && (
+            <div>
+              <div style={s({ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 })}>
+                <Clock size={16} color="#f59e0b" />
+                <span style={s({ fontSize: 13, fontWeight: 700, color: '#f59e0b' })}>Awaiting Admin Approval</span>
+              </div>
+              <p style={s({ fontSize: 12, color: 'var(--sa-text-muted)', margin: '0 0 12px', lineHeight: 1.5 })}>
+                Deletion request has been sent. The tenant admin (<strong style={s({ color: 'var(--sa-text)' })}>{tenant.admin_email}</strong>) must approve the deletion from their dashboard before you can proceed.
+              </p>
+              <button onClick={handleCancelDeletion} disabled={deleting} style={s({ width: '100%', padding: 10, background: 'var(--sa-bg-elevated)', border: '1px solid var(--sa-border)', borderRadius: 10, cursor: 'pointer', color: 'var(--sa-text-secondary)', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 })}>
+                <XCircle size={14} /> {deleting ? 'Cancelling...' : 'Cancel Deletion Request'}
+              </button>
+            </div>
+          )}
+
+          {/* State 3: Admin approved — SuperAdmin can now delete */}
+          {status === 'pending_deletion' && isDeletionApproved && (
+            <div>
+              <div style={s({ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 })}>
+                <CheckCircle2 size={16} color="#059669" />
+                <span style={s({ fontSize: 13, fontWeight: 700, color: 'var(--sa-success)' })}>Admin Approved Deletion</span>
               </div>
               <p style={s({ fontSize: 12, color: 'var(--sa-text-muted)', margin: '0 0 8px', lineHeight: 1.5 })}>
-                This will permanently delete <strong style={s({ color: 'var(--sa-text)' })}>{tenant.name}</strong> and ALL its data: users, departments, subjects, students, clearances, dues, enrollments, activity logs, and auth accounts.
+                The tenant admin has approved the deletion. Type the tenant name to permanently delete all data.
               </p>
               <div style={s({ fontSize: 11, fontWeight: 600, color: 'var(--sa-text-muted)', marginBottom: 6 })}>
                 Type <strong style={s({ color: 'var(--sa-danger)', fontFamily: 'monospace' })}>{tenant.name}</strong> to confirm:
@@ -245,11 +318,8 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
                 placeholder={tenant.name}
                 style={s({ width: '100%', padding: '10px 14px', background: 'var(--sa-bg-input)', border: '1px solid #dc262630', borderRadius: 10, color: 'var(--sa-text)', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const, marginBottom: 10 })}
               />
-              {deleteError && (
-                <div style={s({ padding: '8px 12px', borderRadius: 8, fontSize: 12, background: '#dc262612', color: 'var(--sa-danger)', border: '1px solid #dc262620', marginBottom: 10 })}>{deleteError}</div>
-              )}
               <div style={s({ display: 'flex', gap: 10 })}>
-                <button onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); setDeleteError(null); }} style={s({ flex: 1, padding: 10, background: 'var(--sa-bg-elevated)', border: '1px solid var(--sa-border)', borderRadius: 10, cursor: 'pointer', color: 'var(--sa-text-secondary)', fontSize: 12, fontWeight: 500 })}>Cancel</button>
+                <button onClick={handleCancelDeletion} disabled={deleting} style={s({ flex: 1, padding: 10, background: 'var(--sa-bg-elevated)', border: '1px solid var(--sa-border)', borderRadius: 10, cursor: 'pointer', color: 'var(--sa-text-secondary)', fontSize: 12, fontWeight: 500 })}>Cancel</button>
                 <button
                   onClick={handleDeleteTenant}
                   disabled={deleting || deleteConfirmText !== tenant.name}

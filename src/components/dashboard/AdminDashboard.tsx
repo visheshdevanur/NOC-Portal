@@ -120,6 +120,11 @@ export default function AdminDashboard() {
   const [expandedGradBatches, setExpandedGradBatches] = useState<Set<string>>(new Set());
   const [exportingPreData, setExportingPreData] = useState(false);
 
+  // Tenant Deletion Approval State
+  const [tenantDeletionPending, setTenantDeletionPending] = useState(false);
+  const [tenantDeletionApproved, setTenantDeletionApproved] = useState(false);
+  const [approvingDeletion, setApprovingDeletion] = useState(false);
+
 
   // React Query: analytics with caching
   const { data: analyticsData } = useQuery({
@@ -158,6 +163,45 @@ export default function AdminDashboard() {
     if (activeTab === 'logs') fetchAdminLogs();
     if (activeTab === 'academic') { fetchPromotionPreview(); fetchGraduatedStudents(); fetchDepartments(); }
   }, [activeTab]);
+
+  // Check tenant deletion status on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const userId = sessionData?.session?.user?.id;
+        if (!userId) return;
+        const { data: profileData } = await supabase.from('profiles').select('tenant_id').eq('id', userId).single();
+        if (!profileData?.tenant_id) return;
+        const { data: tenantData } = await supabase.from('tenants').select('status, deletion_approved_at').eq('id', profileData.tenant_id).single();
+        if (tenantData?.status === 'pending_deletion') {
+          setTenantDeletionPending(true);
+          if (tenantData.deletion_approved_at) setTenantDeletionApproved(true);
+        }
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
+  const handleApproveDeletion = async () => {
+    setApprovingDeletion(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+      if (!userId) return;
+      const { data: profileData } = await supabase.from('profiles').select('tenant_id').eq('id', userId).single();
+      if (!profileData?.tenant_id) return;
+      // Call the approve-deletion edge function
+      await supabase.functions.invoke('admin-api', {
+        body: { action: 'approve-deletion', tenant_id: profileData.tenant_id },
+      });
+      setTenantDeletionApproved(true);
+      logActivity('Approved Tenant Deletion', 'Approved the platform deletion request for this institution');
+    } catch (err: any) {
+      alert('Failed to approve deletion: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setApprovingDeletion(false);
+    }
+  };
 
   // ==================== SYSTEM LOGS ====================
   // Admin should only see logs from Librarian, HOD, and Accounts
@@ -995,6 +1039,38 @@ export default function AdminDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Tenant Deletion Approval Banner */}
+      {tenantDeletionPending && (
+        <div className="bg-destructive/10 border-2 border-destructive/30 rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-destructive/20 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+            </div>
+            <div>
+              <h3 className="font-bold text-destructive text-sm">⚠️ Tenant Deletion Requested</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {tenantDeletionApproved
+                  ? 'You have approved the deletion. The platform admin will proceed with permanent deletion.'
+                  : 'The platform super admin has requested to permanently delete this institution and ALL its data. Your approval is required before deletion can proceed.'
+                }
+              </p>
+            </div>
+          </div>
+          {!tenantDeletionApproved ? (
+            <button
+              onClick={handleApproveDeletion}
+              disabled={approvingDeletion}
+              className="flex items-center gap-2 px-5 py-2.5 bg-destructive text-white font-bold text-sm rounded-xl hover:bg-destructive/90 transition-all whitespace-nowrap disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              {approvingDeletion ? 'Approving...' : 'Approve Deletion'}
+            </button>
+          ) : (
+            <span className="text-xs font-bold text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">✅ Approved</span>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-card rounded-2xl p-1.5 shadow-sm border border-border flex gap-1 overflow-x-auto">

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../lib/useAuth';
+import { supabase } from '../lib/supabase';
 import { CheckCircle2, XCircle, Clock, AlertCircle, ArrowLeft, RefreshCw, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -22,7 +23,9 @@ function downloadReceipt(details: {
   date: string;
   studentName?: string;
   status: string;
+  tenantName?: string;
 }) {
+  const headerTitle = details.tenantName || 'NO DUE PORTAL';
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Payment Receipt - ${details.orderId}</title>
 <style>
@@ -41,7 +44,7 @@ function downloadReceipt(details: {
   @media print { body { margin: 0; } }
 </style></head><body>
 <div class="header">
-  <h1>NO DUE PORTAL</h1>
+  <h1>${headerTitle}</h1>
   <p>Payment Receipt</p>
 </div>
 <div style="text-align:center;margin-bottom:24px;">
@@ -107,6 +110,18 @@ export default function PaymentCallback() {
   const [orderDetails, setOrderDetails] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [tenantName, setTenantName] = useState<string | undefined>(undefined);
+
+  // Fetch tenant name
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!profile?.tenant_id) return;
+        const { data } = await supabase.from('tenants').select('name').eq('id', profile.tenant_id).single();
+        if (data?.name) setTenantName(data.name);
+      } catch { /* ignore */ }
+    })();
+  }, [profile?.tenant_id]);
 
   // Extract order info ONCE using ref to avoid re-extraction
   const orderIdRef = useRef<string | null>(null);
@@ -219,6 +234,7 @@ export default function PaymentCallback() {
       date: new Date().toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' }),
       studentName: profile?.full_name || undefined,
       status: orderDetails?.status || (status === 'success' ? 'CHARGED' : 'PENDING'),
+      tenantName,
     });
   };
 

@@ -49,6 +49,7 @@ export type Tenant = {
   primary_color: string;
   created_at: string;
   updated_at: string;
+  deletion_approved_at: string | null;
   userCount?: number;
 };
 
@@ -82,6 +83,14 @@ export async function editTenant(tenantId: string, updates: Record<string, unkno
 
 export async function toggleTenantStatus(tenantId: string, status: 'active' | 'suspended') {
   return invokeAdminApi('toggle-status', { tenant_id: tenantId, status });
+}
+
+export async function requestTenantDeletion(tenantId: string) {
+  return invokeAdminApi('request-deletion', { tenant_id: tenantId });
+}
+
+export async function cancelTenantDeletion(tenantId: string) {
+  return invokeAdminApi('cancel-deletion', { tenant_id: tenantId });
 }
 
 export async function deleteTenant(tenantId: string) {

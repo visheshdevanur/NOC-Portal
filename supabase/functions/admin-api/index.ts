@@ -245,10 +245,65 @@ serve(async (req) => {
         return jsonResponse({ success: true })
       }
 
-      // ─── DELETE TENANT (FIX #12: Batched with timeout protection) ───
+      // ─── REQUEST TENANT DELETION (SuperAdmin requests, Admin must approve) ───
+      case 'request-deletion': {
+        const { tenant_id } = params
+        if (!tenant_id) return jsonResponse({ error: 'tenant_id required' }, 400)
+
+        const { error } = await adminClient
+          .from('tenants')
+          .update({ status: 'pending_deletion', updated_at: new Date().toISOString() })
+          .eq('id', tenant_id)
+        if (error) throw error
+        log({ level: 'INFO', fn: 'admin-api', action: 'deletion-requested', meta: { tenant_id } })
+        return jsonResponse({ success: true })
+      }
+
+      // ─── CANCEL DELETION REQUEST ───
+      case 'cancel-deletion': {
+        const { tenant_id } = params
+        if (!tenant_id) return jsonResponse({ error: 'tenant_id required' }, 400)
+
+        const { error } = await adminClient
+          .from('tenants')
+          .update({ status: 'active', deletion_approved_at: null, updated_at: new Date().toISOString() })
+          .eq('id', tenant_id)
+        if (error) throw error
+        log({ level: 'INFO', fn: 'admin-api', action: 'deletion-cancelled', meta: { tenant_id } })
+        return jsonResponse({ success: true })
+      }
+
+      // ─── APPROVE DELETION (called by tenant admin) ───
+      case 'approve-deletion': {
+        const { tenant_id } = params
+        if (!tenant_id) return jsonResponse({ error: 'tenant_id required' }, 400)
+
+        const { error } = await adminClient
+          .from('tenants')
+          .update({ deletion_approved_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq('id', tenant_id)
+          .eq('status', 'pending_deletion')
+        if (error) throw error
+        log({ level: 'INFO', fn: 'admin-api', action: 'deletion-approved', meta: { tenant_id } })
+        return jsonResponse({ success: true })
+      }
+
+      // ─── DELETE TENANT (requires admin approval) ───
       case 'delete-tenant': {
         const { tenant_id } = params
         if (!tenant_id) return jsonResponse({ error: 'tenant_id required' }, 400)
+
+        // Verify tenant admin has approved the deletion
+        const { data: tenantData, error: tenantCheckErr } = await adminClient
+          .from('tenants')
+          .select('status, deletion_approved_at')
+          .eq('id', tenant_id)
+          .single()
+        if (tenantCheckErr) throw tenantCheckErr
+
+        if (tenantData.status !== 'pending_deletion' || !tenantData.deletion_approved_at) {
+          return jsonResponse({ error: 'Deletion not approved by tenant admin yet. The admin must approve the deletion request first.' }, 403)
+        }
 
         // Delete all profiles (auth users) for this tenant in batches
         const { data: profiles } = await adminClient
@@ -257,7 +312,6 @@ serve(async (req) => {
           .eq('tenant_id', tenant_id)
 
         if (profiles && profiles.length > 0) {
-          // Process in batches of 20 to avoid Edge Function timeout
           const BATCH_SIZE = 20
           let deleted = 0
           for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
