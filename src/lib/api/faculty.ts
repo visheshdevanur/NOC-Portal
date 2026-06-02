@@ -88,7 +88,6 @@ export const getIACountForSubject = async (subjectId: string, teacherId: string,
       .from('ia_attendance')
       .select('ia_number')
       .eq('subject_id', subjectId)
-      .eq('teacher_id', teacherId)
       .in('student_id', sectionStudentIds)
       .order('ia_number', { ascending: false })
       .limit(1);
@@ -99,7 +98,6 @@ export const getIACountForSubject = async (subjectId: string, teacherId: string,
     .from('ia_attendance')
     .select('ia_number')
     .eq('subject_id', subjectId)
-    .eq('teacher_id', teacherId)
     .order('ia_number', { ascending: false })
     .limit(1);
   if (error) throw error;
@@ -136,12 +134,11 @@ export const saveIAAttendance = async (
   return true;
 };
 
-export const getIAAttendanceForSubject = async (subjectId: string, teacherId: string, section?: string | null) => {
+export const getIAAttendanceForSubject = async (subjectId: string, _teacherId: string, section?: string | null) => {
   const { data, error } = await supabase
     .from('ia_attendance')
     .select('*, profiles!ia_attendance_student_id_fkey(full_name, roll_number, section)')
     .eq('subject_id', subjectId)
-    .eq('teacher_id', teacherId)
     .order('ia_number')
     .order('created_at');
   if (error) throw error;

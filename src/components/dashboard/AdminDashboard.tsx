@@ -1438,6 +1438,7 @@ export default function AdminDashboard() {
                     <option value="accounts">Accounts Staff</option>
 
                     <option value="librarian">Librarian</option>
+                    <option value="coe">COE (Controller of Examinations)</option>
                   </select>
                 </FormField>
                 <FormField label="Full Name">

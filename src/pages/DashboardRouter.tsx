@@ -39,6 +39,7 @@ const AccountsDashboard = lazyRetry(() => import('../components/dashboard/Accoun
 
 const FycDashboard = lazyRetry(() => import('../components/dashboard/FycDashboard'));
 const LibraryDashboard = lazyRetry(() => import('../pages/LibraryDashboard'));
+const CoeDashboard = lazyRetry(() => import('../components/dashboard/CoeDashboard'));
 
 const DashboardFallback = () => (
   <div className="space-y-6 animate-pulse">
@@ -80,6 +81,7 @@ const DashboardRouter = () => {
 
       case 'fyc': return <FycDashboard />;
       case 'librarian': return <LibraryDashboard />;
+      case 'coe': return <CoeDashboard />;
       default: return <div>Access Denied. Unknown role: {profile.role}</div>;
     }
   };
