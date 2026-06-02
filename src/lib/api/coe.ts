@@ -3,9 +3,10 @@ import { logActivity } from './shared';
 
 // =======================
 // COE SPECIFIC API
+// Uses edge function for RLS-restricted tables
 // =======================
 
-/** Fetch all departments */
+/** Fetch all departments (readable by all authenticated users) */
 export const getAllDepartments = async () => {
   const { data, error } = await supabase
     .from('departments')
@@ -38,117 +39,68 @@ export const getSubjectsForDeptSem = async (departmentId: string, semesterId: st
   return data || [];
 };
 
-/** Fetch ALL enrolled students for a subject (no teacher_id / section filter — COE is cross-section) */
+/** Fetch enrolled students via edge function (bypasses RLS) */
 export const getEnrolledStudents = async (subjectId: string) => {
-  const { data, error } = await supabase
-    .from('subject_enrollment')
-    .select('student_id, profiles!subject_enrollment_student_id_fkey(id, full_name, roll_number, section)')
-    .eq('subject_id', subjectId);
-  if (error) throw error;
-  // Deduplicate by student_id (in case of multiple enrollments)
-  const seen = new Set<string>();
-  return (data || []).filter((row: any) => {
-    if (seen.has(row.student_id)) return false;
-    seen.add(row.student_id);
-    return true;
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'coe-get-students', subject_id: subjectId },
   });
-};
-
-/** Fetch existing IA attendance for a subject + IA number (no teacher_id filter) */
-export const getIAAttendance = async (subjectId: string, iaNumber: number) => {
-  const { data, error } = await supabase
-    .from('ia_attendance')
-    .select('student_id, is_present')
-    .eq('subject_id', subjectId)
-    .eq('ia_number', iaNumber);
   if (error) throw error;
-  return data || [];
+  if (data?.error) throw new Error(data.error);
+  return data?.data || [];
 };
 
-/** Save IA attendance records (COE user's ID as teacher_id) */
+/** Fetch IA attendance via edge function */
+export const getIAAttendance = async (subjectId: string, iaNumber: number) => {
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'coe-get-attendance', subject_id: subjectId, ia_number: iaNumber },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data?.data || [];
+};
+
+/** Save IA attendance via edge function */
 export const saveIAAttendanceCOE = async (
   records: { student_id: string; subject_id: string; teacher_id: string; ia_number: number; is_present: boolean }[]
 ) => {
-  const BATCH_SIZE = 25;
-  for (let i = 0; i < records.length; i += BATCH_SIZE) {
-    const batch = records.slice(i, i + BATCH_SIZE);
-    const { error } = await supabase
-      .from('ia_attendance')
-      .upsert(batch, { onConflict: 'student_id,subject_id,ia_number' });
-    if (error) throw error;
-  }
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'coe-save-attendance', records },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
   logActivity('COE IA Attendance', `Updated IA attendance for ${records.length} students`);
   return true;
 };
 
-/** Parse a CSV file of absentees and return upsert-ready records.
- *  CSV columns: USN, Subject Code, IA Name (IA1/IA2/IA3)
- *  Only absentees are listed — everyone else is Present by default.
- */
-export const parseAbsenteeCSV = async (
-  csvText: string,
-  subjectId: string,
-  subjectCode: string,
-  iaNumber: number,
-  coeUserId: string,
-  enrolledStudents: { student_id: string; profiles: { roll_number: string | null } }[]
-): Promise<{ records: any[]; errors: string[] }> => {
+/** Process global CSV via edge function — resolves USNs and subject codes server-side */
+export const processGlobalCSV = async (csvText: string, coeUserId: string) => {
   const lines = csvText.trim().split('\n').map(l => l.trim()).filter(Boolean);
-  if (lines.length < 2) return { records: [], errors: ['CSV file is empty or has no data rows'] };
+  if (lines.length < 2) return { processed: 0, errors: ['CSV file is empty or has no data rows'] };
 
-  // Skip header
-  const dataLines = lines.slice(1);
-  const errors: string[] = [];
-  const absentUSNs = new Set<string>();
+  // Parse CSV rows (skip header)
+  const csv_rows: { usn: string; subject_code: string; ia_name: string }[] = [];
+  const parseErrors: string[] = [];
 
-  // Build USN → student_id map
-  const usnMap = new Map<string, string>();
-  enrolledStudents.forEach((e: any) => {
-    const usn = e.profiles?.roll_number?.toUpperCase();
-    if (usn) usnMap.set(usn, e.student_id);
-  });
-
-  for (let i = 0; i < dataLines.length; i++) {
-    const parts = dataLines[i].split(',').map(p => p.trim());
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(',').map(p => p.trim());
     if (parts.length < 3) {
-      errors.push(`Row ${i + 2}: Expected 3 columns (USN, Subject Code, IA Name)`);
+      parseErrors.push(`Row ${i + 1}: Expected 3 columns (USN, Subject Code, IA Name)`);
       continue;
     }
-    const [usn, csvSubjectCode, iaName] = parts;
-
-    // Validate subject code matches
-    if (csvSubjectCode.toUpperCase() !== subjectCode.toUpperCase()) {
-      errors.push(`Row ${i + 2}: Subject code "${csvSubjectCode}" doesn't match selected subject "${subjectCode}"`);
-      continue;
-    }
-
-    // Validate IA name
-    const csvIANum = parseInt(iaName.replace(/\D/g, ''), 10);
-    if (isNaN(csvIANum) || csvIANum !== iaNumber) {
-      errors.push(`Row ${i + 2}: IA name "${iaName}" doesn't match selected IA${iaNumber}`);
-      continue;
-    }
-
-    // Validate USN exists in enrolled students
-    const studentId = usnMap.get(usn.toUpperCase());
-    if (!studentId) {
-      errors.push(`Row ${i + 2}: USN "${usn}" not found in enrolled students`);
-      continue;
-    }
-
-    absentUSNs.add(usn.toUpperCase());
+    csv_rows.push({ usn: parts[0], subject_code: parts[1], ia_name: parts[2] });
   }
 
-  // Build records: absentees = absent, everyone else = present
-  const records = enrolledStudents.map((e: any) => ({
-    student_id: e.student_id,
-    subject_id: subjectId,
-    teacher_id: coeUserId,
-    ia_number: iaNumber,
-    is_present: !absentUSNs.has(e.profiles?.roll_number?.toUpperCase() || ''),
-  }));
+  if (csv_rows.length === 0) return { processed: 0, errors: parseErrors };
 
-  return { records, errors };
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'coe-process-csv', csv_rows, coe_user_id: coeUserId },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+
+  const allErrors = [...parseErrors, ...(data?.errors || [])];
+  logActivity('COE CSV Upload', `Processed ${data?.processed || 0} absentee records from CSV`);
+  return { processed: data?.processed || 0, errors: allErrors };
 };
 
 /** Generate CSV template content */

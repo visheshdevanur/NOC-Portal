@@ -105,6 +105,142 @@ serve(async (req) => {
       return jsonResponse({ success: true })
     }
 
+    // ─── COE ACTIONS (called by COE user, NOT super admin) ───
+    if (action?.startsWith('coe-')) {
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) return jsonResponse({ error: 'Missing auth token' }, 401)
+
+      const token = authHeader.replace('Bearer ', '')
+      const coeClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        { auth: { persistSession: false } }
+      )
+
+      const { data: { user: caller }, error: authErr } = await coeClient.auth.getUser(token)
+      if (authErr || !caller) return jsonResponse({ error: 'Invalid auth token' }, 401)
+
+      const { data: callerProfile } = await coeClient
+        .from('profiles')
+        .select('role, tenant_id')
+        .eq('id', caller.id)
+        .single()
+      if (!callerProfile || callerProfile.role !== 'coe') {
+        return jsonResponse({ error: 'Only COE users can access this endpoint' }, 403)
+      }
+
+      switch (action) {
+        case 'coe-get-students': {
+          const { subject_id } = params
+          if (!subject_id) return jsonResponse({ error: 'subject_id required' }, 400)
+          const { data, error } = await coeClient
+            .from('subject_enrollment')
+            .select('student_id, profiles!subject_enrollment_student_id_fkey(id, full_name, roll_number, section)')
+            .eq('subject_id', subject_id)
+          if (error) return jsonResponse({ error: error.message }, 500)
+          // Deduplicate
+          const seen = new Set()
+          const unique = (data || []).filter((r) => {
+            if (seen.has(r.student_id)) return false
+            seen.add(r.student_id)
+            return true
+          })
+          return jsonResponse({ data: unique })
+        }
+
+        case 'coe-get-attendance': {
+          const { subject_id, ia_number } = params
+          if (!subject_id || !ia_number) return jsonResponse({ error: 'subject_id and ia_number required' }, 400)
+          const { data, error } = await coeClient
+            .from('ia_attendance')
+            .select('student_id, is_present')
+            .eq('subject_id', subject_id)
+            .eq('ia_number', ia_number)
+          if (error) return jsonResponse({ error: error.message }, 500)
+          return jsonResponse({ data: data || [] })
+        }
+
+        case 'coe-save-attendance': {
+          const { records } = params
+          if (!records || !Array.isArray(records)) return jsonResponse({ error: 'records array required' }, 400)
+          const BATCH = 25
+          for (let i = 0; i < records.length; i += BATCH) {
+            const batch = records.slice(i, i + BATCH)
+            const { error } = await coeClient
+              .from('ia_attendance')
+              .upsert(batch, { onConflict: 'student_id,subject_id,ia_number' })
+            if (error) return jsonResponse({ error: error.message }, 500)
+          }
+          log({ level: 'INFO', fn: 'admin-api', action: 'coe-save-attendance', userId: caller.id, meta: { count: records.length } })
+          return jsonResponse({ success: true, count: records.length })
+        }
+
+        case 'coe-process-csv': {
+          // Global CSV: resolve USN → student_id, Subject Code → subject_id
+          const { csv_rows, coe_user_id } = params
+          if (!csv_rows || !Array.isArray(csv_rows)) return jsonResponse({ error: 'csv_rows required' }, 400)
+
+          const errors = []
+          const records = []
+
+          // Build lookup caches
+          const usnSet = new Set(csv_rows.map((r) => r.usn?.toUpperCase()).filter(Boolean))
+          const codeSet = new Set(csv_rows.map((r) => r.subject_code?.toUpperCase()).filter(Boolean))
+
+          // Fetch all matching students
+          const { data: students } = await coeClient
+            .from('profiles')
+            .select('id, roll_number')
+            .in('roll_number', Array.from(usnSet))
+          const usnMap = new Map()
+          ;(students || []).forEach((s) => usnMap.set(s.roll_number?.toUpperCase(), s.id))
+
+          // Fetch all matching subjects
+          const { data: subjects } = await coeClient
+            .from('subjects')
+            .select('id, subject_code')
+            .in('subject_code', Array.from(codeSet))
+          const codeMap = new Map()
+          ;(subjects || []).forEach((s) => codeMap.set(s.subject_code?.toUpperCase(), s.id))
+
+          for (let i = 0; i < csv_rows.length; i++) {
+            const { usn, subject_code, ia_name } = csv_rows[i]
+            const studentId = usnMap.get(usn?.toUpperCase())
+            if (!studentId) { errors.push(`Row ${i + 1}: USN "${usn}" not found`); continue }
+            const subjectId = codeMap.get(subject_code?.toUpperCase())
+            if (!subjectId) { errors.push(`Row ${i + 1}: Subject code "${subject_code}" not found`); continue }
+            const iaNum = parseInt(String(ia_name).replace(/\D/g, ''), 10)
+            if (isNaN(iaNum) || iaNum < 1 || iaNum > 3) { errors.push(`Row ${i + 1}: Invalid IA "${ia_name}"`); continue }
+            records.push({
+              student_id: studentId,
+              subject_id: subjectId,
+              teacher_id: coe_user_id || caller.id,
+              ia_number: iaNum,
+              is_present: false, // CSV contains absentees
+            })
+          }
+
+          // Upsert
+          if (records.length > 0) {
+            const BATCH = 25
+            for (let i = 0; i < records.length; i += BATCH) {
+              const batch = records.slice(i, i + BATCH)
+              const { error } = await coeClient
+                .from('ia_attendance')
+                .upsert(batch, { onConflict: 'student_id,subject_id,ia_number' })
+              if (error) { errors.push(`DB error: ${error.message}`); break }
+            }
+          }
+
+          log({ level: 'INFO', fn: 'admin-api', action: 'coe-process-csv', userId: caller.id, meta: { processed: records.length, errors: errors.length } })
+          return jsonResponse({ success: true, processed: records.length, errors })
+        }
+
+        default:
+          return jsonResponse({ error: `Unknown COE action: ${action}` }, 400)
+      }
+    }
+
     // ─── ALL OTHER ACTIONS REQUIRE SUPER ADMIN ───
     const { user, adminClient } = await validateSuperAdmin(req)
 
