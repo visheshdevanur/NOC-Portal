@@ -8,6 +8,7 @@ import {
   Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft, ArrowUpCircle, FileWarning
 } from 'lucide-react';
 import { logAndFormatError } from '../../lib/errorHandler';
+import { logActivity } from '../../lib/api';
 import AttendanceFinesTab from './shared/AttendanceFinesTab';
 
 type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'logs' | 'academic' | 'attendanceFines';
@@ -266,6 +267,7 @@ export default function AdminDashboard() {
       });
 
       setUserSuccess(`${newUser.role.toUpperCase()} "${newUser.full_name}" created successfully!`);
+      logActivity('Created User', `Created ${newUser.role} "${newUser.full_name}" (${newUser.email})`);
       setNewUser({ email: '', password: '', full_name: '', role: 'hod', department_id: '' });
       setShowCreateUser(false);
       fetchUsers();
@@ -283,6 +285,7 @@ export default function AdminDashboard() {
       const { deleteUserSecure } = await import('../../lib/supabase');
       await deleteUserSecure(userId);
       setUserSuccess(`"${userName}" permanently deleted.`);
+      logActivity('Deleted User', `Permanently deleted user "${userName}"`);
       fetchUsers();
     } catch (err: any) {
       setUserError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
@@ -312,6 +315,7 @@ export default function AdminDashboard() {
       }
 
       setUserSuccess(`User "${editingUser.full_name}" updated!`);
+      logActivity('Updated User', `Updated user "${editingUser.full_name}"`);
       setEditingUser(null);
       fetchUsers();
     } catch (err: any) {
@@ -493,6 +497,7 @@ export default function AdminDashboard() {
       }
 
       setDeptSuccess(`Department "${newDept.name}" created!`);
+      logActivity('Created Department', `Created department "${newDept.name}"`);
       setNewDept({ name: '', hod_id: '' });
       setShowCreateDept(false);
       fetchDepartments();
@@ -520,6 +525,7 @@ export default function AdminDashboard() {
       }
 
       setDeptSuccess(`Department "${editingDept.name}" updated!`);
+      logActivity('Updated Department', `Updated department "${editingDept.name}"`);
       setEditingDept(null);
       fetchDepartments();
     } catch (err: any) {
@@ -540,6 +546,7 @@ export default function AdminDashboard() {
         throw error;
       }
       setDeptSuccess(`"${deptName}" deleted.`);
+      logActivity('Deleted Department', `Deleted department "${deptName}"`);
       fetchDepartments();
     } catch (err: any) {
       setDeptError(err.message || 'Failed to delete department.');
@@ -822,6 +829,7 @@ export default function AdminDashboard() {
       let msg = `Promotion complete! ${totalPromoted} promoted, ${totalGraduated} graduated.`;
       if (errors.length > 0) msg += `\n\nWarnings:\n${errors.join('\n')}`;
       setAcademicSuccess(msg);
+      logActivity('Mass Promotion', `Promoted ${totalPromoted} students, graduated ${totalGraduated} students`);
       setShowPromoteConfirm(false);
       fetchPromotionPreview();
       fetchGraduatedStudents();
@@ -1108,7 +1116,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl">
                   <p className="text-foreground text-sm font-medium">
-                    ðŸ’¡ Tip: Use "Download Current Data" before promoting to backup all records.
+                    💡 Tip: Use "Download Current Data" before promoting to backup all records.
                   </p>
                 </div>
                 <p className="text-foreground font-bold text-center">Are you sure you want to promote all eligible students?</p>

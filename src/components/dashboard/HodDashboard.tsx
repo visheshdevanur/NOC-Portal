@@ -4,7 +4,7 @@ import { useAuth } from '../../lib/useAuth';
 import {
   getHodPendingRequests, approveHodRequest, getUsersByDeptAndRoles,
   getDepartmentById, getHodDepartmentStudents, getHodFinePayments,
-  isFirstYearSem
+  isFirstYearSem, logActivity
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import StudentDuesOverviewTab from './shared/StudentDuesOverviewTab';
@@ -254,6 +254,7 @@ export default function HodDashboard() {
           type: 'success'
         }]);
       }
+      logActivity('Approved Clearance', `Approved final clearance for ${req?.profiles?.full_name || 'student'}`);
       fetchRequests();
     } catch (err: any) {
       alert("Failed to approve request: " + await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
@@ -269,6 +270,7 @@ export default function HodDashboard() {
       if (error) throw error;
       
       queryClient.invalidateQueries({ queryKey: ['hodCollegeDues', profile?.department_id] });
+      logActivity('Cleared College Due', `Cleared dues for ${profileName}`);
       alert(`Dues cleared for ${profileName}.`);
     } catch (err: any) {
       alert('Failed to clear dues: ' + (err?.message || 'Unknown'));
@@ -288,6 +290,7 @@ export default function HodDashboard() {
           type: 'success'
         }]);
       }
+      logActivity('Bulk Approved Clearances', `Bulk approved ${filtered.length} clearance requests`);
       fetchRequests();
     } catch (err: any) {
       alert("Error during bulk approval: " + await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));
@@ -324,6 +327,7 @@ export default function HodDashboard() {
       });
 
       setUserSuccess(`${newUser.role === 'staff' ? 'Staff' : 'Teacher'} "${newUser.full_name}" created!`);
+      logActivity('Created User', `Created ${newUser.role} "${newUser.full_name}"`);
       setNewUser({ email: '', password: '', full_name: '', role: 'staff', teacher_id: '' });
       setShowCreateUser(false);
       fetchUsers();
@@ -345,6 +349,7 @@ export default function HodDashboard() {
       }).eq('id', editingUser.id);
       if (error) throw error;
       setUserSuccess(`"${editingUser.full_name}" updated.`);
+      logActivity('Updated User', `Updated user "${editingUser.full_name}"`);
       setEditingUser(null);
       fetchUsers();
     } catch (err: any) {
@@ -360,6 +365,7 @@ export default function HodDashboard() {
       const { deleteUserSecure } = await import('../../lib/supabase');
       await deleteUserSecure(userId);
       setUserSuccess(`"${userName}" permanently deleted.`);
+      logActivity('Deleted User', `Deleted user "${userName}"`);
       fetchUsers();
     } catch (err: any) {
       setUserError(await logAndFormatError(err, { dashboard_name: 'HodDashboard' }));

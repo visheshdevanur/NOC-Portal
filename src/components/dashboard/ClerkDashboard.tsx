@@ -5,7 +5,7 @@ import {
   getUsersByDeptAndRoles,
   getSubjectsByDepartment, createSubject, deleteSubject,
   assignTeacherToSection, updateSubjectAPI, getSemestersByDepartment, updateUserAPI,
-  updateStudentPaidAmount, getAllDepartments
+  updateStudentPaidAmount, getAllDepartments, logActivity
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 
@@ -557,6 +557,7 @@ export default function ClerkDashboard() {
       });
 
       setUserSuccess(`${newUser.role === 'student' ? 'Student' : 'Teacher'} "${newUser.full_name}" created!`);
+      logActivity('Created User', `Created ${newUser.role} "${newUser.full_name}"`);
       setNewUser({ email: '', password: '', full_name: '', role: 'teacher', section: '', semester_id: '', roll_number: '', teacher_id: '' });
       setShowCreateUser(false);
       fetchUsers();
@@ -596,6 +597,7 @@ export default function ClerkDashboard() {
       }
 
       setUserSuccess(`${editingUser.role === 'student' ? 'Student' : 'Teacher'} "${editingUser.full_name}" updated!`);
+      logActivity('Updated User', `Updated ${editingUser.role} "${editingUser.full_name}"`);
       setEditingUser(null);
       fetchUsers();
     } catch (err: any) {

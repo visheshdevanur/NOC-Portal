@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
-import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
+import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject, getTeacherIAAttendance, logActivity } from '../../lib/api';
 import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Edit, Building2, Layers, RefreshCw } from 'lucide-react';
 
 type SubjectEnrollment = {
@@ -203,6 +203,7 @@ export default function FacultyDashboard() {
       
       await saveIAAttendance(records);
       setSaveSuccess(`IA-${newIANumber} saved successfully!`);
+      logActivity('Saved IA Attendance', `Saved IA-${newIANumber} for ${records.length} students`);
       setShowNewIAForm(false);
       
       // Reload data
@@ -230,6 +231,7 @@ export default function FacultyDashboard() {
       
       await saveIAAttendance(records);
       setSaveSuccess(`IA-${editIaNum} updated successfully!`);
+      logActivity('Updated IA Attendance', `Updated IA-${editIaNum} for ${records.length} students`);
       setEditingIA(null);
       
       // Reload data
