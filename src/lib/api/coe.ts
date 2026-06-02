@@ -15,11 +15,12 @@ export const getAllDepartments = async () => {
   return data || [];
 };
 
-/** Fetch all semesters */
-export const getAllSemesters = async () => {
+/** Fetch semesters for a given department */
+export const getSemestersByDepartment = async (departmentId: string) => {
   const { data, error } = await supabase
     .from('semesters')
     .select('id, name')
+    .eq('department_id', departmentId)
     .order('name');
   if (error) throw error;
   return data || [];

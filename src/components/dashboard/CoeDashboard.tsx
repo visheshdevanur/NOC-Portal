@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../lib/useAuth';
 import {
   getAllDepartments,
-  getAllSemesters,
+  getSemestersByDepartment,
   getSubjectsForDeptSem,
   getEnrolledStudents,
   getIAAttendance,
@@ -56,9 +56,8 @@ export default function CoeDashboard() {
     (async () => {
       setLoading(true);
       try {
-        const [depts, sems] = await Promise.all([getAllDepartments(), getAllSemesters()]);
+        const depts = await getAllDepartments();
         setDepartments(depts);
-        setSemesters(sems);
       } catch (err) { console.error(err); }
       finally { setLoading(false); }
     })();
@@ -94,10 +93,17 @@ export default function CoeDashboard() {
   }, []);
 
   // Step handlers
-  const selectDepartment = (dept: Department) => {
+  const selectDepartment = async (dept: Department) => {
     setSelectedDept(dept);
     setSelectedSem(null);
     setSelectedSubject(null);
+    // Fetch semesters for this specific department
+    setLoading(true);
+    try {
+      const sems = await getSemestersByDepartment(dept.id);
+      setSemesters(sems);
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
     setStep('semester');
   };
 
