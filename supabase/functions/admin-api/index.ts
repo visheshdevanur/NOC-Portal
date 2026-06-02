@@ -59,16 +59,61 @@ serve(async (req) => {
   if (originError) return originError
 
   try {
+    // Parse the body first to check the action
+    const body = await req.json()
+    const { action, ...params } = body
+
+    // ─── APPROVE DELETION (called by tenant admin, NOT super admin) ───
+    if (action === 'approve-deletion') {
+      const { tenant_id } = params
+      if (!tenant_id) return jsonResponse({ error: 'tenant_id required' }, 400)
+
+      // Validate the caller is an authenticated user (admin) of this tenant
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) return jsonResponse({ error: 'Missing auth token' }, 401)
+
+      const token = authHeader.replace('Bearer ', '')
+      const adminClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        { auth: { persistSession: false } }
+      )
+
+      // Verify the JWT and get the user
+      const { data: { user: caller }, error: authErr } = await adminClient.auth.getUser(token)
+      if (authErr || !caller) return jsonResponse({ error: 'Invalid auth token' }, 401)
+
+      // Verify caller is an admin of this specific tenant
+      const { data: callerProfile } = await adminClient
+        .from('profiles')
+        .select('role, tenant_id')
+        .eq('id', caller.id)
+        .single()
+      if (!callerProfile || callerProfile.role !== 'admin' || callerProfile.tenant_id !== tenant_id) {
+        return jsonResponse({ error: 'Only the tenant admin can approve deletion' }, 403)
+      }
+
+      // Set deletion_approved_at
+      const { error } = await adminClient
+        .from('tenants')
+        .update({ deletion_approved_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', tenant_id)
+        .eq('status', 'pending_deletion')
+      if (error) throw error
+
+      log({ level: 'INFO', fn: 'admin-api', action: 'deletion-approved', userId: caller.id, meta: { tenant_id } })
+      return jsonResponse({ success: true })
+    }
+
+    // ─── ALL OTHER ACTIONS REQUIRE SUPER ADMIN ───
     const { user, adminClient } = await validateSuperAdmin(req)
 
-    // Rate limit: 10 admin API calls per minute per super admin
+    // Rate limit: 1500 admin API calls per minute per super admin
     const rl = checkRateLimit(`admin-api:${user.id}`, 1500, 60_000)
     if (!rl.allowed) {
       log({ level: 'WARN', fn: 'admin-api', action: 'rate_limited', userId: user.id })
       return jsonResponse({ error: 'Too many requests. Please wait.' }, 429)
     }
-
-    const { action, ...params } = await req.json()
 
     switch (action) {
       // ─── LIST TENANTS ───
@@ -302,27 +347,6 @@ serve(async (req) => {
           await adminClient.from('tenants').update(updates).eq('id', tenant_id)
         }
         log({ level: 'INFO', fn: 'admin-api', action: 'deletion-cancelled', meta: { tenant_id } })
-        return jsonResponse({ success: true })
-      }
-
-      // ─── APPROVE DELETION (called by tenant admin) ───
-      case 'approve-deletion': {
-        const { tenant_id } = params
-        if (!tenant_id) return jsonResponse({ error: 'tenant_id required' }, 400)
-
-        // Try updating with deletion_approved_at column
-        try {
-          const { error } = await adminClient
-            .from('tenants')
-            .update({ deletion_approved_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-            .eq('id', tenant_id)
-            .eq('status', 'pending_deletion')
-          if (error) throw error
-        } catch {
-          // If column doesn't exist, just update updated_at as a marker
-          await adminClient.from('tenants').update({ updated_at: new Date().toISOString() }).eq('id', tenant_id)
-        }
-        log({ level: 'INFO', fn: 'admin-api', action: 'deletion-approved', meta: { tenant_id } })
         return jsonResponse({ success: true })
       }
 
