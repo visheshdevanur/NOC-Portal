@@ -7,7 +7,7 @@ type ViewMode = 'detail' | 'edit' | 'role-users';
 const s = (obj: Record<string, any>) => obj as React.CSSProperties;
 
 export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
-  const [users, setUsers] = useState<TenantUser[]>([]);
+  const [users] = useState<TenantUser[]>([]);
   const [clearanceCount, setClearanceCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
@@ -25,19 +25,35 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Live tenant data from API (updates deletion_approved_at, roleCounts, totalUsers)
+  const [liveRoleCounts, setLiveRoleCounts] = useState<Record<string, number>>({});
+  const [totalUsers, setTotalUsers] = useState(tenant.userCount || 0);
+  const [deletionApprovedAt, setDeletionApprovedAt] = useState<string | null>(tenant.deletion_approved_at);
+
+  const fetchDetails = async () => {
+    setLoading(true);
+    try {
+      const details = await getTenantDetails(tenant.id) as any;
+      if (details) {
+        setLiveRoleCounts(details.roleCounts || {});
+        setTotalUsers(details.totalUsers || 0);
+        setClearanceCount(details.totalClearances || 0);
+        // Update status and deletion approval from live data
+        if (details.status) setStatus(details.status);
+        if (details.deletion_approved_at !== undefined) setDeletionApprovedAt(details.deletion_approved_at);
+        // Update editable fields
+        if (details.name) setEditName(details.name);
+        if (details.admin_email) setEditAdminEmail(details.admin_email);
+        if (details.slug) setEditSlug(details.slug);
+        if (details.plan) setEditPlan(details.plan);
+        if (details.max_users) setEditMaxUsers(details.max_users);
+      }
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
+  };
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const details = await getTenantDetails(tenant.id) as any;
-        const allUsers: TenantUser[] = [];
-        // Build user list from role counts (details endpoint returns counts)
-        setUsers(allUsers);
-        setClearanceCount(details?.totalClearances || 0);
-      } catch (err) { console.error(err); }
-      finally { setLoading(false); }
-    })();
+    fetchDetails();
   }, [tenant.id]);
 
   const handleToggle = async () => { setToggling(true); try { const ns = status === 'active' ? 'suspended' as const : 'active' as const; await toggleTenantStatus(tenant.id, ns); setStatus(ns); } catch {} finally { setToggling(false); } };
@@ -84,10 +100,9 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
     }
   };
 
-  const isDeletionApproved = !!tenant.deletion_approved_at;
+  const isDeletionApproved = !!deletionApprovedAt;
 
-  const roleCounts: Record<string, number> = {};
-  users.forEach(u => { roleCounts[u.role] = (roleCounts[u.role] || 0) + 1; });
+  const roleCounts: Record<string, number> = liveRoleCounts;
   const roleUsers = selectedRole ? users.filter(u => u.role === selectedRole) : [];
 
   const modal = s({ position: 'fixed', inset: 0, background: 'var(--sa-modal-overlay)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 });
@@ -199,7 +214,7 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
         {/* Stats */}
         <div style={s({ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 })}>
           {[
-            { icon: Users, label: 'Users', value: loading ? '—' : users.length, color: '#3b82f6' },
+            { icon: Users, label: 'Users', value: loading ? '—' : totalUsers, color: '#3b82f6' },
             { icon: FileCheck, label: 'Clearances', value: loading ? '—' : clearanceCount, color: '#059669' },
             { icon: Crown, label: 'Max', value: editMaxUsers, color: '#f59e0b' },
             { icon: Clock, label: 'Created', value: new Date(tenant.created_at).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }), color: '#7c3aed' },
