@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { type Tenant, getTenantDetails, toggleTenantStatus, editTenant } from '../../lib/superAdminApi';
-import { X, Building2, Users, FileCheck, Power, Shield, Clock, Mail, Tag, Crown, ChevronLeft, Save, Pencil, Loader2 } from 'lucide-react';
+import { type Tenant, getTenantDetails, toggleTenantStatus, editTenant, deleteTenant } from '../../lib/superAdminApi';
+import { X, Building2, Users, FileCheck, Power, Shield, Clock, Mail, Tag, Crown, ChevronLeft, Save, Pencil, Loader2, Trash2, AlertTriangle } from 'lucide-react';
 
 type TenantUser = { id: string; full_name: string; role: string; roll_number: string | null; section: string | null; created_at: string };
 type ViewMode = 'detail' | 'edit' | 'role-users';
@@ -21,6 +21,10 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
   const [editSlug, setEditSlug] = useState(tenant.slug);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -38,6 +42,20 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
 
   const handleToggle = async () => { setToggling(true); try { const ns = status === 'active' ? 'suspended' as const : 'active' as const; await toggleTenantStatus(tenant.id, ns); setStatus(ns); } catch {} finally { setToggling(false); } };
   const handleSave = async () => { setSaving(true); setSaveMsg(null); try { await editTenant(tenant.id, { name: editName, slug: editSlug, plan: editPlan, max_users: editMaxUsers, admin_email: editAdminEmail }); setSaveMsg({ type: 'ok', text: 'Saved!' }); setTimeout(() => { setSaveMsg(null); setView('detail'); }, 1000); } catch (err: any) { setSaveMsg({ type: 'err', text: err.message }); } finally { setSaving(false); } };
+
+  const handleDeleteTenant = async () => {
+    if (deleteConfirmText !== tenant.name) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteTenant(tenant.id);
+      onClose(); // Close modal and refresh parent
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete tenant');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const roleCounts: Record<string, number> = {};
   users.forEach(u => { roleCounts[u.role] = (roleCounts[u.role] || 0) + 1; });
@@ -201,6 +219,48 @@ export default function TenantDetailModal({ tenant, onClose }: { tenant: Tenant;
             <Power size={14} /> {toggling ? 'Updating...' : status === 'active' ? 'Suspend' : 'Reactivate'}
           </button>
           <button onClick={onClose} style={s({ flex: 1, padding: 11, background: 'var(--sa-bg-elevated)', border: '1px solid var(--sa-border)', borderRadius: 10, cursor: 'pointer', color: 'var(--sa-text-secondary)', fontSize: 13, fontWeight: 500 })}>Close</button>
+        </div>
+
+        {/* Delete Tenant Section */}
+        <div style={s({ marginTop: 16, padding: 16, background: '#dc262608', border: '1px solid #dc262620', borderRadius: 12 })}>
+          {!showDeleteConfirm ? (
+            <button onClick={() => setShowDeleteConfirm(true)} style={s({ width: '100%', padding: 11, borderRadius: 10, fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', border: '1px solid #dc262630', background: '#dc262610', color: 'var(--sa-danger)', transition: 'all 0.2s' })}>
+              <Trash2 size={14} /> Delete Tenant Permanently
+            </button>
+          ) : (
+            <div style={s({ space: 12 })}>
+              <div style={s({ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 })}>
+                <AlertTriangle size={16} color="#dc2626" />
+                <span style={s({ fontSize: 13, fontWeight: 700, color: 'var(--sa-danger)' })}>This action is irreversible!</span>
+              </div>
+              <p style={s({ fontSize: 12, color: 'var(--sa-text-muted)', margin: '0 0 8px', lineHeight: 1.5 })}>
+                This will permanently delete <strong style={s({ color: 'var(--sa-text)' })}>{tenant.name}</strong> and ALL its data: users, departments, subjects, students, clearances, dues, enrollments, activity logs, and auth accounts.
+              </p>
+              <div style={s({ fontSize: 11, fontWeight: 600, color: 'var(--sa-text-muted)', marginBottom: 6 })}>
+                Type <strong style={s({ color: 'var(--sa-danger)', fontFamily: 'monospace' })}>{tenant.name}</strong> to confirm:
+              </div>
+              <input
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value)}
+                placeholder={tenant.name}
+                style={s({ width: '100%', padding: '10px 14px', background: 'var(--sa-bg-input)', border: '1px solid #dc262630', borderRadius: 10, color: 'var(--sa-text)', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const, marginBottom: 10 })}
+              />
+              {deleteError && (
+                <div style={s({ padding: '8px 12px', borderRadius: 8, fontSize: 12, background: '#dc262612', color: 'var(--sa-danger)', border: '1px solid #dc262620', marginBottom: 10 })}>{deleteError}</div>
+              )}
+              <div style={s({ display: 'flex', gap: 10 })}>
+                <button onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); setDeleteError(null); }} style={s({ flex: 1, padding: 10, background: 'var(--sa-bg-elevated)', border: '1px solid var(--sa-border)', borderRadius: 10, cursor: 'pointer', color: 'var(--sa-text-secondary)', fontSize: 12, fontWeight: 500 })}>Cancel</button>
+                <button
+                  onClick={handleDeleteTenant}
+                  disabled={deleting || deleteConfirmText !== tenant.name}
+                  style={s({ flex: 1, padding: 10, background: deleteConfirmText === tenant.name ? '#dc2626' : '#dc262650', border: 'none', borderRadius: 10, cursor: deleteConfirmText === tenant.name ? 'pointer' : 'not-allowed', color: 'white', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: deleting ? 0.5 : 1, transition: 'all 0.2s' })}
+                >
+                  {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  {deleting ? 'Deleting...' : 'Delete Forever'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div></div>
