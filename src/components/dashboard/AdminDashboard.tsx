@@ -190,10 +190,13 @@ export default function AdminDashboard() {
       if (!userId) return;
       const { data: profileData } = await supabase.from('profiles').select('tenant_id').eq('id', userId).single();
       if (!profileData?.tenant_id) return;
-      // Call the approve-deletion edge function
-      await supabase.functions.invoke('admin-api', {
-        body: { action: 'approve-deletion', tenant_id: profileData.tenant_id },
-      });
+      // Direct update — admin can update their own tenant's deletion approval
+      const { error } = await supabase
+        .from('tenants')
+        .update({ deletion_approved_at: new Date().toISOString() })
+        .eq('id', profileData.tenant_id)
+        .eq('status', 'pending_deletion');
+      if (error) throw error;
       setTenantDeletionApproved(true);
       logActivity('Approved Tenant Deletion', 'Approved the platform deletion request for this institution');
     } catch (err: any) {
