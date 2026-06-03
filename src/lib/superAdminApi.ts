@@ -24,6 +24,17 @@ async function invokeAdminApi<T = unknown>(action: string, params: Record<string
   });
 
   if (error) {
+    // Try to extract the actual error message from the response body
+    try {
+      const errorBody = await (error as any).context?.json?.();
+      if (errorBody?.error) throw new Error(errorBody.error);
+    } catch (e) {
+      if (e instanceof Error && e.message !== error.message) throw e;
+    }
+    // Try data as fallback (some Supabase versions put the parsed body in data even on error)
+    if (data && typeof data === 'object' && (data as any).error) {
+      throw new Error((data as any).error);
+    }
     throw new Error(error.message || 'Admin API request failed');
   }
 
