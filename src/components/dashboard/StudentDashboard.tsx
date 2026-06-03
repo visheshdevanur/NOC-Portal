@@ -535,7 +535,14 @@ export default function StudentDashboard() {
                 const sorted = [...records].sort((a, b) => a.ia_number - b.ia_number);
                 const subjectName = sorted[0]?.subjects?.subject_name || 'Unknown Subject';
                 const subjectCode = sorted[0]?.subjects?.subject_code || '';
-                const presentCount = sorted.filter(r => r.is_present).length;
+
+                // Build all 3 IAs — default to Present if no record exists
+                const allIAs = [1, 2, 3].map(iaNum => {
+                  const existing = sorted.find(r => r.ia_number === iaNum);
+                  return existing || { id: `default-${subjectId}-${iaNum}`, ia_number: iaNum, is_present: true, subject_id: subjectId } as IAAttendanceRecord;
+                });
+
+                const presentCount = allIAs.filter(r => r.is_present).length;
                 const isEligible = presentCount >= 2;
 
                 return (
@@ -564,7 +571,7 @@ export default function StudentDashboard() {
 
                     {/* IA Grid */}
                     <div className="space-y-2 mb-4">
-                      {sorted.map(record => (
+                      {allIAs.map(record => (
                         <div
                           key={record.id}
                           className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-background border border-border"

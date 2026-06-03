@@ -74,34 +74,19 @@ export const getTeacherSubjectsList = async (teacherId: string) => {
   return Array.from(subjectMap.values());
 };
 
-export const getIACountForSubject = async (subjectId: string, teacherId: string, section?: string | null) => {
-  // Get student IDs in this section first, then count IAs only for those students
-  if (section) {
-    const { data: enrollments } = await supabase
-      .from('subject_enrollment')
-      .select('student_id, profiles!subject_enrollment_student_id_fkey(section)')
-      .eq('subject_id', subjectId)
-      .eq('teacher_id', teacherId);
-    const sectionStudentIds = (enrollments || []).filter((e: any) => (e.profiles?.section || 'Unassigned') === section).map((e: any) => e.student_id);
-    if (sectionStudentIds.length === 0) return 0;
-    const { data, error } = await supabase
-      .from('ia_attendance')
-      .select('ia_number')
-      .eq('subject_id', subjectId)
-      .in('student_id', sectionStudentIds)
-      .order('ia_number', { ascending: false })
-      .limit(1);
-    if (error) throw error;
-    return data && data.length > 0 ? data[0].ia_number : 0;
-  }
-  const { data, error } = await supabase
-    .from('ia_attendance')
-    .select('ia_number')
-    .eq('subject_id', subjectId)
-    .order('ia_number', { ascending: false })
-    .limit(1);
+export const getIACountForSubject = async (subjectId: string, _teacherId: string, section?: string | null) => {
+  // Use edge function to bypass RLS — so COE-uploaded IA records are visible
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'get-ia-data', subject_id: subjectId, section: section || undefined },
+  });
   if (error) throw error;
-  return data && data.length > 0 ? data[0].ia_number : 0;
+  if (data?.error) throw new Error(data.error);
+  const records = data?.data || [];
+  if (records.length === 0) return 0;
+  // Find the max ia_number
+  let maxIA = 0;
+  records.forEach((r: any) => { if (r.ia_number > maxIA) maxIA = r.ia_number; });
+  return maxIA;
 };
 
 export const getStudentsForSubject = async (subjectId: string, teacherId: string, section?: string | null) => {
