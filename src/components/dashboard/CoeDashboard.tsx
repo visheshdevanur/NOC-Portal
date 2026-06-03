@@ -233,7 +233,13 @@ export default function CoeDashboard() {
       {/* Tabs: Hierarchy vs CSV */}
       <div className="bg-card rounded-2xl p-1.5 shadow-sm border border-border flex gap-1">
         <button
-          onClick={() => setActiveTab('hierarchy')}
+          onClick={() => {
+            setActiveTab('hierarchy');
+            // Refresh data if subject+IA is already selected
+            if (selectedSubject && selectedIA && step === 'students') {
+              fetchStudentsAndAttendance(selectedSubject.id, selectedIA);
+            }
+          }}
           className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
             activeTab === 'hierarchy'
               ? 'bg-primary text-white shadow-md'
