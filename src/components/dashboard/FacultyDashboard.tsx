@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
-import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIACountForSubject, getStudentsForSubject, saveIAAttendance, getIAAttendanceForSubject, getTeacherIAAttendance, logActivity } from '../../lib/api';
-import { Search, ClipboardList, BookOpen, Plus, Save, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Edit, Building2, Layers, RefreshCw } from 'lucide-react';
+import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
+import { Search, ClipboardList, BookOpen, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Building2, Layers, RefreshCw } from 'lucide-react';
 
 type SubjectEnrollment = {
   id: string;
@@ -28,11 +28,6 @@ type TeacherSubject = {
   departments: { name: string } | null;
 };
 
-type StudentRecord = {
-  student_id: string;
-  profiles: { id: string; full_name: string; roll_number: string | null; section: string | null; semester_id: string | null } | null;
-};
-
 type IARecord = {
   id: string;
   student_id: string;
@@ -43,7 +38,7 @@ type IARecord = {
   profiles: { full_name: string; roll_number: string | null; section: string | null } | null;
 };
 
-type AttendanceMap = Record<string, boolean>; // student_id -> is_present
+
 
 export default function FacultyDashboard() {
   const { user } = useAuth();
@@ -65,23 +60,10 @@ export default function FacultyDashboard() {
   const [iaDeptFilter, setIaDeptFilter] = useState<string | null>(null);
   const [iaSemFilter, setIaSemFilter] = useState<string | null>(null);
   const [iaSectionFilter, setIaSectionFilter] = useState<string | null>(null);
-  const [iaCount, setIaCount] = useState(0);
   const [iaRecords, setIaRecords] = useState<IARecord[]>([]);
-  const [enrolledStudents, setEnrolledStudents] = useState<StudentRecord[]>([]);
   const [iaLoading, setIaLoading] = useState(false);
-  const [savingIA, setSavingIA] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-  // For new IA form
-  const [showNewIAForm, setShowNewIAForm] = useState(false);
-  const [newIAAttendance, setNewIAAttendance] = useState<AttendanceMap>({});
-  // For viewing existing IAs
+  // For viewing existing IAs (read-only)
   const [expandedIA, setExpandedIA] = useState<number | null>(null);
-  const [editingIA, setEditingIA] = useState<number | null>(null);
-  const [editAttendanceMap, setEditAttendanceMap] = useState<AttendanceMap>({});
-  
-  // CSV for IA
-  const iaCsvRef = useRef<HTMLInputElement>(null);
-  const [iaCsvMsg, setIaCsvMsg] = useState<string | null>(null);
 
 
   // React Query: primary data fetch with caching + deduplication
@@ -154,15 +136,8 @@ export default function FacultyDashboard() {
     if (!user) return;
     setIaLoading(true);
     try {
-      const [count, records, studentsList] = await Promise.all([
-        getIACountForSubject(subjectId, user.id, section),
-        getIAAttendanceForSubject(subjectId, user.id, section),
-        getStudentsForSubject(subjectId, user.id, section)
-      ]);
-      setIaCount(count);
+      const records = await getIAAttendanceForSubject(subjectId, user.id, section);
       setIaRecords(records as unknown as IARecord[]);
-      setEnrolledStudents((studentsList as unknown as StudentRecord[]).sort((a, b) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || '')));
-      setShowNewIAForm(false);
       setExpandedIA(null);
     } catch (err) {
       console.error('Error loading IA data:', err);
@@ -171,144 +146,9 @@ export default function FacultyDashboard() {
     }
   };
 
-  const MAX_IAS_PER_SUBJECT = 3;
-  const isIALimitReached = iaCount >= MAX_IAS_PER_SUBJECT;
 
-  const handleAddIA = () => {
-    if (isIALimitReached) return; // Guard against creating more than max IAs
-    // Initialize all students as PRESENT by default
-    const initialMap: AttendanceMap = {};
-    enrolledStudents.forEach(s => {
-      initialMap[s.student_id] = true;
-    });
-    setNewIAAttendance(initialMap);
-    setShowNewIAForm(true);
-    setSaveSuccess(null);
-    setIaCsvMsg(null);
-  };
-
-  const handleSaveIA = async () => {
-    if (!user || !selectedSubjectId) return;
-    setSavingIA(true);
-    setSaveSuccess(null);
-    try {
-      const newIANumber = iaCount + 1;
-      const records = Object.entries(newIAAttendance).map(([studentId, isPresent]) => ({
-        student_id: studentId,
-        subject_id: selectedSubjectId,
-        teacher_id: user.id,
-        ia_number: newIANumber,
-        is_present: isPresent
-      }));
-      
-      await saveIAAttendance(records);
-      setSaveSuccess(`IA-${newIANumber} saved successfully!`);
-      logActivity('Saved IA Attendance', `Saved IA-${newIANumber} for ${records.length} students`);
-      setShowNewIAForm(false);
-      
-      // Reload data
-      await loadIAData(selectedSubjectId, iaSectionFilter);
-    } catch (err: any) {
-      console.error('Error saving IA:', err);
-      setSaveSuccess(`Error: ${err?.message || 'Failed to save'}`);
-    } finally {
-      setSavingIA(false);
-    }
-  };
-
-  const handleEditIASave = async (editIaNum: number) => {
-    if (!user || !selectedSubjectId) return;
-    setSavingIA(true);
-    setSaveSuccess(null);
-    try {
-      const records = Object.entries(editAttendanceMap).map(([studentId, isPresent]) => ({
-        student_id: studentId,
-        subject_id: selectedSubjectId,
-        teacher_id: user.id,
-        ia_number: editIaNum,
-        is_present: isPresent
-      }));
-      
-      await saveIAAttendance(records);
-      setSaveSuccess(`IA-${editIaNum} updated successfully!`);
-      logActivity('Updated IA Attendance', `Updated IA-${editIaNum} for ${records.length} students`);
-      setEditingIA(null);
-      
-      // Reload data
-      await loadIAData(selectedSubjectId, iaSectionFilter);
-    } catch (err: any) {
-      console.error('Error saving IA edits:', err);
-      setSaveSuccess(`Error: ${err?.message || 'Failed to update IA'}`);
-    } finally {
-      setSavingIA(false);
-    }
-  };
 
   // ==================== CSV HELPERS ====================
-
-  // Download IA CSV template
-  const downloadIATemplate = () => {
-    const headers = ['roll_number', 'student_name', 'status'];
-    const rows = enrolledStudents.map(s => [
-      s.profiles?.roll_number || '',
-      s.profiles?.full_name || '',
-      'Present'
-    ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    downloadCSV(csvContent, `IA_Template_${selectedSubjectId?.substring(0, 8)}.csv`);
-  };
-
-  // Upload IA CSV
-  const handleIACSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIaCsvMsg(null);
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const text = evt.target?.result as string;
-        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-        if (lines.length < 2) { setIaCsvMsg('Error: CSV must have a header row and at least one data row.'); return; }
-
-        const header = lines[0].toLowerCase().split(',').map(h => h.trim());
-        const rollIdx = header.indexOf('roll_number');
-        const statusIdx = header.indexOf('status');
-        if (rollIdx === -1 || statusIdx === -1) { setIaCsvMsg('Error: CSV must have "roll_number" and "status" columns.'); return; }
-
-        // Build a roll -> student_id map
-        const rollMap = new Map<string, string>();
-        enrolledStudents.forEach(s => {
-          if (s.profiles?.roll_number) rollMap.set(s.profiles.roll_number.toLowerCase().trim(), s.student_id);
-        });
-
-        const updatedMap: AttendanceMap = { ...newIAAttendance };
-        let matched = 0;
-        let unmatched = 0;
-
-        for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].split(',').map(c => c.trim());
-          const roll = (cols[rollIdx] || '').toLowerCase().trim();
-          const status = (cols[statusIdx] || '').toLowerCase().trim();
-          const studentId = rollMap.get(roll);
-          if (studentId) {
-            updatedMap[studentId] = status === 'present' || status === 'p' || status === 'yes' || status === '1';
-            matched++;
-          } else {
-            unmatched++;
-          }
-        }
-
-        setNewIAAttendance(updatedMap);
-        setIaCsvMsg(`✅ Imported: ${matched} matched, ${unmatched} unmatched.`);
-      } catch (err: any) {
-        setIaCsvMsg(`Error: ${err.message}`);
-      }
-    };
-    reader.readAsText(file);
-    // Reset input so same file can be re-uploaded
-    e.target.value = '';
-  };
 
   // Download attendance CSV template for the clearance tab
   const downloadAttendanceTemplate = () => {
@@ -517,13 +357,13 @@ export default function FacultyDashboard() {
     }
   };
 
-  // Group IA records by ia_number
-  const iasByNumber: Record<number, IARecord[]> = {};
+  // Group IA records by ia_number — always show all 3 IAs
+  const iasByNumber: Record<number, IARecord[]> = { 1: [], 2: [], 3: [] };
   iaRecords.forEach(r => {
     if (!iasByNumber[r.ia_number]) iasByNumber[r.ia_number] = [];
     iasByNumber[r.ia_number].push(r);
   });
-  const iaNumbers = Object.keys(iasByNumber).map(Number).sort((a, b) => a - b);
+  const iaNumbers = [1, 2, 3];
 
   // Clearance tab filters — Hierarchical: Department → Semester → Section
   const deptMap = new Map<string, string>();
@@ -1108,7 +948,7 @@ export default function FacultyDashboard() {
             })()}
           </div>
 
-          {/* IA Management Area */}
+          {/* IA Management Area — Read Only */}
           {selectedSubjectId && (
             <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
               {iaLoading ? (
@@ -1122,331 +962,100 @@ export default function FacultyDashboard() {
                         Internal Assessments
                       </h2>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {iaCount} / {MAX_IAS_PER_SUBJECT} IA{iaCount !== 1 ? 's' : ''} recorded • {enrolledStudents.length} students enrolled
+                        View-only — Attendance is managed by COE
                       </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <button
-                        onClick={handleAddIA}
-                        disabled={showNewIAForm || isIALimitReached}
-                        className="flex items-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
-                      >
-                        <Plus className="w-4 h-4" />
-                        {isIALimitReached ? `Max ${MAX_IAS_PER_SUBJECT} IAs Reached` : `Add IA-${iaCount + 1}`}
-                      </button>
-                      {isIALimitReached && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Maximum of {MAX_IAS_PER_SUBJECT} IAs allowed per subject</p>
-                      )}
                     </div>
                   </div>
 
-                  {/* Success/Error message */}
-                  {saveSuccess && (
-                    <div className={`mb-4 p-4 rounded-xl text-sm font-medium border ${
-                      saveSuccess.startsWith('Error')
-                        ? 'bg-destructive/10 text-destructive border-destructive/20'
-                        : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                    }`}>
-                      {saveSuccess}
-                    </div>
-                  )}
-
-                  {/* New IA Form */}
-                  {showNewIAForm && (
-                    <div className="mb-6 border-2 border-primary/30 rounded-2xl overflow-hidden bg-primary/5">
-                      <div className="bg-primary/10 px-6 py-4 border-b border-primary/20 flex flex-wrap justify-between items-center gap-3">
-                        <h3 className="font-bold text-foreground text-lg flex items-center gap-2">
-                          <Users className="w-5 h-5 text-primary" />
-                          IA-{iaCount + 1} — Mark Attendance
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                          {/* CSV actions */}
+                  {/* All 3 IAs */}
+                  <div className="space-y-3">
+                    {iaNumbers.map(iaNum => {
+                      const records = iasByNumber[iaNum] || [];
+                      const presentCount = records.filter(r => r.is_present).length;
+                      const absentCount = records.filter(r => !r.is_present).length;
+                      const hasData = records.length > 0;
+                      const isExpanded = expandedIA === iaNum;
+                      
+                      return (
+                        <div key={iaNum} className="border border-border rounded-2xl overflow-hidden bg-secondary/20 hover:bg-secondary/30 transition-colors">
                           <button
-                            onClick={downloadIATemplate}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors border border-border"
+                            onClick={() => setExpandedIA(isExpanded ? null : iaNum)}
+                            className="w-full flex items-center justify-between px-6 py-4 text-left"
                           >
-                            <Download className="w-3.5 h-3.5" />
-                            CSV Template
-                          </button>
-                          <button
-                            onClick={() => iaCsvRef.current?.click()}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-violet-500/15 text-violet-600 rounded-lg hover:bg-violet-500/25 transition-colors border border-violet-500/30"
-                          >
-                            <Upload className="w-3.5 h-3.5" />
-                            Upload CSV
-                          </button>
-                          <input ref={iaCsvRef} type="file" accept=".csv" className="hidden" onChange={handleIACSVUpload} />
-                          <button
-                            onClick={() => {
-                              const allPresent: AttendanceMap = {};
-                              enrolledStudents.forEach(s => { allPresent[s.student_id] = true; });
-                              setNewIAAttendance(allPresent);
-                            }}
-                            className="px-3 py-1.5 text-xs font-medium bg-emerald-500/20 text-emerald-600 rounded-lg hover:bg-emerald-500/30 transition-colors"
-                          >
-                            Mark All Present
-                          </button>
-                          <button
-                            onClick={() => {
-                              const allAbsent: AttendanceMap = {};
-                              enrolledStudents.forEach(s => { allAbsent[s.student_id] = false; });
-                              setNewIAAttendance(allAbsent);
-                            }}
-                            className="px-3 py-1.5 text-xs font-medium bg-destructive/20 text-destructive rounded-lg hover:bg-destructive/30 transition-colors"
-                          >
-                            Mark All Absent
-                          </button>
-                        </div>
-                      </div>
-                      {iaCsvMsg && (
-                        <div className={`mx-6 mt-3 p-3 rounded-xl text-xs font-medium border ${
-                          iaCsvMsg.startsWith('Error') ? 'bg-destructive/10 text-destructive border-destructive/20' : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                        }`}>
-                          {iaCsvMsg}
-                        </div>
-                      )}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="bg-secondary/30 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
-                              <th className="px-6 py-3 font-semibold">#</th>
-                              <th className="px-6 py-3 font-semibold">Student Name</th>
-                              <th className="px-6 py-3 font-semibold">Roll No</th>
-                              <th className="px-6 py-3 font-semibold">Section</th>
-                              <th className="px-6 py-3 font-semibold text-center">Attendance</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {enrolledStudents.map((student, idx) => (
-                              <tr key={student.student_id} className="hover:bg-secondary/10 transition-colors">
-                                <td className="px-6 py-3 text-sm text-muted-foreground">{idx + 1}</td>
-                                <td className="px-6 py-3 font-medium text-foreground">{student.profiles?.full_name || 'Unknown'}</td>
-                                <td className="px-6 py-3 text-sm text-muted-foreground">{student.profiles?.roll_number || 'N/A'}</td>
-                                <td className="px-6 py-3 text-sm text-muted-foreground">{student.profiles?.section || 'N/A'}</td>
-                                <td className="px-6 py-3">
-                                  <div className="flex items-center justify-center gap-4">
-                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer transition-all border-2 ${
-                                      newIAAttendance[student.student_id] === true
-                                        ? 'bg-emerald-500/15 border-emerald-500 text-emerald-600 shadow-md'
-                                        : 'border-transparent hover:bg-emerald-500/5 text-muted-foreground'
-                                    }`}>
-                                      <input
-                                        type="radio"
-                                        name={`ia-${student.student_id}`}
-                                        checked={newIAAttendance[student.student_id] === true}
-                                        onChange={() => setNewIAAttendance(prev => ({ ...prev, [student.student_id]: true }))}
-                                        className="accent-emerald-500"
-                                      />
-                                      <span className="text-sm font-semibold">Present</span>
-                                    </label>
-                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer transition-all border-2 ${
-                                      newIAAttendance[student.student_id] === false
-                                        ? 'bg-destructive/15 border-destructive text-destructive shadow-md'
-                                        : 'border-transparent hover:bg-destructive/5 text-muted-foreground'
-                                    }`}>
-                                      <input
-                                        type="radio"
-                                        name={`ia-${student.student_id}`}
-                                        checked={newIAAttendance[student.student_id] === false}
-                                        onChange={() => setNewIAAttendance(prev => ({ ...prev, [student.student_id]: false }))}
-                                        className="accent-destructive"
-                                      />
-                                      <span className="text-sm font-semibold">Absent</span>
-                                    </label>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div className="px-6 py-4 border-t border-primary/20 flex justify-end gap-3">
-                        <button
-                          onClick={() => { setShowNewIAForm(false); setIaCsvMsg(null); }}
-                          className="px-5 py-2.5 text-sm font-medium text-muted-foreground bg-secondary rounded-xl hover:bg-secondary/80 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleSaveIA}
-                          disabled={savingIA}
-                          className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium transition-all shadow-md hover:shadow-lg hover:bg-primary/90 disabled:opacity-50"
-                        >
-                          <Save className="w-4 h-4" />
-                          {savingIA ? 'Saving...' : `Save IA-${iaCount + 1}`}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Existing IAs List */}
-                  {iaNumbers.length === 0 && !showNewIAForm ? (
-                    <div className="p-10 text-center">
-                      <div className="w-16 h-16 bg-secondary rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <ClipboardList className="w-8 h-8 text-muted-foreground" />
-                      </div>
-                      <p className="text-muted-foreground font-medium">No Internal Assessments recorded yet.</p>
-                      <p className="text-muted-foreground text-sm mt-1">Click "Add IA-1" to get started.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {iaNumbers.map(iaNum => {
-                        const records = iasByNumber[iaNum];
-                        const presentCount = records.filter(r => r.is_present).length;
-                        const isExpanded = expandedIA === iaNum;
-                        
-                        return (
-                          <div key={iaNum} className="border border-border rounded-2xl overflow-hidden bg-secondary/20 hover:bg-secondary/30 transition-colors">
-                            <button
-                              onClick={() => setExpandedIA(isExpanded ? null : iaNum)}
-                              className="w-full flex items-center justify-between px-6 py-4 text-left"
-                            >
-                              <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
-                                  <span className="text-primary font-bold text-sm">IA-{iaNum}</span>
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold text-foreground">Internal Assessment {iaNum}</h4>
-                                  <div className="flex items-center gap-3 mt-1">
-                                    <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2.5 py-1 rounded-full">
-                                      {presentCount} Present
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                                <span className="text-primary font-bold text-sm">IA-{iaNum}</span>
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-foreground">Internal Assessment {iaNum}</h4>
+                                <div className="flex items-center gap-3 mt-1">
+                                  {hasData ? (
+                                    <>
+                                      <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2.5 py-1 rounded-full">
+                                        {presentCount} Present
+                                      </span>
+                                      <span className="text-xs font-medium bg-destructive/10 text-destructive px-2.5 py-1 rounded-full">
+                                        {absentCount} Absent
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs font-medium text-muted-foreground bg-secondary px-2.5 py-1 rounded-full">
+                                      No data yet
                                     </span>
-                                    <span className="text-xs font-medium bg-destructive/10 text-destructive px-2.5 py-1 rounded-full">
-                                      {records.length - presentCount} Absent
-                                    </span>
-                                  </div>
+                                  )}
                                 </div>
                               </div>
-                              {isExpanded ? <ChevronUp className="w-5 h-5 text-muted-foreground" /> : <ChevronDown className="w-5 h-5 text-muted-foreground" />}
-                            </button>
-                            
-                            {isExpanded && (
-                              <div className="border-t border-border">
-                                {editingIA === iaNum ? (
-                                  <div className="p-4 bg-primary/5">
-                                    <div className="flex justify-between items-center mb-4">
-                                      <h5 className="font-semibold text-primary">Editing IA-{iaNum} Attendance</h5>
-                                      <div className="flex gap-2">
-                                        <button 
-                                          onClick={() => setEditingIA(null)}
-                                          className="px-3 py-1.5 text-xs font-medium bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors"
-                                        >
-                                          Cancel
-                                        </button>
-                                        <button 
-                                          onClick={() => handleEditIASave(iaNum)}
-                                          disabled={savingIA}
-                                          className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-                                        >
-                                          {savingIA ? 'Saving...' : 'Save Changes'}
-                                        </button>
-                                      </div>
-                                    </div>
-                                    <table className="w-full text-left border-collapse bg-card rounded-xl overflow-hidden shadow-sm">
-                                      <thead>
-                                        <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider">
-                                          <th className="px-4 py-3 font-semibold">Student Name</th>
-                                          <th className="px-4 py-3 font-semibold text-center">Attendance</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-border">
-                                        {records.map((record) => (
-                                          <tr key={record.student_id} className="hover:bg-secondary/10 transition-colors">
-                                            <td className="px-4 py-3 font-medium text-sm text-foreground">{record.profiles?.full_name || 'Unknown'}</td>
-                                            <td className="px-4 py-3">
-                                              <div className="flex items-center justify-center gap-2">
-                                                <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer transition-all border ${
-                                                  editAttendanceMap[record.student_id] === true
-                                                    ? 'bg-emerald-500/15 border-emerald-500 text-emerald-600 shadow-sm'
-                                                    : 'border-transparent hover:bg-emerald-500/5 text-muted-foreground'
-                                                }`}>
-                                                  <input
-                                                    type="radio"
-                                                    name={`edit-ia-${iaNum}-${record.student_id}`}
-                                                    checked={editAttendanceMap[record.student_id] === true}
-                                                    onChange={() => setEditAttendanceMap(prev => ({ ...prev, [record.student_id]: true }))}
-                                                    className="hidden"
-                                                  />
-                                                  <span className="text-xs font-semibold">Present</span>
-                                                </label>
-                                                <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer transition-all border ${
-                                                  editAttendanceMap[record.student_id] === false
-                                                    ? 'bg-destructive/15 border-destructive text-destructive shadow-sm'
-                                                    : 'border-transparent hover:bg-destructive/5 text-muted-foreground'
-                                                }`}>
-                                                  <input
-                                                    type="radio"
-                                                    name={`edit-ia-${iaNum}-${record.student_id}`}
-                                                    checked={editAttendanceMap[record.student_id] === false}
-                                                    onChange={() => setEditAttendanceMap(prev => ({ ...prev, [record.student_id]: false }))}
-                                                    className="hidden"
-                                                  />
-                                                  <span className="text-xs font-semibold">Absent</span>
-                                                </label>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                ) : (
-                                  <div>
-                                    <div className="flex justify-end p-2 bg-secondary/10 border-b border-border">
-                                      <button 
-                                        onClick={() => {
-                                          const map: AttendanceMap = {};
-                                          records.forEach(r => { map[r.student_id] = r.is_present; });
-                                          setEditAttendanceMap(map);
-                                          setEditingIA(iaNum);
-                                        }}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"
-                                      >
-                                        <Edit className="w-3.5 h-3.5" />
-                                        Edit Attendance Mode
-                                      </button>
-                                    </div>
-                                    <table className="w-full text-left border-collapse">
-                                      <thead>
-                                        <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider">
-                                          <th className="px-6 py-3 font-semibold">#</th>
-                                          <th className="px-6 py-3 font-semibold">Student Name</th>
-                                          <th className="px-6 py-3 font-semibold">Roll No</th>
-                                          <th className="px-6 py-3 font-semibold">Section</th>
-                                          <th className="px-6 py-3 font-semibold text-center">Status</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-border">
-                                        {records.map((record, idx) => (
-                                          <tr key={record.id} className="hover:bg-secondary/10 transition-colors">
-                                            <td className="px-6 py-3 text-sm text-muted-foreground">{idx + 1}</td>
-                                            <td className="px-6 py-3 font-medium text-foreground">{record.profiles?.full_name || 'Unknown'}</td>
-                                            <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.roll_number || 'N/A'}</td>
-                                            <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.section || 'N/A'}</td>
-                                            <td className="px-6 py-3 text-center">
-                                              {record.is_present ? (
-                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600">
-                                                  <CheckCircle2 className="w-3.5 h-3.5" /> Present
-                                                </span>
-                                              ) : (
-                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-destructive/15 text-destructive">
-                                                  <XCircle className="w-3.5 h-3.5" /> Absent
-                                                </span>
-                                              )}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                            </div>
+                            {isExpanded ? <ChevronUp className="w-5 h-5 text-muted-foreground" /> : <ChevronDown className="w-5 h-5 text-muted-foreground" />}
+                          </button>
+                          
+                          {isExpanded && (
+                            <div className="border-t border-border">
+                              {hasData ? (
+                                <table className="w-full text-left border-collapse">
+                                  <thead>
+                                    <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider">
+                                      <th className="px-6 py-3 font-semibold">#</th>
+                                      <th className="px-6 py-3 font-semibold">Student Name</th>
+                                      <th className="px-6 py-3 font-semibold">Roll No</th>
+                                      <th className="px-6 py-3 font-semibold">Section</th>
+                                      <th className="px-6 py-3 font-semibold text-center">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-border">
+                                    {records.map((record, idx) => (
+                                      <tr key={record.id || `${record.student_id}-${iaNum}`} className="hover:bg-secondary/10 transition-colors">
+                                        <td className="px-6 py-3 text-sm text-muted-foreground">{idx + 1}</td>
+                                        <td className="px-6 py-3 font-medium text-foreground">{record.profiles?.full_name || 'Unknown'}</td>
+                                        <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.roll_number || 'N/A'}</td>
+                                        <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.section || 'N/A'}</td>
+                                        <td className="px-6 py-3 text-center">
+                                          {record.is_present ? (
+                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600">
+                                              <CheckCircle2 className="w-3.5 h-3.5" /> Present
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-destructive/15 text-destructive">
+                                              <XCircle className="w-3.5 h-3.5" /> Absent
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              ) : (
+                                <div className="p-8 text-center">
+                                  <ClipboardList className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                                  <p className="text-sm text-muted-foreground font-medium">No attendance data uploaded by COE for IA-{iaNum} yet.</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </>
               )}
             </div>

@@ -180,11 +180,9 @@ serve(async (req) => {
         case 'coe-save-attendance': {
           const { records } = params
           if (!records || !Array.isArray(records)) return jsonResponse({ error: 'records array required' }, 400)
-          // Add tenant_id to every record
-          const enriched = records.map((r) => ({ ...r, tenant_id: callerProfile.tenant_id }))
           const BATCH = 25
-          for (let i = 0; i < enriched.length; i += BATCH) {
-            const batch = enriched.slice(i, i + BATCH)
+          for (let i = 0; i < records.length; i += BATCH) {
+            const batch = records.slice(i, i + BATCH)
             const { error } = await coeClient
               .from('ia_attendance')
               .upsert(batch, { onConflict: 'student_id,subject_id,ia_number' })
@@ -193,8 +191,8 @@ serve(async (req) => {
               return jsonResponse({ error: error.message }, 500)
             }
           }
-          log({ level: 'INFO', fn: 'admin-api', action: 'coe-save-attendance', userId: caller.id, meta: { count: enriched.length } })
-          return jsonResponse({ success: true, count: enriched.length })
+          log({ level: 'INFO', fn: 'admin-api', action: 'coe-save-attendance', userId: caller.id, meta: { count: records.length } })
+          return jsonResponse({ success: true, count: records.length })
         }
 
         case 'coe-process-csv': {
@@ -206,24 +204,29 @@ serve(async (req) => {
           const records = []
 
           // Build lookup caches
-          const usnSet = new Set(csv_rows.map((r) => r.usn?.toUpperCase()).filter(Boolean))
-          const codeSet = new Set(csv_rows.map((r) => r.subject_code?.toUpperCase()).filter(Boolean))
+          const usnArr = csv_rows.map((r) => r.usn?.toUpperCase()).filter(Boolean)
+          const codeArr = csv_rows.map((r) => r.subject_code?.toUpperCase()).filter(Boolean)
 
-          // Fetch all matching students
-          const { data: students } = await coeClient
-            .from('profiles')
-            .select('id, roll_number')
-            .in('roll_number', Array.from(usnSet))
           const usnMap = new Map()
-          ;(students || []).forEach((s) => usnMap.set(s.roll_number?.toUpperCase(), s.id))
-
-          // Fetch all matching subjects
-          const { data: subjects } = await coeClient
-            .from('subjects')
-            .select('id, subject_code')
-            .in('subject_code', Array.from(codeSet))
           const codeMap = new Map()
-          ;(subjects || []).forEach((s) => codeMap.set(s.subject_code?.toUpperCase(), s.id))
+
+          // Fetch all matching students (guard against empty array)
+          if (usnArr.length > 0) {
+            const { data: students } = await coeClient
+              .from('profiles')
+              .select('id, roll_number')
+              .in('roll_number', usnArr)
+            ;(students || []).forEach((s) => usnMap.set(s.roll_number?.toUpperCase(), s.id))
+          }
+
+          // Fetch all matching subjects (guard against empty array)
+          if (codeArr.length > 0) {
+            const { data: subjects } = await coeClient
+              .from('subjects')
+              .select('id, subject_code')
+              .in('subject_code', codeArr)
+            ;(subjects || []).forEach((s) => codeMap.set(s.subject_code?.toUpperCase(), s.id))
+          }
 
           for (let i = 0; i < csv_rows.length; i++) {
             const { usn, subject_code, ia_name } = csv_rows[i]
@@ -238,8 +241,7 @@ serve(async (req) => {
               subject_id: subjectId,
               teacher_id: coe_user_id || caller.id,
               ia_number: iaNum,
-              is_present: false, // CSV contains absentees
-              tenant_id: callerProfile.tenant_id,
+              is_present: false,
             })
           }
 
