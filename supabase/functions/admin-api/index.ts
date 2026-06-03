@@ -440,7 +440,7 @@ serve(async (req) => {
 
         const cleanSlug = slug.toLowerCase().trim()
         if (!/^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/.test(cleanSlug)) {
-          return jsonResponse({ error: 'Slug must be 3-50 chars: lowercase letters, numbers, and hyphens only' }, 400)
+          return jsonResponse({ error: 'Slug must be 3–50 characters using only lowercase letters, numbers, and hyphens (e.g. "mit-mysore")' }, 400)
         }
 
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -449,7 +449,7 @@ serve(async (req) => {
         }
 
         if (adminPassword.length < 8 || !/[a-zA-Z]/.test(adminPassword) || !/[0-9]/.test(adminPassword)) {
-          return jsonResponse({ error: 'Password must be 8+ chars with at least one letter and one number' }, 400)
+          return jsonResponse({ error: 'Password must be at least 8 characters and include both a letter and a number (e.g. "Admin@2024")' }, 400)
         }
 
         // Check uniqueness
@@ -458,14 +458,14 @@ serve(async (req) => {
           .select('id')
           .eq('slug', slug)
           .maybeSingle()
-        if (existingSlug) return jsonResponse({ error: 'Slug already exists' }, 400)
+        if (existingSlug) return jsonResponse({ error: 'This slug is already taken. Please choose a different one.' }, 400)
 
         const { data: existingEmail } = await adminClient
           .from('tenants')
           .select('id')
           .eq('admin_email', adminEmail)
           .maybeSingle()
-        if (existingEmail) return jsonResponse({ error: 'Admin email already in use' }, 400)
+        if (existingEmail) return jsonResponse({ error: 'This email is already associated with another tenant. Use a different admin email.' }, 400)
 
         // Create tenant
         const { data: tenant, error: tenantErr } = await adminClient
