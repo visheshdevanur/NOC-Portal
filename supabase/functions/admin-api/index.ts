@@ -292,16 +292,18 @@ serve(async (req) => {
       const { data, error } = await query
       if (error) return jsonResponse({ error: error.message }, 500)
 
+      // Normalize profiles from array to single object (Supabase join can return array)
+      let results = (data || []).map((r) => {
+        const prof = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles
+        return { ...r, profiles: prof || null }
+      })
+
       // Filter by section on server side if specified
-      let filtered = data || []
       if (section) {
-        filtered = filtered.filter((r) => {
-          const prof = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles
-          return (prof?.section || 'Unassigned') === section
-        })
+        results = results.filter((r) => (r.profiles?.section || 'Unassigned') === section)
       }
 
-      return jsonResponse({ data: filtered })
+      return jsonResponse({ data: results })
     }
 
     // ─── GET STUDENT IA DATA (any authenticated user) ───
@@ -329,7 +331,12 @@ serve(async (req) => {
         .order('subject_id')
         .order('ia_number')
       if (error) return jsonResponse({ error: error.message }, 500)
-      return jsonResponse({ data: data || [] })
+      // Normalize subjects from array to single object
+      const results = (data || []).map((r) => {
+        const subj = Array.isArray(r.subjects) ? r.subjects[0] : r.subjects
+        return { ...r, subjects: subj || null }
+      })
+      return jsonResponse({ data: results })
     }
 
     // ─── ALL OTHER ACTIONS REQUIRE SUPER ADMIN ───
