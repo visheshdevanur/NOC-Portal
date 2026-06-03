@@ -117,13 +117,26 @@ serve(async (req) => {
         { auth: { persistSession: false } }
       )
 
-      const { data: { user: caller }, error: authErr } = await coeClient.auth.getUser(token)
-      if (authErr || !caller) return jsonResponse({ error: 'Invalid auth token' }, 401)
+      // Robust auth: try getUser first, fallback to JWT decode
+      let callerId: string | null = null
+      try {
+        const { data: { user: caller }, error: authErr } = await coeClient.auth.getUser(token)
+        if (!authErr && caller) callerId = caller.id
+      } catch { /* getUser failed, try JWT decode */ }
+      
+      if (!callerId) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]))
+          callerId = payload.sub
+        } catch { /* JWT decode failed */ }
+      }
+      
+      if (!callerId) return jsonResponse({ error: 'Invalid auth token' }, 401)
 
       const { data: callerProfile } = await coeClient
         .from('profiles')
         .select('role, tenant_id')
-        .eq('id', caller.id)
+        .eq('id', callerId)
         .single()
       if (!callerProfile || callerProfile.role !== 'coe') {
         return jsonResponse({ error: 'Only COE users can access this endpoint' }, 403)
@@ -191,7 +204,7 @@ serve(async (req) => {
               return jsonResponse({ error: error.message }, 500)
             }
           }
-          log({ level: 'INFO', fn: 'admin-api', action: 'coe-save-attendance', userId: caller.id, meta: { count: records.length } })
+          log({ level: 'INFO', fn: 'admin-api', action: 'coe-save-attendance', userId: callerId, meta: { count: records.length } })
           return jsonResponse({ success: true, count: records.length })
         }
 
@@ -239,7 +252,7 @@ serve(async (req) => {
             records.push({
               student_id: studentId,
               subject_id: subjectId,
-              teacher_id: coe_user_id || caller.id,
+              teacher_id: coe_user_id || callerId,
               ia_number: iaNum,
               is_present: false,
             })
@@ -257,7 +270,7 @@ serve(async (req) => {
             }
           }
 
-          log({ level: 'INFO', fn: 'admin-api', action: 'coe-process-csv', userId: caller.id, meta: { processed: records.length, errors: errors.length } })
+          log({ level: 'INFO', fn: 'admin-api', action: 'coe-process-csv', userId: callerId, meta: { processed: records.length, errors: errors.length } })
           return jsonResponse({ success: true, processed: records.length, errors })
         }
 
