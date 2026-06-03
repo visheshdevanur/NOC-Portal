@@ -186,6 +186,10 @@ export default function CoeDashboard() {
       if (result.errors.length > 0) setCsvErrors(result.errors);
       if (result.processed > 0) {
         setCsvResult(`✅ Successfully marked ${result.processed} students as Absent.`);
+        // Refresh Mark Attendance view if subject+IA is selected
+        if (selectedSubject && selectedIA) {
+          fetchStudentsAndAttendance(selectedSubject.id, selectedIA);
+        }
       } else if (result.errors.length === 0) {
         setCsvResult('No records to process.');
       }
