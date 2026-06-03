@@ -93,8 +93,9 @@ export default function StudentDashboard() {
   const availableSubjects = studentData?.availableSubjects ?? [];
   const enrollments = studentData?.enrollments ?? [];
   const deptClearances = studentData?.deptClearances ?? [];
-
-  const iaRecords = studentData?.iaRecords ?? [];
+  // Filter IA records to only subjects the student is enrolled in (removes orphaned CSV records)
+  const enrolledSubjectIds = new Set(enrollments.map(e => (e as any).subject_id));
+  const iaRecords = (studentData?.iaRecords ?? []).filter(r => enrolledSubjectIds.has(r.subject_id));
   const libraryDue = studentData?.libraryDue ?? null;
   const errorMsg = localErrorMsg || (queryError ? (queryError as Error).message : null);
 

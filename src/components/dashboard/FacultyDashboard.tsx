@@ -179,8 +179,9 @@ export default function FacultyDashboard() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        // Fetch IA data fresh from DB to ensure we have current data
-        const freshIAs = await getTeacherIAAttendance(user!.id) || [];
+        // Fetch IA data fresh from DB — query by subject_ids to include COE-uploaded records
+        const subjectIds = [...new Set(students.map(s => s.subject_id).filter(Boolean))];
+        const freshIAs = await getTeacherIAAttendance(user!.id, subjectIds) || [];
 
         const text = evt.target?.result as string;
         const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
@@ -321,8 +322,8 @@ export default function FacultyDashboard() {
       
       const pct = Math.min(100, Math.max(0, enrollment.attendance_pct || 0));
 
-      // Fetch IA data fresh from DB to ensure we have current data
-      const freshIAs = await getTeacherIAAttendance(user!.id) || [];
+      // Fetch IA data fresh from DB — query by subject_ids to include COE-uploaded records
+      const freshIAs = await getTeacherIAAttendance(user!.id, [enrollment.subject_id]) || [];
       const subjectIAs = freshIAs.filter((ia: any) => ia.subject_id === enrollment.subject_id);
       const iaPresentCount = subjectIAs.filter((ia: any) => ia.student_id === enrollment.student_id && ia.is_present).length;
 

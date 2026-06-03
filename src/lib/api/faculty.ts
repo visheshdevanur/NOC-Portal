@@ -129,11 +129,25 @@ export const getIAAttendanceForSubject = async (subjectId: string, _teacherId: s
   return data?.data || [];
 };
 
-export const getTeacherIAAttendance = async (teacherId: string) => {
-  const { data, error } = await supabase
-    .from('ia_attendance')
-    .select('student_id, subject_id, ia_number, is_present')
-    .eq('teacher_id', teacherId);
-  if (error) throw error;
-  return data;
+export const getTeacherIAAttendance = async (_teacherId: string, subjectIds?: string[]) => {
+  // Use edge function to bypass RLS and get ALL IA records (including COE-uploaded)
+  // Query by subject_ids instead of teacher_id so COE records are included
+  if (!subjectIds || subjectIds.length === 0) return [];
+  
+  const allRecords: any[] = [];
+  for (const subjectId of subjectIds) {
+    const { data, error } = await supabase.functions.invoke('admin-api', {
+      body: { action: 'get-ia-data', subject_id: subjectId },
+    });
+    if (error) { console.error('Error fetching IA for subject', subjectId, error); continue; }
+    if (data?.error) { console.error('Edge fn error:', data.error); continue; }
+    const records = data?.data || [];
+    allRecords.push(...records.map((r: any) => ({
+      student_id: r.student_id,
+      subject_id: r.subject_id,
+      ia_number: r.ia_number,
+      is_present: r.is_present,
+    })));
+  }
+  return allRecords;
 };
