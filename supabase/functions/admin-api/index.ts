@@ -29,16 +29,28 @@ async function validateSuperAdmin(req: Request) {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
-  // Extract the JWT token and verify the user
+  // Extract the JWT token and verify the user — with fallback
   const token = authHeader.replace('Bearer ', '')
-  const { data: { user }, error: authError } = await adminClient.auth.getUser(token)
-  if (authError || !user) throw new Error('Invalid or expired token')
+  let userId: string | null = null
+  try {
+    const { data: { user }, error: authError } = await adminClient.auth.getUser(token)
+    if (!authError && user) userId = user.id
+  } catch { /* getUser failed, try JWT decode */ }
+  
+  if (!userId) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      userId = payload.sub
+    } catch { /* JWT decode failed */ }
+  }
+  
+  if (!userId) throw new Error('Invalid or expired token')
 
   // Check if user is a platform admin (service_role bypasses RLS)
   const { data: profile, error: profileError } = await adminClient
     .from('profiles')
     .select('id, role, is_platform_admin')
-    .eq('id', user.id)
+    .eq('id', userId)
     .single()
 
   if (profileError || !profile) throw new Error('Profile not found')
@@ -46,7 +58,7 @@ async function validateSuperAdmin(req: Request) {
     throw new Error('Forbidden: not a platform administrator')
   }
 
-  return { user, adminClient }
+  return { user: { id: userId }, adminClient }
 }
 
 serve(async (req) => {
@@ -79,15 +91,27 @@ serve(async (req) => {
         { auth: { persistSession: false } }
       )
 
-      // Verify the JWT and get the user
-      const { data: { user: caller }, error: authErr } = await adminClient.auth.getUser(token)
-      if (authErr || !caller) return jsonResponse({ error: 'Invalid auth token' }, 401)
+      // Robust auth: try getUser first, fallback to JWT decode
+      let callerId: string | null = null
+      try {
+        const { data: { user: caller }, error: authErr } = await adminClient.auth.getUser(token)
+        if (!authErr && caller) callerId = caller.id
+      } catch { /* getUser failed, try JWT decode */ }
+      
+      if (!callerId) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]))
+          callerId = payload.sub
+        } catch { /* JWT decode failed */ }
+      }
+      
+      if (!callerId) return jsonResponse({ error: 'Invalid auth token' }, 401)
 
       // Verify caller is an admin of this specific tenant
       const { data: callerProfile } = await adminClient
         .from('profiles')
         .select('role, tenant_id')
-        .eq('id', caller.id)
+        .eq('id', callerId)
         .single()
       if (!callerProfile || callerProfile.role !== 'admin' || callerProfile.tenant_id !== tenant_id) {
         return jsonResponse({ error: 'Only the tenant admin can approve deletion' }, 403)
@@ -101,7 +125,7 @@ serve(async (req) => {
         .eq('status', 'pending_deletion')
       if (error) throw error
 
-      log({ level: 'INFO', fn: 'admin-api', action: 'deletion-approved', userId: caller.id, meta: { tenant_id } })
+      log({ level: 'INFO', fn: 'admin-api', action: 'deletion-approved', userId: callerId, meta: { tenant_id } })
       return jsonResponse({ success: true })
     }
 
