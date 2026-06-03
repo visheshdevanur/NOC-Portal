@@ -7,13 +7,11 @@ import {
   getEnrolledStudents,
   getIAAttendance,
   saveIAAttendanceCOE,
-  processGlobalCSV,
-  generateCSVTemplate,
 } from '../../lib/api/coe';
 import {
   GraduationCap, Building2, BookOpen, ClipboardCheck,
-  ChevronRight, ChevronLeft, Check, X, Upload, Download,
-  Save, AlertTriangle, Users, FileSpreadsheet, Loader2,
+  ChevronRight, ChevronLeft, Check, X, Search,
+  Save, Users, Loader2,
 } from 'lucide-react';
 
 type Department = { id: string; name: string };
@@ -24,9 +22,6 @@ type Step = 'department' | 'semester' | 'subject' | 'ia' | 'students';
 
 export default function CoeDashboard() {
   const { user } = useAuth();
-
-  // Tab state: 'hierarchy' or 'csv'
-  const [activeTab, setActiveTab] = useState<'hierarchy' | 'csv'>('hierarchy');
 
   // Navigation state
   const [step, setStep] = useState<Step>('department');
@@ -46,10 +41,8 @@ export default function CoeDashboard() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  // CSV state (global)
-  const [csvUploading, setCsvUploading] = useState(false);
-  const [csvErrors, setCsvErrors] = useState<string[]>([]);
-  const [csvResult, setCsvResult] = useState<string | null>(null);
+  // Search state
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Loading states
   const [loading, setLoading] = useState(false);
@@ -123,12 +116,14 @@ export default function CoeDashboard() {
 
   const selectIA = (iaNum: number) => {
     setSelectedIA(iaNum);
+    setSearchTerm('');
     fetchStudentsAndAttendance(selectedSubject!.id, iaNum);
     setStep('students');
   };
 
   const goBack = () => {
     setSaveMsg(null);
+    setSearchTerm('');
     if (step === 'students') setStep('ia');
     else if (step === 'ia') setStep('subject');
     else if (step === 'subject') setStep('semester');
@@ -162,44 +157,16 @@ export default function CoeDashboard() {
     }
   };
 
-  // ─── GLOBAL CSV ───
-  const handleDownloadTemplate = () => {
-    const csv = generateCSVTemplate();
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'ia_absentee_template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleGlobalCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-    setCsvUploading(true);
-    setCsvErrors([]);
-    setCsvResult(null);
-    try {
-      const text = await file.text();
-      const result = await processGlobalCSV(text, user.id);
-      if (result.errors.length > 0) setCsvErrors(result.errors);
-      if (result.processed > 0) {
-        setCsvResult(`✅ Successfully marked ${result.processed} students as Absent.`);
-        // Refresh Mark Attendance view if subject+IA is selected
-        if (selectedSubject && selectedIA) {
-          fetchStudentsAndAttendance(selectedSubject.id, selectedIA);
-        }
-      } else if (result.errors.length === 0) {
-        setCsvResult('No records to process.');
-      }
-    } catch (err: any) {
-      setCsvErrors([err.message || 'CSV processing failed']);
-    } finally {
-      setCsvUploading(false);
-      e.target.value = '';
-    }
-  };
+  // Filtered students by search
+  const filteredStudents = students.filter(s => {
+    if (!searchTerm.trim()) return true;
+    const profile = Array.isArray(s.profiles) ? s.profiles[0] : s.profiles;
+    const term = searchTerm.toLowerCase();
+    return (
+      (profile?.roll_number || '').toLowerCase().includes(term) ||
+      (profile?.full_name || '').toLowerCase().includes(term)
+    );
+  });
 
   const absentCount = Object.values(attendance).filter(v => !v).length;
   const presentCount = Object.values(attendance).filter(v => v).length;
@@ -230,315 +197,238 @@ export default function CoeDashboard() {
         </div>
       </div>
 
-      {/* Tabs: Hierarchy vs CSV */}
-      <div className="bg-card rounded-2xl p-1.5 shadow-sm border border-border flex gap-1">
-        <button
-          onClick={() => {
-            setActiveTab('hierarchy');
-            // Refresh data if subject+IA is already selected
-            if (selectedSubject && selectedIA && step === 'students') {
-              fetchStudentsAndAttendance(selectedSubject.id, selectedIA);
-            }
-          }}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-            activeTab === 'hierarchy'
-              ? 'bg-primary text-white shadow-md'
-              : 'text-muted-foreground hover:bg-secondary'
-          }`}
-        >
-          <ClipboardCheck className="w-4 h-4" /> Mark Attendance
-        </button>
-        <button
-          onClick={() => setActiveTab('csv')}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-            activeTab === 'csv'
-              ? 'bg-primary text-white shadow-md'
-              : 'text-muted-foreground hover:bg-secondary'
-          }`}
-        >
-          <FileSpreadsheet className="w-4 h-4" /> CSV Upload
-        </button>
-      </div>
-
-      {/* ════════════ CSV TAB ════════════ */}
-      {activeTab === 'csv' && (
-        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border space-y-5">
-          <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-primary" /> Bulk Absentee Upload
-          </h2>
-
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Upload a CSV file listing <strong>absentees only</strong> for any combination of department, semester, subject, and IA.
-            The system will automatically resolve USNs and subject codes. All students not listed remain <strong>Present</strong> by default.
-          </p>
-
-          {/* Template info */}
-          <div className="bg-secondary/50 rounded-xl p-4 border border-border">
-            <h3 className="text-sm font-bold text-foreground mb-2">CSV Format</h3>
-            <div className="font-mono text-xs text-muted-foreground bg-background rounded-lg p-3 border border-border">
-              <div className="text-foreground font-bold">USN,Subject Code,IA Name</div>
-              <div>4CB22CS001,22CS3A,IA1</div>
-              <div>4CB22CS015,22CS3A,IA2</div>
-              <div>4CB22EC003,22EC4B,IA3</div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              • <strong>USN</strong>: Student's University Seat Number (roll_number in system)<br/>
-              • <strong>Subject Code</strong>: The exact subject code as configured in the system<br/>
-              • <strong>IA Name</strong>: IA1, IA2, or IA3
-            </p>
+      {/* Breadcrumb */}
+      {step !== 'department' && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={goBack}
+            className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 transition-colors bg-primary/5 px-3 py-1.5 rounded-lg"
+          >
+            <ChevronLeft className="w-4 h-4" /> Back
+          </button>
+          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+            {breadcrumb().map((part, i) => (
+              <span key={i} className="flex items-center gap-1">
+                {i > 0 && <ChevronRight className="w-3 h-3" />}
+                <span className={i === breadcrumb().length - 1 ? 'font-semibold text-foreground' : ''}>{part}</span>
+              </span>
+            ))}
           </div>
-
-          {/* Actions */}
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={handleDownloadTemplate}
-              className="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-secondary/80 border border-border rounded-xl text-sm font-medium text-foreground transition-all"
-            >
-              <Download className="w-4 h-4" /> Download Template
-            </button>
-            <label className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl text-sm font-bold cursor-pointer shadow-md hover:shadow-lg transition-all">
-              <Upload className="w-4 h-4" />
-              {csvUploading ? 'Processing...' : 'Upload Absentee CSV'}
-              <input type="file" accept=".csv" onChange={handleGlobalCSVUpload} className="hidden" disabled={csvUploading} />
-            </label>
-          </div>
-
-          {/* Results */}
-          {csvResult && (
-            <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm text-emerald-600 font-medium">
-              {csvResult}
-            </div>
-          )}
-          {csvErrors.length > 0 && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm space-y-1 max-h-60 overflow-y-auto">
-              <div className="font-bold text-destructive flex items-center gap-1 mb-2">
-                <AlertTriangle className="w-4 h-4" /> {csvErrors.length} Error(s):
-              </div>
-              {csvErrors.map((err, i) => <div key={i} className="text-destructive/80 text-xs font-mono">{err}</div>)}
-            </div>
-          )}
         </div>
       )}
 
-      {/* ════════════ HIERARCHY TAB ════════════ */}
-      {activeTab === 'hierarchy' && (
-        <>
-          {/* Breadcrumb */}
-          {step !== 'department' && (
-            <div className="flex items-center gap-2 flex-wrap">
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 text-primary animate-spin" />
+        </div>
+      )}
+
+      {/* STEP 1: Department */}
+      {!loading && step === 'department' && (
+        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+          <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-primary" /> Select Department
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {departments.map(dept => (
               <button
-                onClick={goBack}
-                className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 transition-colors bg-primary/5 px-3 py-1.5 rounded-lg"
+                key={dept.id}
+                onClick={() => selectDepartment(dept)}
+                className="group flex items-center justify-between p-4 bg-secondary/50 hover:bg-primary/10 border border-border hover:border-primary/30 rounded-xl transition-all"
               >
-                <ChevronLeft className="w-4 h-4" /> Back
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Building2 className="w-4 h-4 text-primary" />
+                  </div>
+                  <span className="font-semibold text-sm text-foreground">{dept.name}</span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
               </button>
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                {breadcrumb().map((part, i) => (
-                  <span key={i} className="flex items-center gap-1">
-                    {i > 0 && <ChevronRight className="w-3 h-3" />}
-                    <span className={i === breadcrumb().length - 1 ? 'font-semibold text-foreground' : ''}>{part}</span>
-                  </span>
-                ))}
+            ))}
+            {departments.length === 0 && (
+              <p className="text-sm text-muted-foreground col-span-full py-8 text-center">No departments found</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* STEP 2: Semester */}
+      {!loading && step === 'semester' && (
+        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+          <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-amber-500" /> Select Semester
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {semesters.map(sem => (
+              <button
+                key={sem.id}
+                onClick={() => selectSemester(sem)}
+                className="group flex items-center justify-between p-4 bg-secondary/50 hover:bg-amber-500/10 border border-border hover:border-amber-500/30 rounded-xl transition-all"
+              >
+                <span className="font-semibold text-sm text-foreground">{sem.name}</span>
+                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-amber-500 transition-colors" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* STEP 3: Subject */}
+      {!loading && step === 'subject' && (
+        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+          <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-violet-500" /> Select Subject
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {subjects.map(sub => (
+              <button
+                key={sub.id}
+                onClick={() => selectSubject(sub)}
+                className="group flex items-center justify-between p-4 bg-secondary/50 hover:bg-violet-500/10 border border-border hover:border-violet-500/30 rounded-xl transition-all text-left"
+              >
+                <div>
+                  <div className="font-semibold text-sm text-foreground">{sub.subject_name}</div>
+                  <code className="text-xs text-muted-foreground font-mono">{sub.subject_code}</code>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-violet-500 transition-colors" />
+              </button>
+            ))}
+            {subjects.length === 0 && (
+              <p className="text-sm text-muted-foreground col-span-full py-8 text-center">No subjects found for this department and semester</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* STEP 4: IA Selection */}
+      {!loading && step === 'ia' && (
+        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+          <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
+            <ClipboardCheck className="w-5 h-5 text-emerald-500" /> Select Internal Assessment
+          </h2>
+          <div className="grid grid-cols-3 gap-4 max-w-md">
+            {[1, 2, 3].map(num => (
+              <button
+                key={num}
+                onClick={() => selectIA(num)}
+                className="group flex flex-col items-center gap-2 p-6 bg-secondary/50 hover:bg-emerald-500/10 border border-border hover:border-emerald-500/30 rounded-xl transition-all"
+              >
+                <div className="w-12 h-12 rounded-full bg-emerald-500/10 group-hover:bg-emerald-500/20 flex items-center justify-center transition-colors">
+                  <span className="text-lg font-bold text-emerald-600">IA{num}</span>
+                </div>
+                <span className="text-xs font-medium text-muted-foreground">Internal Assessment {num}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* STEP 5: Student Attendance */}
+      {!loading && step === 'students' && (
+        <div className="space-y-4">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-card rounded-xl p-4 border border-border text-center">
+              <Users className="w-5 h-5 text-primary mx-auto mb-1" />
+              <div className="text-xl font-bold text-foreground">{students.length}</div>
+              <div className="text-xs text-muted-foreground font-medium">Total</div>
+            </div>
+            <div className="bg-card rounded-xl p-4 border border-border text-center">
+              <Check className="w-5 h-5 text-emerald-500 mx-auto mb-1" />
+              <div className="text-xl font-bold text-emerald-600">{presentCount}</div>
+              <div className="text-xs text-muted-foreground font-medium">Present</div>
+            </div>
+            <div className="bg-card rounded-xl p-4 border border-border text-center">
+              <X className="w-5 h-5 text-red-500 mx-auto mb-1" />
+              <div className="text-xl font-bold text-red-600">{absentCount}</div>
+              <div className="text-xs text-muted-foreground font-medium">Absent</div>
+            </div>
+          </div>
+
+          {/* Student List */}
+          <div className="bg-card rounded-2xl border border-border overflow-hidden">
+            <div className="p-4 border-b border-border space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-foreground text-sm">
+                  Student Attendance — IA{selectedIA}
+                </h3>
+                <span className="text-xs text-muted-foreground">Click to toggle Present / Absent</span>
+              </div>
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  placeholder="Search by USN or name..."
+                  className="w-full pl-9 pr-4 py-2.5 bg-secondary/50 border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition-all"
+                />
               </div>
             </div>
-          )}
-
-          {/* Loading */}
-          {loading && (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 text-primary animate-spin" />
-            </div>
-          )}
-
-          {/* STEP 1: Department */}
-          {!loading && step === 'department' && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-primary" /> Select Department
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {departments.map(dept => (
+            <div className="divide-y divide-border max-h-[60vh] overflow-y-auto">
+              {filteredStudents.map((s, idx) => {
+                const isPresent = attendance[s.student_id] ?? true;
+                const profile = Array.isArray(s.profiles) ? s.profiles[0] : s.profiles;
+                return (
                   <button
-                    key={dept.id}
-                    onClick={() => selectDepartment(dept)}
-                    className="group flex items-center justify-between p-4 bg-secondary/50 hover:bg-primary/10 border border-border hover:border-primary/30 rounded-xl transition-all"
+                    key={s.student_id}
+                    onClick={() => toggleAttendance(s.student_id)}
+                    className={`w-full flex items-center justify-between px-4 py-3 transition-colors text-left ${
+                      isPresent ? 'hover:bg-emerald-500/5' : 'bg-red-500/5 hover:bg-red-500/10'
+                    }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <Building2 className="w-4 h-4 text-primary" />
+                      <span className="text-xs font-mono text-muted-foreground w-8">{idx + 1}</span>
+                      <div>
+                        <div className="text-sm font-medium text-foreground">{profile?.full_name || 'Unknown'}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{profile?.roll_number || '—'}</div>
                       </div>
-                      <span className="font-semibold text-sm text-foreground">{dept.name}</span>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                  </button>
-                ))}
-                {departments.length === 0 && (
-                  <p className="text-sm text-muted-foreground col-span-full py-8 text-center">No departments found</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 2: Semester */}
-          {!loading && step === 'semester' && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-amber-500" /> Select Semester
-              </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {semesters.map(sem => (
-                  <button
-                    key={sem.id}
-                    onClick={() => selectSemester(sem)}
-                    className="group flex items-center justify-between p-4 bg-secondary/50 hover:bg-amber-500/10 border border-border hover:border-amber-500/30 rounded-xl transition-all"
-                  >
-                    <span className="font-semibold text-sm text-foreground">{sem.name}</span>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-amber-500 transition-colors" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3: Subject */}
-          {!loading && step === 'subject' && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-violet-500" /> Select Subject
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {subjects.map(sub => (
-                  <button
-                    key={sub.id}
-                    onClick={() => selectSubject(sub)}
-                    className="group flex items-center justify-between p-4 bg-secondary/50 hover:bg-violet-500/10 border border-border hover:border-violet-500/30 rounded-xl transition-all text-left"
-                  >
-                    <div>
-                      <div className="font-semibold text-sm text-foreground">{sub.subject_name}</div>
-                      <code className="text-xs text-muted-foreground font-mono">{sub.subject_code}</code>
+                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold ${
+                      isPresent
+                        ? 'bg-emerald-500/15 text-emerald-600'
+                        : 'bg-red-500/15 text-red-600'
+                    }`}>
+                      {isPresent ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      {isPresent ? 'Present' : 'Absent'}
                     </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-violet-500 transition-colors" />
                   </button>
-                ))}
-                {subjects.length === 0 && (
-                  <p className="text-sm text-muted-foreground col-span-full py-8 text-center">No subjects found for this department and semester</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 4: IA Selection */}
-          {!loading && step === 'ia' && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              <h2 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
-                <ClipboardCheck className="w-5 h-5 text-emerald-500" /> Select Internal Assessment
-              </h2>
-              <div className="grid grid-cols-3 gap-4 max-w-md">
-                {[1, 2, 3].map(num => (
-                  <button
-                    key={num}
-                    onClick={() => selectIA(num)}
-                    className="group flex flex-col items-center gap-2 p-6 bg-secondary/50 hover:bg-emerald-500/10 border border-border hover:border-emerald-500/30 rounded-xl transition-all"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-emerald-500/10 group-hover:bg-emerald-500/20 flex items-center justify-center transition-colors">
-                      <span className="text-lg font-bold text-emerald-600">IA{num}</span>
-                    </div>
-                    <span className="text-xs font-medium text-muted-foreground">Internal Assessment {num}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 5: Student Attendance */}
-          {!loading && step === 'students' && (
-            <div className="space-y-4">
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-card rounded-xl p-4 border border-border text-center">
-                  <Users className="w-5 h-5 text-primary mx-auto mb-1" />
-                  <div className="text-xl font-bold text-foreground">{students.length}</div>
-                  <div className="text-xs text-muted-foreground font-medium">Total</div>
+                );
+              })}
+              {filteredStudents.length === 0 && students.length > 0 && (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  No students matching "{searchTerm}"
                 </div>
-                <div className="bg-card rounded-xl p-4 border border-border text-center">
-                  <Check className="w-5 h-5 text-emerald-500 mx-auto mb-1" />
-                  <div className="text-xl font-bold text-emerald-600">{presentCount}</div>
-                  <div className="text-xs text-muted-foreground font-medium">Present</div>
-                </div>
-                <div className="bg-card rounded-xl p-4 border border-border text-center">
-                  <X className="w-5 h-5 text-red-500 mx-auto mb-1" />
-                  <div className="text-xl font-bold text-red-600">{absentCount}</div>
-                  <div className="text-xs text-muted-foreground font-medium">Absent</div>
-                </div>
-              </div>
-
-              {/* Student List */}
-              <div className="bg-card rounded-2xl border border-border overflow-hidden">
-                <div className="p-4 border-b border-border flex items-center justify-between">
-                  <h3 className="font-bold text-foreground text-sm">
-                    Student Attendance — IA{selectedIA}
-                  </h3>
-                  <span className="text-xs text-muted-foreground">Click to toggle Present / Absent</span>
-                </div>
-                <div className="divide-y divide-border max-h-[60vh] overflow-y-auto">
-                  {students.map((s, idx) => {
-                    const isPresent = attendance[s.student_id] ?? true;
-                    const profile = Array.isArray(s.profiles) ? s.profiles[0] : s.profiles;
-                    return (
-                      <button
-                        key={s.student_id}
-                        onClick={() => toggleAttendance(s.student_id)}
-                        className={`w-full flex items-center justify-between px-4 py-3 transition-colors text-left ${
-                          isPresent ? 'hover:bg-emerald-500/5' : 'bg-red-500/5 hover:bg-red-500/10'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-mono text-muted-foreground w-8">{idx + 1}</span>
-                          <div>
-                            <div className="text-sm font-medium text-foreground">{profile?.full_name || 'Unknown'}</div>
-                            <div className="text-xs text-muted-foreground font-mono">{profile?.roll_number || '—'}</div>
-                          </div>
-                        </div>
-                        <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold ${
-                          isPresent
-                            ? 'bg-emerald-500/15 text-emerald-600'
-                            : 'bg-red-500/15 text-red-600'
-                        }`}>
-                          {isPresent ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                          {isPresent ? 'Present' : 'Absent'}
-                        </div>
-                      </button>
-                    );
-                  })}
-                  {students.length === 0 && (
-                    <div className="py-12 text-center text-sm text-muted-foreground">
-                      No students enrolled in this subject
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Save */}
-              {students.length > 0 && (
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
-                  >
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    {saving ? 'Saving...' : 'Save Attendance'}
-                  </button>
-                  {saveMsg && (
-                    <span className={`text-sm font-medium ${saveMsg.type === 'ok' ? 'text-emerald-600' : 'text-destructive'}`}>
-                      {saveMsg.text}
-                    </span>
-                  )}
+              )}
+              {students.length === 0 && (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No students enrolled in this subject
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Save */}
+          {students.length > 0 && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {saving ? 'Saving...' : 'Save Attendance'}
+              </button>
+              {saveMsg && (
+                <span className={`text-sm font-medium ${saveMsg.type === 'ok' ? 'text-emerald-600' : 'text-destructive'}`}>
+                  {saveMsg.text}
+                </span>
+              )}
+            </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );

@@ -153,6 +153,19 @@ serve(async (req) => {
       }, 403)
     }
 
+    // Check if roll_number is already taken by another student (prevent USN overwrites)
+    if (roll_number && role === 'student') {
+      const { data: existingRoll } = await adminClient
+        .from('profiles')
+        .select('id, email, full_name')
+        .eq('roll_number', roll_number)
+        .eq('role', 'student')
+        .limit(1)
+      if (existingRoll && existingRoll.length > 0) {
+        return jsonResponse({ error: `USN "${roll_number}" is already assigned to ${existingRoll[0].full_name || existingRoll[0].email}` }, 400)
+      }
+    }
+
     // 5. Create the auth user (using service_role — server-side only)
     const { data: authData, error: createError } = await adminClient.auth.admin.createUser({
       email,

@@ -85,7 +85,7 @@ serve(async (req) => {
           return { row: rowNum, email, status: 'error' as const, error: `Cannot create role "${role}"` }
         }
 
-        // Check if user already exists
+        // Check if user already exists by email
         const { data: existing } = await adminClient
           .from('profiles')
           .select('id')
@@ -96,6 +96,19 @@ serve(async (req) => {
           // User already exists — DO NOT overwrite their data.
           // Skip to prevent accidental semester/section/department changes.
           return { row: rowNum, email, status: 'updated' as const, error: 'Already exists — skipped' }
+        }
+
+        // Check if roll_number is already taken by another student (prevent USN overwrites)
+        if (roll_number && role === 'student') {
+          const { data: existingRoll } = await adminClient
+            .from('profiles')
+            .select('id, email, full_name')
+            .eq('roll_number', roll_number)
+            .eq('role', 'student')
+            .limit(1)
+          if (existingRoll && existingRoll.length > 0) {
+            return { row: rowNum, email, status: 'error' as const, error: `USN "${roll_number}" already assigned to ${existingRoll[0].full_name || existingRoll[0].email}` }
+          }
         }
 
         // Create auth user
