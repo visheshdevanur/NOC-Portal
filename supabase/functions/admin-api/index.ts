@@ -271,15 +271,11 @@ serve(async (req) => {
       const authHeader = req.headers.get('Authorization')
       if (!authHeader) return jsonResponse({ error: 'Missing auth token' }, 401)
 
-      const token = authHeader.replace('Bearer ', '')
       const iaClient = createClient(
         Deno.env.get('SUPABASE_URL')!,
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
         { auth: { persistSession: false } }
       )
-
-      const { data: { user: caller }, error: authErr } = await iaClient.auth.getUser(token)
-      if (authErr || !caller) return jsonResponse({ error: 'Invalid auth token' }, 401)
 
       const { subject_id, section } = params
       if (!subject_id) return jsonResponse({ error: 'subject_id required' }, 400)
@@ -313,15 +309,11 @@ serve(async (req) => {
       const authHeader = req.headers.get('Authorization')
       if (!authHeader) return jsonResponse({ error: 'Missing auth token' }, 401)
 
-      const token = authHeader.replace('Bearer ', '')
       const iaClient = createClient(
         Deno.env.get('SUPABASE_URL')!,
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
         { auth: { persistSession: false } }
       )
-
-      const { data: { user: caller }, error: authErr } = await iaClient.auth.getUser(token)
-      if (authErr || !caller) return jsonResponse({ error: 'Invalid auth token' }, 401)
 
       const { student_id } = params
       if (!student_id) return jsonResponse({ error: 'student_id required' }, 400)
