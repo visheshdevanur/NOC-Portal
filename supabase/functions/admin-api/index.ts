@@ -180,16 +180,21 @@ serve(async (req) => {
         case 'coe-save-attendance': {
           const { records } = params
           if (!records || !Array.isArray(records)) return jsonResponse({ error: 'records array required' }, 400)
+          // Add tenant_id to every record
+          const enriched = records.map((r) => ({ ...r, tenant_id: callerProfile.tenant_id }))
           const BATCH = 25
-          for (let i = 0; i < records.length; i += BATCH) {
-            const batch = records.slice(i, i + BATCH)
+          for (let i = 0; i < enriched.length; i += BATCH) {
+            const batch = enriched.slice(i, i + BATCH)
             const { error } = await coeClient
               .from('ia_attendance')
               .upsert(batch, { onConflict: 'student_id,subject_id,ia_number' })
-            if (error) return jsonResponse({ error: error.message }, 500)
+            if (error) {
+              log({ level: 'ERROR', fn: 'admin-api', action: 'coe-save-attendance', error: error.message, meta: { batch_index: i } })
+              return jsonResponse({ error: error.message }, 500)
+            }
           }
-          log({ level: 'INFO', fn: 'admin-api', action: 'coe-save-attendance', userId: caller.id, meta: { count: records.length } })
-          return jsonResponse({ success: true, count: records.length })
+          log({ level: 'INFO', fn: 'admin-api', action: 'coe-save-attendance', userId: caller.id, meta: { count: enriched.length } })
+          return jsonResponse({ success: true, count: enriched.length })
         }
 
         case 'coe-process-csv': {
@@ -234,6 +239,7 @@ serve(async (req) => {
               teacher_id: coe_user_id || caller.id,
               ia_number: iaNum,
               is_present: false, // CSV contains absentees
+              tenant_id: callerProfile.tenant_id,
             })
           }
 
@@ -256,6 +262,74 @@ serve(async (req) => {
         default:
           return jsonResponse({ error: `Unknown COE action: ${action}` }, 400)
       }
+    }
+
+    // ─── GET IA DATA (any authenticated user — bypasses RLS for faculty to see COE records) ───
+    if (action === 'get-ia-data') {
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) return jsonResponse({ error: 'Missing auth token' }, 401)
+
+      const token = authHeader.replace('Bearer ', '')
+      const iaClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        { auth: { persistSession: false } }
+      )
+
+      const { data: { user: caller }, error: authErr } = await iaClient.auth.getUser(token)
+      if (authErr || !caller) return jsonResponse({ error: 'Invalid auth token' }, 401)
+
+      const { subject_id, section } = params
+      if (!subject_id) return jsonResponse({ error: 'subject_id required' }, 400)
+
+      const query = iaClient
+        .from('ia_attendance')
+        .select('*, profiles!ia_attendance_student_id_fkey(full_name, roll_number, section)')
+        .eq('subject_id', subject_id)
+        .order('ia_number')
+        .order('created_at')
+
+      const { data, error } = await query
+      if (error) return jsonResponse({ error: error.message }, 500)
+
+      // Filter by section on server side if specified
+      let filtered = data || []
+      if (section) {
+        filtered = filtered.filter((r) => {
+          const prof = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles
+          return (prof?.section || 'Unassigned') === section
+        })
+      }
+
+      return jsonResponse({ data: filtered })
+    }
+
+    // ─── GET STUDENT IA DATA (any authenticated user) ───
+    if (action === 'get-student-ia') {
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) return jsonResponse({ error: 'Missing auth token' }, 401)
+
+      const token = authHeader.replace('Bearer ', '')
+      const iaClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        { auth: { persistSession: false } }
+      )
+
+      const { data: { user: caller }, error: authErr } = await iaClient.auth.getUser(token)
+      if (authErr || !caller) return jsonResponse({ error: 'Invalid auth token' }, 401)
+
+      const { student_id } = params
+      if (!student_id) return jsonResponse({ error: 'student_id required' }, 400)
+
+      const { data, error } = await iaClient
+        .from('ia_attendance')
+        .select('*, subjects!ia_attendance_subject_id_fkey(subject_name, subject_code)')
+        .eq('student_id', student_id)
+        .order('subject_id')
+        .order('ia_number')
+      if (error) return jsonResponse({ error: error.message }, 500)
+      return jsonResponse({ data: data || [] })
     }
 
     // ─── ALL OTHER ACTIONS REQUIRE SUPER ADMIN ───

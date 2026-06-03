@@ -135,18 +135,13 @@ export const saveIAAttendance = async (
 };
 
 export const getIAAttendanceForSubject = async (subjectId: string, _teacherId: string, section?: string | null) => {
-  const { data, error } = await supabase
-    .from('ia_attendance')
-    .select('*, profiles!ia_attendance_student_id_fkey(full_name, roll_number, section)')
-    .eq('subject_id', subjectId)
-    .order('ia_number')
-    .order('created_at');
+  // Use edge function to bypass RLS — so faculty can see COE-uploaded records
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'get-ia-data', subject_id: subjectId, section: section || undefined },
+  });
   if (error) throw error;
-  // Filter by section on client side if specified
-  if (section) {
-    return (data || []).filter((r: any) => (r.profiles?.section || 'Unassigned') === section);
-  }
-  return data;
+  if (data?.error) throw new Error(data.error);
+  return data?.data || [];
 };
 
 export const getTeacherIAAttendance = async (teacherId: string) => {

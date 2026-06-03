@@ -45,14 +45,13 @@ export const getStudentDues = async (studentId: string) => {
 };
 
 export const getStudentIAAttendance = async (studentId: string) => {
-  const { data, error } = await supabase
-    .from('ia_attendance')
-    .select('*, subjects!ia_attendance_subject_id_fkey(subject_name, subject_code)')
-    .eq('student_id', studentId)
-    .order('subject_id')
-    .order('ia_number');
+  // Use edge function to bypass RLS — so students can see COE-uploaded records
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'get-student-ia', student_id: studentId },
+  });
   if (error) throw error;
-  return data;
+  if (data?.error) throw new Error(data.error);
+  return data?.data || [];
 };
 
 export const getStudentLibraryDues = async (studentId: string) => {
