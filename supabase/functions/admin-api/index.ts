@@ -133,19 +133,36 @@ serve(async (req) => {
         case 'coe-get-students': {
           const { subject_id } = params
           if (!subject_id) return jsonResponse({ error: 'subject_id required' }, 400)
-          const { data, error } = await coeClient
-            .from('subject_enrollment')
-            .select('student_id, profiles!subject_enrollment_student_id_fkey(id, full_name, roll_number, section)')
-            .eq('subject_id', subject_id)
-          if (error) return jsonResponse({ error: error.message }, 500)
-          // Deduplicate
-          const seen = new Set()
-          const unique = (data || []).filter((r) => {
-            if (seen.has(r.student_id)) return false
-            seen.add(r.student_id)
-            return true
-          })
-          return jsonResponse({ data: unique })
+
+          // Get the subject's department and semester
+          const { data: subject, error: subErr } = await coeClient
+            .from('subjects')
+            .select('department_id, semester_id')
+            .eq('id', subject_id)
+            .single()
+          if (subErr || !subject) return jsonResponse({ error: 'Subject not found' }, 404)
+
+          // Fetch ALL students in that department + semester
+          let query = coeClient
+            .from('profiles')
+            .select('id, full_name, roll_number, section')
+            .eq('role', 'student')
+            .eq('semester_id', subject.semester_id)
+            .order('roll_number')
+
+          if (subject.department_id) {
+            query = query.eq('department_id', subject.department_id)
+          }
+
+          const { data: students, error: studErr } = await query
+          if (studErr) return jsonResponse({ error: studErr.message }, 500)
+
+          // Map to same shape the frontend expects
+          const mapped = (students || []).map((s) => ({
+            student_id: s.id,
+            profiles: { id: s.id, full_name: s.full_name, roll_number: s.roll_number, section: s.section }
+          }))
+          return jsonResponse({ data: mapped })
         }
 
         case 'coe-get-attendance': {
