@@ -469,32 +469,49 @@ export default function ClerkDashboard() {
           teacher_id: role === 'teacher' ? roll : undefined,
         });
       }
-
-      // Send to bulk Edge Function in smaller chunks to prevent timeout
+      // Send to bulk Edge Function — 3 parallel chunks of 50 for speed
       const CHUNK_SIZE = 50;
+      const PARALLEL = 3;
+      const allChunks: { chunk: any[]; offset: number }[] = [];
       for (let c = 0; c < validUsers.length; c += CHUNK_SIZE) {
-        const chunk = validUsers.slice(c, c + CHUNK_SIZE);
-        try {
-          const { data, error } = await supabase.functions.invoke('bulk-create-users', {
-            body: { users: chunk },
-          });
-          if (error) throw new Error(error.message || 'Bulk upload failed');
-          if (data?.error) throw new Error(data.error);
+        allChunks.push({ chunk: validUsers.slice(c, c + CHUNK_SIZE), offset: c });
+      }
 
+      for (let p = 0; p < allChunks.length; p += PARALLEL) {
+        const batch = allChunks.slice(p, p + PARALLEL);
+        const results = await Promise.allSettled(
+          batch.map(({ chunk }) =>
+            supabase.functions.invoke('bulk-create-users', { body: { users: chunk } })
+          )
+        );
+        results.forEach((res, idx) => {
+          const { offset, chunk } = batch[idx];
+          if (res.status === 'rejected') {
+            errorCount += chunk.length;
+            errorDetails.push(`Batch ${Math.floor(offset / CHUNK_SIZE) + 1}: ${res.reason?.message || 'Request failed'}`);
+            return;
+          }
+          const { data, error } = res.value;
+          if (error) {
+            errorCount += chunk.length;
+            errorDetails.push(`Batch ${Math.floor(offset / CHUNK_SIZE) + 1}: ${error.message}`);
+            return;
+          }
+          if (data?.error) {
+            errorCount += chunk.length;
+            errorDetails.push(`Batch ${Math.floor(offset / CHUNK_SIZE) + 1}: ${data.error}`);
+            return;
+          }
           const result = data?.data || data;
           successCount += (result?.created || 0);
           updatedCount += (result?.updated || 0);
           errorCount += (result?.errors || 0);
-
           if (data?.errorDetails) {
             for (const e of data.errorDetails) {
-              errorDetails.push(`Row ${e.row + 1 + c} (${e.email}): ${e.error}`);
+              errorDetails.push(`Row ${e.row + 1 + offset} (${e.email}): ${e.error}`);
             }
           }
-        } catch (err: any) {
-          errorCount += chunk.length;
-          errorDetails.push(`Batch ${Math.floor(c / CHUNK_SIZE) + 1}: ${err.message}`);
-        }
+        });
       }
 
       if (errorCount > 0) {
