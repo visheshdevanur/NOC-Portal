@@ -93,9 +93,24 @@ serve(async (req) => {
           .limit(1)
 
         if (existing && existing.length > 0) {
-          // User already exists — DO NOT overwrite their data.
-          // Skip to prevent accidental semester/section/department changes.
-          return { row: rowNum, email, status: 'updated' as const, error: 'Already exists — skipped' }
+          // User already exists — update their profile data
+          const updateData: Record<string, unknown> = { full_name }
+          if (department_id) updateData.department_id = department_id
+          if (roll_number) updateData.roll_number = roll_number
+          if (section) updateData.section = section
+          if (semester_id) updateData.semester_id = semester_id
+          if (teacher_id) {
+            updateData.teacher_id = teacher_id
+            if (!roll_number) updateData.roll_number = teacher_id
+          }
+          const { error: updateErr } = await adminClient
+            .from('profiles')
+            .update(updateData)
+            .eq('id', existing[0].id)
+          if (updateErr) {
+            return { row: rowNum, email, status: 'error' as const, error: `Update failed: ${updateErr.message}` }
+          }
+          return { row: rowNum, email, status: 'updated' as const }
         }
 
         // Check if roll_number is already taken by another student (prevent USN overwrites)

@@ -340,9 +340,24 @@ export default function StaffDashboard() {
       if (lines.length < 2) throw new Error("CSV file is empty or missing data rows.");
       
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const required = ['email', 'password', 'full_name', 'role'];
-      for (const req of required) {
-        if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}`);
+      
+      // Resolve column names with aliases (accept both staff and clerk CSV formats)
+      const resolveCol = (primary: string, ...aliases: string[]) => {
+        if (headers.includes(primary)) return primary;
+        for (const a of aliases) { if (headers.includes(a)) return a; }
+        return primary;
+      };
+      const colName = resolveCol('full_name', 'name');
+      const colEmail = resolveCol('email');
+      const colPassword = resolveCol('password');
+      const colRole = resolveCol('role');
+      const colRoll = resolveCol('roll_number', 'roll_no', 'usn');
+      const colSection = resolveCol('section');
+      const colSemester = resolveCol('semester_id', 'semester');
+
+      // Validate required columns exist
+      for (const req of [colEmail, colPassword, colName]) {
+        if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}. Expected columns: name/full_name, email, password, role, section, semester, roll_number`);
       }
 
 
@@ -359,12 +374,12 @@ export default function StaffDashboard() {
 
       for (let i = 1; i < lines.length; i++) {
         const columns = lines[i].split(',').map(c => c.trim());
-        const getVal = (colName: string) => columns[headers.indexOf(colName)] || '';
+        const getVal = (col: string) => columns[headers.indexOf(col)] || '';
         
-        const email = getVal('email');
-        const password = getVal('password');
-        const full_name = getVal('full_name');
-        const role = getVal('role').toLowerCase();
+        const email = getVal(colEmail);
+        const password = getVal(colPassword);
+        const full_name = getVal(colName);
+        const role = (getVal(colRole) || 'student').toLowerCase();
         
         if (!email || !password || !full_name || !['student', 'teacher'].includes(role)) {
           errorCount++;
@@ -378,9 +393,9 @@ export default function StaffDashboard() {
           continue;
         }
 
-        const roll = getVal('roll_number');
-        const section = getVal('section');
-        const semNameOrId = getVal('semester_id');
+        const roll = getVal(colRoll);
+        const section = getVal(colSection);
+        const semNameOrId = getVal(colSemester);
         let semesterId: string | undefined;
 
         if (role === 'student' && semNameOrId) {
