@@ -638,6 +638,14 @@ export default function StudentDashboard() {
             )}
           </div>
 
+          {/* Disclaimer Note */}
+          <div className="mb-4 flex items-start gap-3 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+            <AlertCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-blue-700 dark:text-blue-300 font-medium">
+              <strong>Disclaimer:</strong> If there is no fine set for your shortage of attendance, then please meet your HoD.
+            </p>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
