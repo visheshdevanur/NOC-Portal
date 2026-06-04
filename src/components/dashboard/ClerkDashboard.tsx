@@ -579,6 +579,10 @@ export default function ClerkDashboard() {
       const updates: any = {
         full_name: editingUser.full_name,
       };
+      // Include email in profile update (clerk can update profile email, not auth email)
+      if (editingUser.email?.trim()) {
+        updates.email = editingUser.email.trim();
+      }
       if (editingUser.role === 'student') {
         updates.section = editingUser.section ? editingUser.section.toUpperCase() : null;
         updates.semester_id = editingUser.semester_id || null;
@@ -589,12 +593,6 @@ export default function ClerkDashboard() {
       }
 
       await updateUserAPI(editingUser.id, updates);
-
-      // Call API explicitly if email was provided and it differs (for simplicity, we always update it if provided to the new value)
-      if (editingUser.email?.trim()) {
-        const { adminUpdateUserCredentials } = await import('../../lib/api');
-        await adminUpdateUserCredentials(editingUser.id, editingUser.email.trim());
-      }
 
       setUserSuccess(`${editingUser.role === 'student' ? 'Student' : 'Teacher'} "${editingUser.full_name}" updated!`);
       logActivity('Updated User', `Updated ${editingUser.role} "${editingUser.full_name}"`);
