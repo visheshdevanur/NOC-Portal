@@ -127,7 +127,8 @@ serve(async (req) => {
         }
 
         // Create auth user
-        const { data: authData, error: createError } = await adminClient.auth.admin.createUser({
+        let authData: any = null
+        const { data: createData, error: createError } = await adminClient.auth.admin.createUser({
           email,
           password,
           email_confirm: true,
@@ -136,7 +137,53 @@ serve(async (req) => {
         })
 
         if (createError) {
-          return { row: rowNum, email, status: 'error' as const, error: createError.message }
+          // Handle orphaned auth user (profile was deleted but auth.users entry remains)
+          if (createError.message?.includes('already been registered')) {
+            // Find the orphaned auth user by email
+            const { data: { users: authUsers } } = await adminClient.auth.admin.listUsers({ perPage: 1, page: 1 })
+            // Search by email directly
+            const { data: userList } = await adminClient
+              .from('profiles')
+              .select('id')
+              .eq('email', email)
+              .limit(1)
+            
+            // Profile doesn't exist, so this is an orphaned auth user — delete and recreate
+            if (!userList || userList.length === 0) {
+              // Use getUserByEmail-like approach: list and find
+              try {
+                // Try to get user by signing in to get their ID (won't work), 
+                // Instead, delete via admin API by listing
+                const allAuthUsers = await adminClient.auth.admin.listUsers({ perPage: 1000 })
+                const orphan = allAuthUsers.data?.users?.find((u: any) => u.email === email)
+                if (orphan) {
+                  await adminClient.auth.admin.deleteUser(orphan.id)
+                  // Retry creation
+                  const { data: retryData, error: retryError } = await adminClient.auth.admin.createUser({
+                    email,
+                    password,
+                    email_confirm: true,
+                    user_metadata: { role, tenant_id: callerProfile.tenant_id },
+                    app_metadata: { tenant_id: callerProfile.tenant_id },
+                  })
+                  if (retryError) {
+                    return { row: rowNum, email, status: 'error' as const, error: retryError.message }
+                  }
+                  authData = retryData
+                } else {
+                  return { row: rowNum, email, status: 'error' as const, error: createError.message }
+                }
+              } catch {
+                return { row: rowNum, email, status: 'error' as const, error: createError.message }
+              }
+            } else {
+              return { row: rowNum, email, status: 'error' as const, error: createError.message }
+            }
+          } else {
+            return { row: rowNum, email, status: 'error' as const, error: createError.message }
+          }
+        } else {
+          authData = createData
         }
 
         if (!authData.user) {
