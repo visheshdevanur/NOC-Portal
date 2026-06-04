@@ -470,8 +470,8 @@ export default function ClerkDashboard() {
         });
       }
 
-      // Send to bulk Edge Function in chunks of 500
-      const CHUNK_SIZE = 500;
+      // Send to bulk Edge Function in smaller chunks to prevent timeout
+      const CHUNK_SIZE = 50;
       for (let c = 0; c < validUsers.length; c += CHUNK_SIZE) {
         const chunk = validUsers.slice(c, c + CHUNK_SIZE);
         try {
