@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white" alt="Supabase" />
   <img src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" alt="Vite" />
   <img src="https://img.shields.io/badge/TailwindCSS-3.4-06B6D4?logo=tailwindcss&logoColor=white" alt="TailwindCSS" />
-  <img src="https://img.shields.io/badge/HDFC_SmartGateway-Integrated-004B87?logo=data:image/svg+xml;base64,&logoColor=white" alt="HDFC SmartGateway" />
+  <img src="https://img.shields.io/badge/HDFC_SmartGateway-Integrated-004B87?logoColor=white" alt="HDFC SmartGateway" />
 </p>
 
 <h1 align="center">🎓 NOC Portal — No Objection Certificate Management System</h1>
@@ -56,7 +56,7 @@ NOC Portal digitizes the traditional paper-based "No Due Certificate" process us
 | **Clerk** | First/second year student management, subject enrollment, section management |
 | **HOD** | Final clearance approval, teacher assignment monitoring, staff activity logs, cash fine clearing |
 | **Accounts** | College-wide dues management, fee verification, fine category configuration |
-| **FYC (First Year Coordinator)** | Cross-department management for Sem 1 & 2 students |
+| **FYC** | Cross-department management for Sem 1 & 2 students |
 | **Librarian** | Library dues tracking, bulk processing, permit management |
 | **Admin** | Full institution control — users, subjects, departments, semesters, assignments |
 | **Super Admin** | Platform management — tenant provisioning, error logs, system health |
@@ -78,18 +78,9 @@ NOC Portal digitizes the traditional paper-based "No Due Certificate" process us
 
 A built-in issue tracking system that enables any authenticated user to report problems directly from their dashboard.
 
-**User-Facing Features:**
-- **Global Access** — A "Report" button is visible in the top navigation bar and Settings menu on every page
-- **Smart Form** — Users select a category (UI Bug, Performance, Wrong Data, Feature Broken, Access Issue, Other), severity level, and write a description
-- **Auto-Collection** — Browser, OS, screen resolution, and current page URL are captured automatically
-- **Instant Feedback** — Success confirmation shown immediately after submission
+**User-Facing:** Global Report button, smart form with category/severity selection, auto-collection of browser info, instant feedback on submission.
 
-**Developer/SuperAdmin Dashboard:**
-- **Summary Cards** — Total, Open, In Progress, and Resolved issue counts at a glance
-- **Advanced Filters** — Filter by status, severity, tenant, and date range; full-text search
-- **Sortable Table** — Click any column header to sort; expandable rows show full details
-- **Status Management** — Change issue status (Open → In Progress → Resolved) directly from the table
-- **Environment Details** — Browser info, OS, screen resolution, and exact URL per issue
+**SuperAdmin Dashboard:** Summary cards, advanced filters (status/severity/tenant/date), sortable table with expandable rows, status management, environment details per issue.
 
 **Database Table:** `reported_issues` with RLS policies ensuring users can only see their own reports, while SuperAdmins have full access.
 
@@ -111,33 +102,21 @@ A built-in issue tracking system that enables any authenticated user to report p
                         │ HTTPS (JWT + Anon Key)
 ┌───────────────────────┼──────────────────────────────────────────┐
 │                 SUPABASE PLATFORM                                │
-│                        │                                         │
 │  ┌─────────────────────▼─────────────────────────┐               │
 │  │              Supabase Auth (PKCE)             │               │
-│  │         JWT Token + Session Management         │               │
 │  └─────────────────────┬─────────────────────────┘               │
-│                        │                                         │
 │  ┌─────────────────────▼─────────────────────────┐               │
 │  │            Edge Functions (Deno)               │               │
-│  │  ┌──────────────┐  ┌───────────────────────┐  │               │
-│  │  │ create-user  │  │ create-hdfc-session   │  │               │
-│  │  │ bulk-create  │  │ hdfc-webhook          │  │               │
-│  │  │ provision-   │  │ hdfc-order-status     │  │               │
-│  │  │ tenant       │  │ log-error / admin-api │  │               │
-│  │  └──────────────┘  └───────────────────────┘  │               │
+│  │  create-user, bulk-create-users,               │               │
+│  │  create-hdfc-session, hdfc-webhook,            │               │
+│  │  hdfc-order-status, provision-tenant,          │               │
+│  │  log-error, admin-api                          │               │
 │  └─────────────────────┬─────────────────────────┘               │
-│                        │                                         │
 │  ┌─────────────────────▼─────────────────────────┐               │
 │  │          PostgreSQL + Row Level Security       │               │
-│  │  ┌────────────┐  ┌───────────┐  ┌──────────┐  │               │
-│  │  │  90+ RLS   │  │  20+ RPCs │  │ Triggers │  │               │
-│  │  │  Policies  │  │  (Atomic) │  │ & Guards │  │               │
-│  │  └────────────┘  └───────────┘  └──────────┘  │               │
-│  │                                                │               │
-│  │  Tables: profiles, subjects, subject_enrollment,│               │
-│  │  clearance_requests, student_dues, library_dues,│               │
-│  │  ia_attendance, payment_orders, activity_logs,  │               │
-│  │  tenants, departments, semesters, notifications │               │
+│  │  90+ RLS Policies │ 20+ RPCs │ Triggers       │               │
+│  │  Tables: profiles, subjects, enrollments,      │               │
+│  │  clearance_requests, dues, payments, logs      │               │
 │  └────────────────────────────────────────────────┘               │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -147,21 +126,13 @@ A built-in issue tracking system that enables any authenticated user to report p
 ```
 ┌─────────────────────────────────────────────────┐
 │              Single PostgreSQL DB                │
-│                                                  │
 │  ┌──────────────┐  ┌──────────────┐              │
 │  │  Tenant A     │  │  Tenant B     │             │
-│  │  (MIT Mysore) │  │  (XYZ College)│             │
-│  │               │  │               │             │
 │  │  tenant_id=A  │  │  tenant_id=B  │             │
-│  │  ───────────  │  │  ───────────  │             │
 │  │  profiles     │  │  profiles     │             │
 │  │  subjects     │  │  subjects     │             │
-│  │  enrollments  │  │  enrollments  │             │
-│  │  dues         │  │  dues         │             │
 │  └──────────────┘  └──────────────┘              │
-│                                                  │
-│  RLS Policy: WHERE tenant_id = get_my_tenant_id()│
-│  RPCs: Cross-tenant access → RAISE EXCEPTION     │
+│  RLS: WHERE tenant_id = get_my_tenant_id()       │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -169,11 +140,7 @@ A built-in issue tracking system that enables any authenticated user to report p
 
 ## 🔄 Clearance Workflow
 
-### Two-Step Clearance Process
-
-#### Step 1: Faculty Clearance
-
-A student's subject is considered **faculty-cleared** through any one of three paths:
+### Faculty Clearance Paths
 
 | Path | How | Who |
 |------|-----|-----|
@@ -181,68 +148,32 @@ A student's subject is considered **faculty-cleared** through any one of three p
 | **Faculty Clear** | Faculty directly marks subject as cleared (attendance ≥ 85%) | Faculty |
 | **HOD Override** | HOD clears the subject via cash payment collection | HOD |
 
-> **Rule:** A student with attendance < 85% is automatically rejected with a fine. They must pay the fine or get an HOD override to be cleared.
+> **Rule:** A student with attendance < 85% is automatically rejected with a fine.
 
-#### Step 2: HOD Approval
-
-A student must first clear **all three prerequisites** before appearing for HOD final approval:
+### HOD Approval Prerequisites
 
 | Prerequisite | Condition |
 |-------------|-----------|
-| ✅ **Faculty Clearance** | All enrolled subjects are cleared (via any of the 3 paths above) |
-| ✅ **Library Clearance** | No pending library dues, OR library dues permitted |
-| ✅ **College Dues** | All college fees paid, OR dues permitted |
+| ✅ **Faculty Clearance** | All enrolled subjects cleared |
+| ✅ **Library Clearance** | No pending library dues, OR permitted |
+| ✅ **College Dues** | All college fees paid, OR permitted |
 
-Only students with **all three** prerequisites met appear in the HOD's clearance tab.
-
-> HOD approval is **department-specific** — students can only be approved by the HOD of their own department. This is the **final step** in the No Due process.
-
-### Clearance Pipeline Diagram
+### Pipeline Diagram
 
 ```mermaid
 graph TD
-    A[Student Applies for Clearance] --> B{Faculty Review}
-    B -->|Attendance ≥ 85%| C[Faculty Clears Subject]
-    B -->|Attendance < 85%| D[Rejected — Fine Imposed]
-    D -->|Student Pays via HDFC| E[Subject Cleared]
-    D -->|HOD Clears via Cash| E
-    C --> F{All Subjects Cleared?}
+    A[Student Applies] --> B{Faculty Review}
+    B -->|≥ 85%| C[Faculty Clears]
+    B -->|< 85%| D[Rejected — Fine]
+    D -->|Pays via HDFC| E[Cleared]
+    D -->|HOD Cash Clear| E
+    C --> F{All Cleared?}
     E --> F
-    F -->|No| B
-    F -->|Yes| G{Library Cleared?}
-    G -->|No| H[Clear Library Dues]
-    H --> G
-    G -->|Yes| I{College Dues Cleared?}
-    I -->|No| J[Pay College Fees]
-    J --> I
-    I -->|Yes| K[Appears in HOD Dashboard]
-    K --> L{HOD Approval}
-    L -->|Approved| M[✅ Clearance Granted]
-    L -->|Rejected| N[Sent Back]
-```
-
-### Clearance Rules (Server-Enforced)
-
-| Rule | Enforcement Level |
-|------|-------------------|
-| Attendance ≥ 85% | Database trigger + API guard |
-| ≥ 2 IAs attended | Database trigger + API guard |
-| No unpaid college dues | Clearance state machine RPC |
-| No unpaid library dues | Evaluated during clearance check |
-| No unpaid attendance fines | Enrollment status + fee_verified check |
-| HOD sees only eligible students | Client-side prerequisite filtering |
-
-### Attendance Fine Workflow
-
-```mermaid
-graph LR
-    A[Faculty Marks Attendance] --> B{Attendance < 85%?}
-    B -->|Yes| C[Auto-Reject + Calculate Fine]
-    C --> D[Student Pays via HDFC SmartGateway]
-    D --> E[Webhook Verifies Payment]
-    E --> F[attendance_fee_verified = true]
-    F --> G[Subject Cleared]
-    B -->|No & ≥ 2 IAs| G
+    F -->|Yes| G{Library OK?}
+    G -->|Yes| H{Dues OK?}
+    H -->|Yes| I[HOD Dashboard]
+    I --> J{HOD Approval}
+    J -->|Approved| K[✅ Clearance Granted]
 ```
 
 ### Payment Flow (HDFC SmartGateway)
@@ -252,26 +183,29 @@ sequenceDiagram
     participant S as Student
     participant F as Frontend
     participant E as Edge Function
-    participant H as HDFC SmartGateway
+    participant H as HDFC Gateway
     participant DB as Database
-
     S->>F: Click "Pay Fine"
     F->>E: create-hdfc-session
-    E->>E: Auto-expire stale orders (>30min)
     E->>H: Create Payment Session
-    H-->>E: Payment Link + Order ID
-    E->>DB: Store payment_order (status: created)
-    E-->>F: Redirect URL
-    F->>H: Redirect to HDFC Payment Page
-    S->>H: Complete Payment (UPI/Card)
-    H->>E: hdfc-webhook (payment notification)
-    E->>DB: Update order (status: paid)
-    E->>DB: Set attendance_fee_verified = true
-    H-->>F: Redirect to /payment-callback
-    F->>E: hdfc-order-status (callback_mode)
-    E-->>F: Payment status (success/failed)
-    F->>S: Show result + redirect to dashboard
+    H-->>E: Payment Link
+    E->>DB: Store order (created)
+    F->>H: Redirect to payment
+    S->>H: Pay (UPI/Card)
+    H->>E: Webhook notification
+    E->>DB: Mark paid + verify fee
+    H-->>F: Redirect callback
+    F->>S: Show result
 ```
+
+### Server-Enforced Rules
+
+| Rule | Enforcement |
+|------|-------------|
+| Attendance ≥ 85% | DB trigger + API guard |
+| ≥ 2 IAs attended | DB trigger + API guard |
+| No unpaid dues | Clearance state machine RPC |
+| No unpaid fines | Enrollment fee_verified check |
 
 ---
 
@@ -302,48 +236,40 @@ Super Admin (Platform Level)
 ### Frontend
 | Technology | Purpose |
 |-----------|---------|
-| **React 19** | UI framework with latest concurrent features |
+| **React 19** | UI framework |
 | **TypeScript 5.9** | Type-safe development |
-| **Vite 8** | Lightning-fast build tool and dev server |
+| **Vite 8** | Build tool and dev server |
 | **TailwindCSS 3.4** | Utility-first styling |
 | **React Router 7** | Client-side routing |
-| **React Query 5** | Server state management, caching, background sync |
-| **Lucide React** | Modern icon library |
-| **jsPDF** | Client-side PDF receipt generation |
+| **React Query 5** | Server state management and caching |
+| **Lucide React** | Icon library |
+| **jsPDF** | PDF receipt generation |
 | **PapaParse** | CSV parsing for bulk operations |
 
 ### Backend
 | Technology | Purpose |
 |-----------|---------|
-| **Supabase** | Backend-as-a-Service (Auth, DB, Edge Functions) |
+| **Supabase** | BaaS (Auth, DB, Edge Functions) |
 | **PostgreSQL** | Primary database with RLS |
 | **Edge Functions (Deno)** | Serverless API endpoints |
-| **Row Level Security** | Database-level access control (90+ policies) |
-| **RPCs** | Atomic server-side operations (20+ functions) |
+| **90+ RLS Policies** | Database-level access control |
+| **20+ RPCs** | Atomic server-side operations |
 
-### Payments
+### Payments & Infrastructure
 | Technology | Purpose |
 |-----------|---------|
-| **HDFC SmartGateway** | Payment gateway (UPI, Cards, NetBanking) |
-| **RSA + SHA-256** | Payment response signature verification |
-| **Callback Mode** | Stateless payment status check (no JWT required) |
-
-### Infrastructure
-| Technology | Purpose |
-|-----------|---------|
-| **Vercel** | Frontend hosting with CDN and auto-deploy |
-| **Supabase Cloud** | Managed PostgreSQL + Auth + Edge Functions |
-| **GitHub** | Version control and CI/CD triggers |
+| **HDFC SmartGateway** | UPI, Cards, NetBanking |
+| **Vercel / Netlify** | Frontend hosting with CDN |
+| **GitHub** | Version control and CI/CD |
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+
-- npm 9+
+- Node.js 18+ / npm 9+
 - Supabase account
-- HDFC SmartGateway merchant account (for payments)
+- HDFC SmartGateway merchant account (optional for dev)
 
 ### Installation
 
@@ -367,28 +293,24 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key
 ```
 
+> **⚠️ NEVER** put service_role key, HDFC credentials, or any secret in VITE_ prefixed variables. All secrets go in Supabase Edge Function secrets only.
+
 ### Development
 
 ```bash
-# Start dev server
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
-
-# Run linting
-npm run lint
+npm run dev      # Start dev server
+npm run build    # Production build
+npm run preview  # Preview production build
+npm run lint     # Run linting
 ```
 
 ### Database Setup
 
-1. Create a Supabase project
-2. Run migrations in order:
 ```bash
-# Apply all 102+ migrations
+# Link your Supabase project
+supabase link --project-ref your-project-ref
+
+# Apply all 108 migrations
 supabase db push --linked
 ```
 
@@ -399,7 +321,7 @@ supabase db push --linked
 supabase functions deploy create-user --no-verify-jwt
 supabase functions deploy bulk-create-users --no-verify-jwt
 
-# HDFC SmartGateway payment functions
+# HDFC SmartGateway
 supabase functions deploy create-hdfc-session
 supabase functions deploy hdfc-order-status --no-verify-jwt
 supabase functions deploy hdfc-webhook --no-verify-jwt
@@ -412,7 +334,8 @@ supabase functions deploy admin-api --no-verify-jwt
 
 ### Edge Function Secrets
 
-Set these in Supabase Dashboard → Settings → Edge Functions → Secrets:
+Set in Supabase Dashboard → Settings → Edge Functions → Secrets:
+
 ```
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
@@ -421,8 +344,9 @@ HDFC_MERCHANT_ID=your_merchant_id
 HDFC_API_KEY=your_api_key
 HDFC_PAYMENT_PAGE_CLIENT_ID=your_client_id
 HDFC_BASE_URL=https://smartgateway.hdfcbank.com
-HDFC_API_BASE_URL=https://api.hdfcbank.com
-
+HDFC_WEBHOOK_USERNAME=your_webhook_username
+HDFC_WEBHOOK_PASSWORD=your_webhook_password
+PAYMENT_RETURN_URL=https://your-domain.com/payment/callback
 ALLOWED_ORIGIN=https://your-domain.com
 ```
 
@@ -430,420 +354,118 @@ ALLOWED_ORIGIN=https://your-domain.com
 
 ## 📖 User Manual
 
-This section provides step-by-step instructions for every user role in the NOC Portal.
-
----
-
 ### 🔑 Logging In
 
-1. Open the portal URL in any browser (Chrome, Firefox, Edge, Safari)
-2. Enter your **email** and **password** provided by your institution admin
-3. Click **Sign In**
-4. You will be automatically redirected to your role-specific dashboard
+1. Open the portal URL → Enter email and password → Click **Sign In**
+2. Auto-redirected to your role-specific dashboard
 
-> **Session Timeout:** You will be automatically logged out after 15 minutes of inactivity. A warning appears at 12 minutes.
+> **Session Timeout:** Auto-logout after 15 min inactivity. Warning at 12 min.
 
-> **Theme:** Click the ⚙️ **Settings** icon (top-right) to switch between Dark and Light mode.
-
-> **Report an Issue:** If you encounter a bug, click the 🚩 **Report** button in the top navigation bar.
+> **Theme:** Click ⚙️ Settings to switch Dark/Light mode.
 
 ---
 
 ### 🎓 Student Dashboard
 
-The Student Dashboard is your one-stop portal for tracking clearance status, paying fines, and downloading your No Due Certificate.
+**Clearance Pipeline:** Four stages — Faculty → Library → Accounts → HOD Approval. Each shows ✅ cleared, ⏳ pending, or 🔴 blocked.
 
-#### Viewing Your Clearance Status
+**Applying:** Click "Apply for Clearance" → auto-enrolls in all semester subjects → enters pipeline.
 
-After logging in, you will see the **Clearance Pipeline Match** with four stages:
+**Academic Eligibility:** Must have ≥ 85% attendance AND ≥ 2/3 IAs present per subject.
 
-| Stage | Icon | What It Means |
-|-------|------|---------------|
-| **Faculty** | 📘 IA + Attendance | Your subject-wise attendance and IA status |
-| **Library** | 📖 Books & Fines | Whether you have pending library books or fines |
-| **Accounts** | 💰 College Fees | Whether your college dues are cleared |
-| **HOD Approval** | 👤 Final Sign-off | Final clearance from your Head of Department |
+**Paying Fines:** Attendance < 85% triggers auto-fine → Pay individually or "Pay All" via HDFC SmartGateway (UPI/Card/NetBanking) → auto-cleared on success.
 
-Each stage shows a ✅ green check when cleared, or a ⏳ pending/🔴 blocked indicator when not.
+**Library & Dues:** Shows Cleared/Pending/Permitted status for library and college dues.
 
-#### Applying for Clearance
+**NOC Report:** Available once all four stages cleared → generates PDF with clearance details.
 
-1. Click **"Apply for Clearance"** button
-2. The system automatically enrolls you in all subjects for your semester
-3. Your clearance request enters the pipeline at **Faculty Review** stage
-
-> **Note:** You only need to apply once. Re-clicking the button is safe — it won't create duplicates.
-
-#### Understanding Academic Eligibility
-
-Under **Academic Eligibility**, you'll see each subject with:
-
-| Field | Requirement |
-|-------|-------------|
-| **Attendance** | Must be ≥ 85% (marked by your faculty) |
-| **IA Attendance** | Must be marked **Present** in at least 2 out of 3 Internal Assessments |
-
-- ✅ **Eligible** — You meet both requirements
-- ❌ **Not Eligible** — You are below the threshold; a fine may be imposed
-
-#### Paying Attendance Fines
-
-If your attendance is below 85%, a fine is auto-calculated:
-
-1. Scroll to the **Attendance Dues** section
-2. You'll see each subject with a pending fine amount
-3. Click **"Pay ₹XXX"** to pay individually, OR click **"Pay All"** to pay all fines at once
-4. You'll be redirected to **HDFC SmartGateway** — pay via UPI, Card, or Net Banking
-5. After payment, you're redirected back. The subject is automatically marked as **Cleared**
-
-> **Bulk Payment:** Use "Pay All" to settle all pending fines in a single transaction.
-
-#### Viewing Library & College Dues
-
-- **Library Section:** Shows "Cleared" (green) or "Pending" / "Permitted"
-- **College Dues Section:** Shows "Cleared", "Pending", or "Permitted"
-- "Permitted" means the staff has temporarily allowed your clearance to proceed despite pending dues
-
-#### Downloading Your NOC Report
-
-Once **all four stages** are cleared:
-
-1. A **"Download NOC Report"** button appears
-2. Click to generate a PDF receipt with your clearance details
-3. The PDF includes: your name, USN, department, semester, clearance date, and approval status
+> **Disclaimer:** If there is no fine set for your shortage of attendance, then please meet your HoD.
 
 ---
 
-### 👨‍🏫 Faculty / Teacher Dashboard
+### 👨‍🏫 Faculty Dashboard
 
-The Faculty Dashboard has two tabs: **Student Clearance** and **Manage IAs**.
+**Two Tabs:** Student Clearance + Manage IAs
 
-#### Tab 1: Student Clearance
+**Student Clearance:** Navigate Department → Semester → Section → Subject → Set attendance % → Auto-evaluates (≥85% + 2 IAs = ✅, <85% = ❌ + fine). Supports bulk CSV upload.
 
-This tab lets you manage attendance percentages for students enrolled in your subjects.
-
-**Navigation:** Department → Semester → Section → Subject
-
-1. Select your **Department** from the cards
-2. Select the **Semester**
-3. Select the **Section**
-4. Select the **Subject**
-5. You'll see all enrolled students with their current attendance %
-
-**Setting Attendance Individually:**
-1. Type the attendance percentage (0–100) in the input field next to each student
-2. Click the **Save** button (checkmark icon)
-3. The system automatically evaluates:
-   - **≥ 85% + 2 IAs present** → Status: ✅ Cleared
-   - **< 85%** → Status: ❌ Rejected (fine auto-calculated)
-   - **< 2 IAs present** → Status: ❌ Rejected (insufficient IA attendance)
-
-**Bulk Attendance via CSV:**
-1. Click **"Download Template"** to get a pre-filled CSV with student names and roll numbers
-2. Fill in `total_classes` and `attended_classes` columns
-3. Click **"Upload CSV"** and select the filled file
-4. All attendance percentages are calculated and statuses are auto-assigned
-
-#### Tab 2: Manage IAs (Internal Assessments)
-
-**Navigation:** Department → Semester → Section → Subject
-
-1. Navigate to your subject (same hierarchy)
-2. You'll see the IA panel showing **X / 3 IAs recorded**
-3. Click **"+ Add IA-X"** to record a new IA
-4. All students default to **Present** — toggle to **Absent** as needed
-5. Click **"Save IA-X"**
-
-> **Maximum:** 3 IAs per subject per section. Once all 3 are recorded, the button shows "Max 3 IAs Reached".
-
-**Editing a Previous IA:**
-1. Click the chevron (▼) next to an existing IA to expand it
-2. Click the ✏️ **Edit** icon
-3. Modify attendance (Present/Absent)
-4. Click **"Save"**
-
-**IA CSV Upload:**
-1. Click **"Download Template"** → get CSV with `roll_number, student_name, status`
-2. Fill status column with `Present` or `Absent`
-3. Click **"Upload CSV"**
-
-> **Section Isolation:** Each section's IAs are tracked independently. Even if you teach the same subject to Sections A and C, IAs are completely separate.
+**Manage IAs:** Record up to 3 IAs per subject/section. Students default to Present; toggle Absent as needed. Supports CSV upload.
 
 ---
 
 ### 🏢 Staff Dashboard
 
-The Staff Dashboard provides department-level operations for managing students, subjects, teachers, and attendance fines.
+**Tabs:** Student Management | Subject Management | Teacher Assignment | Student Dues | Attendance Fines
 
-#### Tabs Overview
-
-| Tab | Purpose |
-|-----|---------|
-| **Student Management** | View all students in your department, filter by semester/section |
-| **Subject Management** | View and manage subjects assigned to your department |
-| **Teacher Assignment** | Assign teachers to subjects and sections |
-| **Student Dues** | View and manage college fee dues for your department's students |
-| **Attendance Fines** | Configure fine slabs and process bulk attendance fines |
-
-#### Student Management
-- View all students filtered by semester and section
-- See clearance status, roll number, section, and semester
-
-#### Subject Management
-- View all subjects with their codes, semesters, and assigned teachers
-- Add new subjects for your department
-
-#### Teacher Assignment
-- Assign/reassign teachers to specific subject + section combinations
-- View current assignments
-
-#### Student Dues
-- View pending/cleared college dues for all students
-- Set due, clear due, or permit dues for individual students
-
-#### Attendance Fines
-- **Configure Fine Categories:** Set fine slabs (e.g., 75–84% → ₹500, 65–74% → ₹1000)
-- **Process Bulk Fines:** Upload CSV with student attendance data
-- Fines are auto-calculated based on the configured slabs
+- View/filter students by semester and section
+- Add subjects, assign teachers to subject+section combinations
+- Set/clear/permit college fee dues
+- Configure fine slabs and process bulk fines
 
 ---
 
 ### 📋 Clerk Dashboard
 
-The Clerk Dashboard is similar to the Staff Dashboard but is specifically scoped to **Semester 1 and 2** students.
-
-#### Key Capabilities
-- Manage students only in **Sem 1 and Sem 2** (first-year students)
-- Upload bulk student data via CSV
-- Assign subjects and teachers to sections
-- View and manage student dues
-
-> **Scope Restriction:** Clerks cannot see or manage students in Semester 3 and above. Those students are managed by Staff/HOD.
+Same capabilities as Staff but scoped to **Semester 1 and 2 only** (first-year students). Cannot see/manage Sem 3+ students.
 
 ---
 
-### 👔 HOD (Head of Department) Dashboard
+### 👔 HOD Dashboard
 
-The HOD Dashboard is the final clearance authority for students in your department.
+**Tabs:** Clearance Approvals | Student Overview | Staff & Teachers | Student Dues | Cash Fine Clearing | Activity Logs | Attendance Fines
 
-#### Tabs Overview
+**Final Approval:** Only students with ALL prerequisites met appear → Review → Approve/Reject.
 
-| Tab | Purpose |
-|-----|---------|
-| **Clearance Approvals** | Approve/reject final clearance for eligible students |
-| **Student Overview** | View all students with their clearance pipeline status |
-| **Staff & Teachers** | View staff members and teacher assignments |
-| **Student Dues** | Manage college fee dues, permit/clear/set dues |
-| **Cash Fine Clearing** | Clear fines collected via cash (bypasses online payment) |
-| **Activity Logs** | View all staff actions in your department |
-| **Attendance Fines** | Configure and manage fine categories |
+**Cash Fine Clearing:** Clear fines paid in cash (bypasses online payment).
 
-#### Final Clearance Approval
-
-Only students who have **all three prerequisites** met appear in the Clearance Approvals tab:
-
-1. ✅ All subjects cleared by faculty (attendance ≥ 85% + 2 IAs, or fine paid)
-2. ✅ Library dues cleared or permitted
-3. ✅ College dues cleared or permitted
-
-**To approve:**
-1. Navigate to **Clearance Approvals**
-2. Review the student's clearance summary
-3. Click **"Approve"** — this marks the student as **Fully Cleared**
-
-> **Cash Fine Clearing:** If a student pays a fine in cash (not online), go to **Cash Fine Clearing** tab, find the student, and click **"Clear"** to bypass the online payment requirement.
-
-#### Student Dues Management
-
-- **Set Due:** Marks a student as having pending college dues (status → Pending)
-- **Permit:** Temporarily allows the student to proceed with clearance despite pending dues (status → Permitted). You can set a permit duration (e.g., 2 days, 7 days)
-- **Clear:** Marks the student's dues as fully settled (status → Completed)
+**Dues:** Set Due / Permit (with duration) / Clear for individual students.
 
 ---
 
 ### 💰 Accounts Dashboard
 
-The Accounts Dashboard manages college-wide financial dues across all departments.
+**Tabs:** All Student Dues | Approved/Cleared | Attendance Fines
 
-#### Tabs Overview
-
-| Tab | Purpose |
-|-----|---------|
-| **All Student Dues** | View and manage dues for every student across all departments |
-| **Approved/Cleared** | View students whose dues are marked as completed |
-| **Attendance Fines** | Configure fine categories by department |
-
-#### Managing Student Dues
-
-Each student row shows: Name, Roll Number, Department, Semester, Section, Fine Amount, Paid Amount, Status.
-
-**Actions (via dropdown menu per student):**
-
-| Action | Effect |
-|--------|--------|
-| **Set Due** | Sets status to **Pending** with the specified fine amount |
-| **Permit** | Sets status to **Permitted** for a specified duration (e.g., 2 days). Student can proceed with clearance |
-| **Clear** | Sets status to **Completed**. College dues are fully settled |
-| **Edit Fee** | Modify the fine amount and paid amount |
-
-**Bulk Operations via CSV:**
-1. Download the student dues template
-2. Fill in roll numbers and fine amounts
-3. Upload — all matching students are updated automatically
-
-> **Status Reflection:** All changes made here are immediately visible on the student's dashboard.
+Manage college-wide dues: Set Due / Permit / Clear / Edit Fee. Supports bulk CSV operations.
 
 ---
 
 ### 📚 Library Dashboard
 
-The Library Dashboard manages library dues (unreturned books, fines) for all students.
-
-#### Student List
-
-Each student shows: Name, Roll Number, Department, Status (Has Dues / No Dues / Permitted).
-
-#### Actions (via dropdown menu per student)
-
-| Action | Effect |
-|--------|--------|
-| **Set Due** | Marks student as having pending library dues (blocks clearance) |
-| **Permit** | Permits the student to proceed with clearance despite library dues |
-| **Clear** | Clears all library dues for the student |
-| **Set Fine** | Assigns a specific fine amount for library violations |
-
-**Bulk Operations via CSV:**
-1. Upload a CSV with roll numbers of students who have **NOT** returned books
-2. All listed students are marked as "Has Dues"
-3. All other students are automatically marked as "Cleared"
-
-> **Status Reflection:** Changes are immediately reflected on the student's dashboard under the "Library" stage.
+Manage library dues: Set Due / Permit / Clear / Set Fine. Bulk CSV upload marks non-returners as "Has Dues" and others as "Cleared."
 
 ---
 
-### 🎓 FYC (First Year Coordinator) Dashboard
+### 🎓 FYC Dashboard
 
-The FYC Dashboard provides cross-department management specifically for **Semester 1 and 2** students.
-
-#### Tabs Overview
-
-| Tab | Purpose |
-|-----|---------|
-| **Student Overview** | View all first-year students across all departments |
-| **Clearance Approvals** | Final clearance for first-year students (same role as HOD but for Sem 1-2) |
-| **Student Dues** | Manage college dues for first-year students |
-| **Activity Logs** | View staff actions related to first-year students |
-| **Attendance Fines** | Configure fine categories for first-year semesters |
-
-> **Key Difference from HOD:** FYC manages students across **all departments** but only for Sem 1 and Sem 2, while HOD manages **one department** across all semesters.
+Cross-department management for **Sem 1 & 2** students. Same clearance approval authority as HOD but across all departments for first-year only.
 
 ---
 
 ### ⚙️ Admin Dashboard
 
-The Admin Dashboard provides full institutional control.
+**Tabs:** Users | Departments | Semesters | Subjects | Teacher Assignment | Bulk Import
 
-#### Tabs Overview
-
-| Tab | Purpose |
-|-----|---------|
-| **Users** | View, search, and manage all user accounts |
-| **Departments** | Create and manage academic departments |
-| **Semesters** | Create semesters within departments |
-| **Subjects** | Create subjects and assign them to semesters |
-| **Teacher Assignment** | Assign teachers to subjects across departments |
-| **Bulk Import** | Upload student and teacher data via CSV (up to 500 per batch) |
-
-#### Creating Users
-
-1. Go to **Users** tab
-2. Click **"+ Add User"**
-3. Fill in: Full Name, Email, Password, Role, Department, Semester, Section
-4. Click **Create** — the user is created in Supabase Auth + profiles table
-
-#### Bulk User Import
-
-1. Click **"Import CSV"**
-2. Download the template → fill in student/teacher details
-3. Upload → up to **500 users created per batch**
-4. For students: `student_dues` and `library_dues` rows are automatically created
-
-#### Subject Setup Workflow
-
-1. Create **Department** (e.g., "Computer Science")
-2. Create **Semesters** within the department (e.g., "1", "2", "3"...)
-3. Create **Subjects** within semesters (e.g., "Data Structures", code: "CS301")
-4. **Assign Teachers** to subjects + sections
+Full institution control. Create users (single or CSV batch up to 500). Setup workflow: Department → Semesters → Subjects → Teacher Assignment.
 
 ---
 
 ### 🌐 Super Admin Dashboard
 
-The Super Admin manages the platform at the multi-tenant level.
-
-#### Capabilities
-
-| Feature | Description |
-|---------|-------------|
-| **Tenant Management** | Create new college tenants, set quotas, activate/deactivate |
-| **Error Logs** | View platform-wide error logs with severity filtering |
-| **Issue Tracker** | View and manage user-reported issues across all tenants |
-| **System Health** | Monitor tenant usage and database metrics |
-
-#### Creating a New Tenant (College)
-
-1. Click **"+ Create Tenant"**
-2. Fill in: College Name, Slug, Admin Email, Plan, Max Users
-3. Click **Create** — provisions a new isolated tenant with its own admin
+Platform-level management: Tenant provisioning, error logs, issue tracker, system health monitoring.
 
 ---
 
-### 📱 Common Features (All Roles)
+### ❓ FAQ
 
-#### Dark / Light Theme
-- Click ⚙️ **Settings** icon → Toggle theme
-- Preference is saved to your profile
-
-#### Report an Issue
-1. Click 🚩 **Report** in the top navigation
-2. Select **Category**: UI Bug, Performance, Wrong Data, Feature Broken, Access Issue, Other
-3. Select **Severity**: Low, Medium, High, Critical
-4. Write a description
-5. Click **Submit** — your browser info and current page URL are auto-captured
-
-#### Activity Logs
-- Every action (clearance approval, fine assignment, payment, etc.) is logged
-- Staff/HOD/Admin can view logs filtered by date, user, and action type
-
-#### Session Security
-- Auto-logout after **15 minutes** of inactivity
-- Warning banner appears at **12 minutes**
-- Click "Stay Logged In" to refresh your session
-
----
-
-### ❓ Frequently Asked Questions
-
-**Q: I applied for clearance but nothing happened.**
-A: Your request is now in the pipeline. Faculty must mark your attendance and IA status first. Check the "Academic Eligibility" section to see your subject-wise status.
-
-**Q: My attendance is above 85% but the subject shows "Not Eligible".**
-A: You also need to be present in at least **2 out of 3 IAs**. Check the IA section to verify.
-
-**Q: I paid my fine but the subject still shows "Pending".**
-A: Wait 30 seconds and refresh the page. If it still shows pending, check the payment status on the HDFC SmartGateway page. Contact your accounts department if the issue persists.
-
-**Q: The Library/Accounts section shows "Pending" but I have no dues.**
-A: Ask your library/accounts staff to click **"Clear"** on your record. If you're a new student, the staff needs to run the clearance action at least once.
-
-**Q: HOD says my clearance isn't showing for approval.**
-A: All three prerequisites must be met: (1) All subjects cleared by faculty, (2) Library cleared or permitted, (3) College dues cleared or permitted. Check each stage on your dashboard.
-
-**Q: I'm a faculty member and I see IAs from another section.**
-A: This has been fixed. Refresh your browser (Ctrl+F5). IAs are now section-specific.
-
-**Q: How do I change my password?**
-A: Go to ⚙️ Settings → Use the Supabase password reset flow, or contact your Admin.
+| Question | Answer |
+|----------|--------|
+| Applied but nothing happened? | Faculty must mark attendance/IA first |
+| Above 85% but "Not Eligible"? | Need ≥ 2/3 IAs present too |
+| Paid but still "Pending"? | Wait 30s and refresh; check HDFC status |
+| Library/Accounts "Pending" but no dues? | Ask staff to click "Clear" on your record |
+| HOD can't see student? | All 3 prerequisites must be met |
+| Password change? | Settings → Supabase password reset |
 
 ---
 
@@ -851,35 +473,28 @@ A: Go to ⚙️ Settings → Use the Supabase password reset flow, or contact yo
 
 ### Authentication & Authorization
 - **PKCE OAuth flow** — Prevents authorization code interception
-- **JWT-based sessions** — Auto-refresh with 15-min inactivity timeout
-- **Role hierarchy enforcement** — Staff can't create admins, HODs can't modify other departments
-- **Role escalation prevention** — Database trigger blocks direct role changes via UPDATE
+- **JWT sessions** — Auto-refresh with 15-min inactivity timeout
+- **Role hierarchy enforcement** — RLS-based, staff can't create admins
+- **Role escalation prevention** — Database trigger blocks direct role changes
 
 ### Database Security
 - **90+ RLS policies** — Every table has row-level security
-- **Tenant isolation** — All queries scoped to `tenant_id` via `get_my_tenant_id()`
-- **Cross-tenant guards** — All RPCs validate caller's tenant matches target data
-- **State machine enforcement** — Clearance stages can only advance sequentially
-- **Fee self-verification block** — Students cannot mark their own fines as paid
+- **Tenant isolation** — All queries scoped via `get_my_tenant_id()`
+- **Cross-tenant guards** — RPCs validate caller's tenant
+- **State machine enforcement** — Clearance stages advance sequentially
+- **Fee self-verification block** — Students can't mark own fines paid
 
 ### Payment Security
-- **RSA signature verification** — HDFC webhook responses verified with public key
-- **Stale order auto-expiry** — Orders older than 30 minutes automatically expired
-- **Callback mode** — Stateless payment status check using `order_id` as implicit token
-- **No JWT required for callbacks** — Handles expired sessions after payment redirect
-- **Atomic payment processing** — Database-level locking prevents double-processing
-
-### API Security
-- **Edge Functions validate JWTs** — Every call verified server-side
-- **Rate limiting** — 5 requests/minute + 20/day on payment endpoints
-- **Origin validation** — Edge Functions reject cross-origin requests
-- **Input sanitization** — Client-side XSS prevention on all user inputs
+- **RSA signature verification** — HDFC webhook responses verified
+- **Stale order auto-expiry** — Orders >30min automatically expired
+- **Atomic processing** — Database-level locking prevents double-processing
+- **No PCI data stored** — HDFC handles all card data
 
 ### Infrastructure Security
 - **Security headers** — CSP, HSTS, X-Frame-Options, Permissions-Policy
-- **Immutable asset caching** — Versioned bundles with cache-busting
-- **No secrets in frontend** — Only publishable keys exposed; secrets in Edge Functions only
-- **`.env` in `.gitignore`** — Environment files excluded from version control
+- **Immutable asset caching** — Versioned bundles
+- **No secrets in frontend** — Only anon key exposed
+- **Input sanitization** — Client-side XSS prevention
 
 ---
 
@@ -893,124 +508,115 @@ NOC-Portal/
 │   ├── index.css                    # Global styles + design tokens
 │   ├── components/
 │   │   ├── dashboard/
-│   │   │   ├── StudentDashboard.tsx   # Student self-service portal
-│   │   │   ├── FacultyDashboard.tsx   # Attendance + clearance management
-│   │   │   ├── StaffDashboard.tsx     # Department operations
-│   │   │   ├── ClerkDashboard.tsx     # Student enrollment management
-│   │   │   ├── HodDashboard.tsx       # Final approvals + oversight
-│   │   │   ├── AdminDashboard.tsx     # Institution admin panel
-│   │   │   ├── AccountsDashboard.tsx  # Financial management
-│   │   │   ├── FycDashboard.tsx       # First Year Coordinator
-│   │   │   └── shared/               # Shared dashboard components
-│   │   ├── layout/                    # Sidebar, header, navigation
-│   │   ├── ErrorBoundary.tsx          # Crash recovery
-│   │   └── ThemeProvider.tsx          # Dark/light mode
+│   │   │   ├── StudentDashboard.tsx
+│   │   │   ├── FacultyDashboard.tsx
+│   │   │   ├── StaffDashboard.tsx
+│   │   │   ├── ClerkDashboard.tsx
+│   │   │   ├── HodDashboard.tsx
+│   │   │   ├── AdminDashboard.tsx
+│   │   │   ├── AccountsDashboard.tsx
+│   │   │   ├── FycDashboard.tsx
+│   │   │   ├── CoeDashboard.tsx
+│   │   │   └── shared/
+│   │   │       ├── AttendanceFinesTab.tsx
+│   │   │       ├── StudentDuesOverviewTab.tsx
+│   │   │       └── DashboardPrimitives.tsx
+│   │   ├── layout/Layout.tsx
+│   │   ├── ErrorBoundary.tsx
+│   │   ├── TabErrorBoundary.tsx
+│   │   ├── ReportIssueModal.tsx
+│   │   ├── ThemeProvider.tsx
+│   │   └── ThemeToggle.tsx
 │   ├── lib/
-│   │   ├── api/                       # Domain-specific API modules
-│   │   │   ├── student.ts             # Student queries
-│   │   │   ├── faculty.ts             # Faculty operations (batched upserts)
-│   │   │   ├── hod.ts                 # HOD operations (prerequisite filtering)
-│   │   │   ├── accounts.ts            # Financial operations
-│   │   │   ├── admin.ts               # Admin operations
-│   │   │   ├── library.ts             # Library dues
-│   │   │   ├── payment.ts             # HDFC SmartGateway integration
-│   │   │   ├── promotion.ts           # Student promotion
-│   │   │   └── shared.ts              # Activity logs + utilities
-│   │   ├── supabase.ts                # Supabase client init
-│   │   ├── useAuth.ts                 # Auth hook + session management
-│   │   └── sanitize.ts               # Input sanitization utilities
-│   ├── pages/
-│   │   ├── DashboardRouter.tsx        # Role-based dashboard routing
-│   │   ├── Login.tsx                  # Auth page (OTP + password)
-│   │   ├── PaymentCallback.tsx        # HDFC payment return handler
-│   │   ├── LibraryDashboard.tsx       # Library management
-│   │   └── superadmin/                # Platform admin portal
-│   │       ├── SuperAdminApp.tsx       # SA routing
-│   │       ├── SuperAdminDashboard.tsx # Tenant management
-│   │       ├── CreateTenantModal.tsx   # College onboarding
-│   │       ├── TenantDetailModal.tsx   # Tenant configuration
-│   │       └── ErrorLogPage.tsx        # Platform error monitoring
-│   └── types/                         # TypeScript type definitions
+│   │   ├── api/                      # Domain-specific API modules
+│   │   │   ├── student.ts, faculty.ts, hod.ts
+│   │   │   ├── accounts.ts, admin.ts, library.ts
+│   │   │   ├── payment.ts, promotion.ts, coe.ts
+│   │   │   ├── issues.ts, shared.ts, clearance.ts
+│   │   │   └── index.ts
+│   │   ├── supabase.ts               # Supabase client init
+│   │   ├── useAuth.ts                # Auth hook + session management
+│   │   ├── useApiMutation.ts         # Mutation hook wrapper
+│   │   ├── useTenant.tsx             # Multi-tenant context
+│   │   ├── queryClient.ts            # React Query config
+│   │   ├── sanitize.ts              # Input sanitization
+│   │   ├── csvSanitizer.ts          # CSV sanitization
+│   │   ├── errorHandler.ts          # Global error handler
+│   │   ├── invokeWithRetry.ts       # Edge function retry logic
+│   │   ├── database.types.ts        # Auto-generated DB types
+│   │   ├── superAdminApi.ts         # SuperAdmin API
+│   │   ├── superAdminAuth.ts        # SuperAdmin auth
+│   │   └── superAdminSupabase.ts    # SuperAdmin client
+│   └── pages/
+│       ├── DashboardRouter.tsx       # Role-based routing
+│       ├── Login.tsx                 # Auth page
+│       ├── UpdatePassword.tsx        # Password reset
+│       ├── PaymentCallback.tsx       # HDFC return handler
+│       ├── LibraryDashboard.tsx      # Library management
+│       ├── Logs.tsx                  # Activity logs
+│       └── superadmin/
+│           ├── SuperAdminApp.tsx
+│           ├── SuperAdminDashboard.tsx
+│           ├── SuperAdminLogin.tsx
+│           ├── CreateTenantModal.tsx
+│           ├── TenantDetailModal.tsx
+│           ├── ErrorLogPage.tsx
+│           ├── ReportedIssuesPage.tsx
+│           └── superadmin.css
 ├── supabase/
-│   ├── functions/                     # Edge Functions (Deno)
-│   │   ├── create-user/               # Single user creation
-│   │   ├── bulk-create-users/         # CSV batch user creation (500/batch)
-│   │   ├── create-hdfc-session/       # HDFC payment session creation
-│   │   ├── hdfc-order-status/         # Payment status check (callback_mode)
-│   │   ├── hdfc-webhook/              # Payment verification webhook
-│   │   ├── provision-tenant/          # New college onboarding
-│   │   ├── log-error/                 # Error reporting
-│   │   ├── admin-api/                 # Admin operations
-│   │   └── _shared/                   # Shared utilities (CORS, rate limit)
-│   └── migrations/                    # 102+ SQL migrations
-│       ├── 0001_initial_schema.sql
-│       ├── ...
-│       ├── 0072_multi_tenant_schema.sql
-│       ├── 0078_critical_security_patches.sql
-│       ├── 0091_hdfc_smartgateway_migration.sql
-│       ├── 0094_fix_payment_orders_and_bulk.sql
-│       ├── 0096_reported_issues.sql
-│       ├── 0099_fix_accounts_library_new_students.sql
-│       └── 0102_combined_new_student_fix.sql
-├── vercel.json                        # Vercel hosting config (SPA routing)
-├── netlify.toml                       # Netlify hosting config (backup)
+│   ├── functions/                    # 8 Edge Functions (Deno)
+│   │   ├── create-user/
+│   │   ├── bulk-create-users/
+│   │   ├── create-hdfc-session/
+│   │   ├── hdfc-order-status/
+│   │   ├── hdfc-webhook/
+│   │   ├── provision-tenant/
+│   │   ├── log-error/
+│   │   ├── admin-api/
+│   │   └── _shared/
+│   └── migrations/                   # 108 SQL migration files
 ├── package.json
-├── tsconfig.json
-└── tailwind.config.js
+├── vercel.json                       # Vercel config + security headers
+├── netlify.toml                      # Netlify config + security headers
+├── tailwind.config.js
+├── vite.config.ts
+└── tsconfig.json
 ```
 
 ---
 
-## 📊 Database Schema (Key Tables)
+## 📊 Database Schema
 
-| Table | Purpose | Rows (est.) |
-|-------|---------|-------------|
-| `tenants` | Institution registry | 1 per college |
-| `profiles` | All users (students + staff) | 500-5000 per tenant |
-| `departments` | Academic departments | 5-15 per tenant |
-| `semesters` | Semester definitions | 8-10 per tenant |
-| `subjects` | Course catalog | 50-200 per tenant |
-| `subject_enrollment` | Student-subject-teacher mapping | 2000-20000 per tenant |
-| `ia_attendance` | IA exam attendance records | 5000-50000 per tenant |
-| `clearance_requests` | Clearance applications | 1 per student |
-| `student_dues` | College fee status | 1 per student |
-| `library_dues` | Library fine status | 1 per student |
-| `payment_orders` | HDFC payment records | Variable |
-| `attendance_fine_categories` | Fine slab configuration | 5-10 per department |
-| `activity_logs` | Audit trail | Grows continuously |
-| `platform_error_logs` | System error monitoring | Grows continuously |
-| `imported_teachers` | Cross-department teacher sharing | Variable |
+### Core Tables
 
----
+| Table | Purpose |
+|-------|---------|
+| `tenants` | Multi-tenant organization registry |
+| `profiles` | All users linked to Supabase Auth |
+| `departments` | Academic departments |
+| `semesters` | Semester definitions |
+| `subjects` | Course catalog |
 
-## 🎯 Key Benefits
+### Workflow Tables
 
-### For Students
-- ✅ No physical visits to 8+ departments
-- ✅ Real-time clearance status tracking with pipeline visualization
-- ✅ Online fine payments via UPI/Cards (HDFC SmartGateway)
-- ✅ Auto-generated payment receipts
-- ✅ Transparent IA attendance visibility
+| Table | Purpose |
+|-------|---------|
+| `subject_enrollment` | Student-subject-teacher mappings + attendance |
+| `ia_attendance` | Internal assessment attendance records |
+| `clearance_requests` | Student clearance applications |
+| `student_dues` | College fee status |
+| `library_dues` | Library fine status |
+| `attendance_fine_categories` | Fine slab configuration |
+| `imported_teachers` | Cross-department teacher sharing |
 
-### For Faculty
-- ✅ Bulk attendance upload via CSV
-- ✅ Automated compliance checking (85% + 2 IA)
-- ✅ Per-section student management
-- ✅ Batched database operations (no timeouts for large classes)
+### Payment & System Tables
 
-### For Administration
-- ✅ Complete audit trail of every action
-- ✅ Automated fine calculation and collection
-- ✅ Department-wise clearance analytics
-- ✅ Role-based access control with 10 distinct roles
-- ✅ Bulk student onboarding (500/batch)
-
-### For Institutions
-- ✅ Zero infrastructure to manage (SaaS)
-- ✅ Works on any device with a browser
-- ✅ Complete data isolation between departments and tenants
-- ✅ Revenue generation through fine collection
-- ✅ Paperless, eco-friendly process
+| Table | Purpose |
+|-------|---------|
+| `payment_orders` | HDFC payment order tracking |
+| `activity_logs` | Audit trail |
+| `platform_error_logs` | System error monitoring |
+| `reported_issues` | User-reported issue tracking |
 
 ---
 
@@ -1020,123 +626,20 @@ NOC-Portal/
 |-------|-------------|----------|
 | 1-10 colleges | Supabase Free/Pro + Vercel | ~10,000 users |
 | 10-50 colleges | Supabase Pro ($25/mo) | ~50,000 users |
-| 50-100 colleges | Supabase Team ($599/mo) + Read Replicas | ~200,000 users |
-| 100+ colleges | Custom PostgreSQL + Connection Pooling | Unlimited |
+| 50-100 colleges | Supabase Team + Read Replicas | ~200,000 users |
+| 100+ colleges | Custom PostgreSQL + Pooling | Unlimited |
 
 ---
 
-## 🛡️ Security Architecture
+## 🎯 Key Benefits
 
-### Authentication & Authorization
+**For Students:** No physical visits, real-time tracking, online payments, auto-receipts, transparent IA visibility.
 
-| Layer | Implementation | Details |
-|-------|---------------|---------|
-| **Auth Provider** | Supabase Auth (GoTrue) | PKCE flow, JWT tokens, bcrypt password hashing |
-| **Session Management** | Auto-logout after 15 min inactivity | Warning banner at 12 min, forced logout at 15 min |
-| **Brute Force Protection** | Client-side rate limiting | 5 failed attempts → 15 min lockout, stored in localStorage |
-| **Password Policy** | Minimum 6 characters | Server-enforced via Supabase Auth |
-| **Role Enforcement** | Row Level Security (RLS) | Every table has RLS policies based on `auth.uid()` and role |
+**For Faculty:** Bulk CSV uploads, automated compliance checking, per-section management, batched operations.
 
-### Data Security
+**For Administration:** Complete audit trail, automated fine collection, department analytics, 10 distinct roles, bulk onboarding (500/batch).
 
-| Measure | Implementation |
-|---------|---------------|
-| **Row Level Security (RLS)** | All tables enforce RLS — users can only access their own data |
-| **Input Sanitization** | Server-side validation on all Edge Functions; client-side form validation |
-| **CORS Policy** | Strict origin validation on payment endpoints |
-| **Content Security Policy** | CSP headers via Vercel config — blocks inline scripts, restricts connect-src |
-| **HTTPS Only** | HSTS headers with 2-year max-age, includeSubDomains, preload |
-| **X-Frame-Options** | DENY — prevents clickjacking |
-| **Payment Security** | HDFC SmartGateway handles card data; no PCI-sensitive data stored |
-| **Audit Trail** | All clearance actions logged with user, role, timestamp, IP |
-| **Screenshot Prevention** | PrintScreen key intercepted on sensitive pages |
-
-### Edge Function Security
-
-| Function | Auth Method | Purpose |
-|----------|------------|---------|
-| `create-hdfc-session` | JWT (Authorization header) | Creates payment orders |
-| `hdfc-order-status` | API key (callback mode) | Verifies payment status |
-| `hdfc-webhook` | HMAC signature verification | Processes payment webhooks |
-| `admin-api` | SuperAdmin JWT | All SuperAdmin operations |
-| `log-error` | Service role | Error logging (internal) |
-
----
-
-## 🗃️ Database Schema
-
-### Core Tables
-
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `tenants` | Multi-tenant organization management | id, name, slug, plan, status, admin_email, max_users |
-| `profiles` | User profiles linked to Supabase Auth | id (FK→auth.users), full_name, role, department_id, semester_id, section, tenant_id |
-| `departments` | Academic departments | id, name, tenant_id |
-| `semesters` | Academic semesters | id, name, department_id |
-| `subjects` | Course subjects | id, subject_name, subject_code, semester_id |
-
-### Clearance Workflow Tables
-
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `clearance_requests` | Student clearance applications | id, student_id, status, current_stage, created_at |
-| `subject_enrollment` | Faculty-student subject mappings | id, student_id, subject_id, teacher_id, attendance_pct, attendance_fee, status |
-| `department_clearances` | Accounts dept clearance records | id, student_id, department_id, status, fine_amount, permitted_until |
-| `library_clearance` | Library clearance records | id, student_id, has_dues, fine_amount, permitted, remarks |
-
-### Payment Tables
-
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `payment_orders` | HDFC payment order tracking | id, student_id, amount, status, gateway_order_id, gateway_payment_id, enrollment_ids |
-
-### System Tables
-
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `audit_logs` | Activity audit trail | id, user_id, action, details, created_at |
-| `platform_errors` | Error tracking for SuperAdmin | id, tenant_id, error_code, severity, error_detail |
-| `reported_issues` | User-reported issue tracking | id, issue_id, reporter_id, category, severity, description, status |
-| `ia_attendance` | Internal assessment attendance | id, student_id, subject_id, ia_number, is_present |
-
-### RLS Policy Matrix
-
-| Table | SELECT | INSERT | UPDATE | DELETE |
-|-------|--------|--------|--------|--------|
-| `profiles` | Own record | — | Own record | — |
-| `clearance_requests` | Own + Staff | Students | Staff only | — |
-| `subject_enrollment` | Own + Teacher | System | Teacher | — |
-| `payment_orders` | Own record | Authenticated | System | — |
-| `reported_issues` | Own reports | Authenticated | SuperAdmin | SuperAdmin |
-| `audit_logs` | Staff + Admin | System | — | — |
-
-### Database Functions (Stored Procedures)
-
-| Function | Purpose |
-|----------|---------|
-| `process_payment_webhook()` | Atomically marks payment as paid and updates enrollment records |
-| `create_payment_order_atomic()` | Creates payment order with conflict detection |
-| `advance_clearance_stage()` | Moves clearance to next pipeline stage when conditions met |
-| `check_clearance_eligibility()` | Validates all clearance prerequisites |
-
----
-
-## 📊 Compliance & Audit
-
-### Data Retention
-- **Audit Logs**: Retained indefinitely for compliance
-- **Payment Records**: Retained indefinitely per RBI regulations
-- **User Data**: Retained while account is active; deletable by SuperAdmin
-
-### Audit Capabilities
-- Every clearance action is logged with: timestamp, user ID, role, action type, affected records
-- Payment lifecycle fully tracked: order creation → gateway redirect → callback → verification
-- SuperAdmin can view all error logs and user-reported issues across all tenants
-
-### Privacy
-- No PCI-sensitive payment data stored (handled by HDFC SmartGateway)
-- Student data isolated per tenant via RLS
-- No third-party analytics or tracking scripts
+**For Institutions:** Zero infrastructure (SaaS), works on any device, complete data isolation, paperless process.
 
 ---
 

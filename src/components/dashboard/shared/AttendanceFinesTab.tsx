@@ -117,7 +117,15 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           .eq('is_first_year', false)
           .order('min_pct');
         if (error) throw error;
-        setCategories(data || []);
+        // Deduplicate by label+min+max+amount in case of duplicate DB rows
+        const seen = new Set<string>();
+        const unique = (data || []).filter(c => {
+          const key = `${c.label}|${c.min_pct}|${c.max_pct}|${c.fine_amount}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setCategories(unique);
       }
     } catch (err) { console.error(err); }
     finally { setLoadingCategories(false); }
