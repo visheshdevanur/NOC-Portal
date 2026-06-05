@@ -326,13 +326,29 @@ export default function ClerkDashboard() {
         u.semester_id ? firstYearSemIds.has(u.semester_id) : true
       );
 
-      // Teachers: ALL teachers/faculty visible in the tenant (RLS handles isolation)
-      const { data: teachers } = await supabase
+      // Teachers: created by ANY clerk or FYC, OR explicitly imported
+      const { data: clerkFycUsers } = await supabase.from('profiles').select('id').in('role', ['clerk', 'fyc']);
+      const creatorIds = (clerkFycUsers || []).map(c => c.id);
+
+      // 1. Teachers created by clerks/FYC
+      const { data: createdTeachers } = await supabase
         .from('profiles')
         .select('*, departments!profiles_department_id_fkey(name)')
         .in('role', ['teacher', 'faculty'])
+        .in('created_by', creatorIds)
         .order('full_name');
-      setDepartmentUsers([...students, ...((teachers || []) as UserProfile[])]);
+
+      // 2. Teachers imported into departments via imported_teachers table
+      const { data: importedData } = await supabase
+        .from('imported_teachers')
+        .select('profiles!inner(*, departments!profiles_department_id_fkey(name))');
+      const importedTeachers = (importedData || []).map((imp: any) => imp.profiles).filter(Boolean);
+
+      // Merge and deduplicate
+      const teacherMap = new Map();
+      [...(createdTeachers || []), ...importedTeachers].forEach(t => teacherMap.set(t.id, t));
+
+      setDepartmentUsers([...students, ...(Array.from(teacherMap.values()) as UserProfile[])]);
     } catch (err) { console.error(err); }
     finally { setLoadingUsers(false); }
   };
@@ -916,14 +932,27 @@ export default function ClerkDashboard() {
       const subs = await getSubjectsByDepartment(selectedDeptId);
       setDeptSubjects(subs as Subject[]);
       
-      // Fetch all teachers/faculty visible in tenant (RLS handles isolation)
-      const { data: managedTeachers } = await supabase
+      // Fetch teachers created by clerks/FYC
+      const { data: fycClerkUsers } = await supabase.from('profiles').select('id').in('role', ['fyc', 'clerk']);
+      const fycClerkIds = (fycClerkUsers || []).map(f => f.id);
+
+      const { data: createdTeachers } = await supabase
         .from('profiles')
         .select('*')
         .in('role', ['teacher', 'faculty'])
+        .in('created_by', fycClerkIds)
         .order('full_name');
 
-      setDeptTeachers(managedTeachers || []);
+      // Also get teachers imported via imported_teachers table
+      const { data: importedData } = await supabase
+        .from('imported_teachers')
+        .select('profiles!inner(*)');
+      const importedTeachers = (importedData || []).map((imp: any) => imp.profiles).filter(Boolean);
+
+      // Merge and deduplicate
+      const teacherMap = new Map();
+      [...(createdTeachers || []), ...importedTeachers].forEach(t => teacherMap.set(t.id, t));
+      setDeptTeachers(Array.from(teacherMap.values()));
     } catch (err) { console.error(err); }
   };
 
