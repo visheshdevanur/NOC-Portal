@@ -248,37 +248,30 @@ const Login = () => {
       <div className="relative z-10 min-h-screen flex flex-col">
         <div className="flex-1 flex flex-col md:flex-row items-center justify-between px-6 md:px-12 lg:px-20 py-12">
 
-          {/* ==================== LEFT: BRAND OVERLAY ==================== */}
-          <div className="hidden md:flex flex-col justify-center max-w-xl lg:max-w-2xl">
+          {/* ==================== LEFT/TOP: BRAND OVERLAY ==================== */}
+          <div className="flex flex-col justify-center max-w-xl lg:max-w-2xl mb-8 md:mb-0">
             {/* Logo */}
-            <div className="mb-10 flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-lg flex items-center justify-center shadow-lg">
-                <Building2 className="w-6 h-6 text-white" />
+            <div className="mb-6 md:mb-10 flex items-center gap-3">
+              <div className="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-white/20 backdrop-blur-lg flex items-center justify-center shadow-lg">
+                <Building2 className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
-              <h1 className="text-white font-extrabold text-xl tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
+              <h1 className="text-white font-extrabold text-lg md:text-xl tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
                 NO DUE PORTAL
               </h1>
             </div>
 
             {/* Hero Text */}
-            <h2 className="text-white text-5xl lg:text-7xl font-extrabold tracking-tight mb-8 leading-[1.05] drop-shadow-[0_2px_12px_rgba(0,0,0,0.3)]" style={{ fontFamily: 'Manrope, sans-serif' }}>
+            <h2 className="text-white text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight mb-4 md:mb-8 leading-[1.05] drop-shadow-[0_2px_12px_rgba(0,0,0,0.3)]" style={{ fontFamily: 'Manrope, sans-serif' }}>
               College<br />Clearance<br />Portal
             </h2>
 
-            <p className="text-white/85 text-lg lg:text-xl font-medium leading-relaxed max-w-md drop-shadow-[0_1px_6px_rgba(0,0,0,0.2)]">
+            <p className="text-white/85 text-sm md:text-lg lg:text-xl font-medium leading-relaxed max-w-md drop-shadow-[0_1px_6px_rgba(0,0,0,0.2)]">
               Experience a frictionless transition into your next academic chapter. Our editorial-grade interface streamlines departmental sign-offs, fee verifications, and document submissions with precision and security.
             </p>
           </div>
 
-          {/* ==================== RIGHT: LOGIN CARD ==================== */}
+          {/* ==================== RIGHT/BOTTOM: LOGIN CARD ==================== */}
           <div className="w-full md:w-auto md:min-w-[400px] lg:min-w-[420px] md:ml-8 lg:ml-16">
-            {/* Mobile Header */}
-            <div className="md:hidden flex items-center gap-2 mb-6">
-              <Building2 className="w-6 h-6 text-white" />
-              <span className="font-extrabold text-white text-xl tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
-                NO DUE PORTAL
-              </span>
-            </div>
 
             {/* Glass Card */}
             <div className="bg-white/90 dark:bg-[hsl(224,28%,13%)]/95 backdrop-blur-2xl rounded-[2rem] shadow-[0_32px_80px_-12px_rgba(0,0,0,0.25)] border border-white/30 dark:border-[hsl(220,20%,22%)] p-8 lg:p-10">
