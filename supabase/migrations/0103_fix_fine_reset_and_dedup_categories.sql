@@ -211,9 +211,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 -- ============================================================
 DELETE FROM attendance_fine_categories
 WHERE id NOT IN (
-  SELECT MIN(id)
+  SELECT DISTINCT ON (department_id, is_first_year, min_pct, max_pct) id
   FROM attendance_fine_categories
-  GROUP BY department_id, is_first_year, min_pct, max_pct
+  ORDER BY department_id, is_first_year, min_pct, max_pct, created_at ASC
 );
 
 
