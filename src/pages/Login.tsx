@@ -225,93 +225,98 @@ const Login = () => {
   const passwordLabelActive = passwordFocused || password.length > 0;
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row transition-colors duration-300">
+    <div className="min-h-screen relative overflow-hidden">
+      {/* ==================== FULL-SCREEN BACKGROUND IMAGE ==================== */}
+      <div className="absolute inset-0">
+        <img
+          src="/campus-bg.png"
+          alt="College Campus"
+          className="w-full h-full object-cover"
+        />
+        {/* Gradient overlay: strong on left, lighter on right */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[rgba(0,40,100,0.75)] via-[rgba(0,60,130,0.45)] to-[rgba(200,220,255,0.25)]" />
+        {/* Bottom fade for footer readability */}
+        <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-[rgba(200,215,240,0.6)] to-transparent" />
+      </div>
 
-      {/* ==================== LEFT PANEL: BRAND ==================== */}
-      <section className="hidden md:flex md:w-[58%] relative overflow-hidden bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(220,90%,35%)] dark:from-[hsl(220,70%,20%)] dark:to-[hsl(230,50%,10%)] items-center justify-center p-12 lg:p-24">
-        {/* Decorative gradient glows */}
-        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-blue-400/30 dark:bg-blue-400/20 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '6s' }} />
-        <div className="absolute bottom-[-5%] right-[-5%] w-[40%] h-[40%] bg-indigo-500/25 dark:bg-indigo-400/15 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '8s' }} />
-        <div className="absolute top-[30%] right-[10%] w-[25%] h-[25%] bg-cyan-400/10 dark:bg-cyan-400/10 rounded-full blur-[80px] animate-pulse" style={{ animationDuration: '10s' }} />
+      {/* ==================== THEME TOGGLE (Top Right) ==================== */}
+      <div className="absolute top-6 right-6 z-30">
+        <ThemeToggle />
+      </div>
 
-        <div className="relative z-10 max-w-2xl">
-          {/* Logo */}
-          <div className="mb-12 flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-lg flex items-center justify-center shadow-lg">
-              <Building2 className="w-7 h-7 text-white" />
+      {/* ==================== MAIN CONTENT ==================== */}
+      <div className="relative z-10 min-h-screen flex flex-col">
+        <div className="flex-1 flex flex-col md:flex-row items-center justify-between px-6 md:px-12 lg:px-20 py-12">
+
+          {/* ==================== LEFT: BRAND OVERLAY ==================== */}
+          <div className="hidden md:flex flex-col justify-center max-w-xl lg:max-w-2xl">
+            {/* Logo */}
+            <div className="mb-10 flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-lg flex items-center justify-center shadow-lg">
+                <Building2 className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-white font-extrabold text-xl tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                NO DUE PORTAL
+              </h1>
             </div>
-            <h1 className="text-white font-extrabold text-2xl tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
-              NO DUE PORTAL
-            </h1>
-          </div>
 
-          {/* Hero Text */}
-          <h2 className="text-white text-5xl lg:text-7xl font-extrabold tracking-tight mb-8 leading-[1.1]" style={{ fontFamily: 'Manrope, sans-serif' }}>
-            College<br />Clearance<br />Portal
-          </h2>
+            {/* Hero Text */}
+            <h2 className="text-white text-5xl lg:text-7xl font-extrabold tracking-tight mb-8 leading-[1.05] drop-shadow-[0_2px_12px_rgba(0,0,0,0.3)]" style={{ fontFamily: 'Manrope, sans-serif' }}>
+              College<br />Clearance<br />Portal
+            </h2>
 
-          <p className="text-blue-100/90 dark:text-blue-200/80 text-xl font-medium leading-relaxed mb-12">
-            Experience a frictionless transition into your next academic chapter. Our editorial-grade interface streamlines departmental sign-offs, fee verifications, and document submissions with precision and security.
-          </p>
-
-
-        </div>
-      </section>
-
-      {/* ==================== RIGHT PANEL: LOGIN FORM ==================== */}
-      <section className="w-full md:w-[42%] bg-background dark:bg-gradient-to-b dark:from-[hsl(224,30%,9%)] dark:to-[hsl(224,30%,6%)] flex flex-col items-center justify-center p-8 lg:p-16 relative min-h-screen">
-        {/* Theme Toggle */}
-        <div className="absolute top-6 right-6 z-20">
-          <ThemeToggle />
-        </div>
-
-        {/* Mobile Header */}
-        <div className="md:hidden w-full flex items-center gap-2 mb-10">
-          <Building2 className="w-6 h-6 text-primary" />
-          <span className="font-extrabold text-primary text-xl tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
-            NO DUE PORTAL
-          </span>
-        </div>
-
-        <div className="w-full max-w-md">
-          {/* Welcome Text */}
-          <div className="mb-10">
-            <h3 className="text-3xl font-extrabold text-foreground mb-2 tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
-              {resetStep === 'login' && 'Welcome Back'}
-              {resetStep === 'request-otp' && 'Reset Password'}
-              {resetStep === 'verify-otp' && 'Verify Identity'}
-              {resetStep === 'update-password' && 'New Password'}
-            </h3>
-            <p className="text-muted-foreground font-medium">
-              {resetStep === 'login' && 'Log in to manage your university clearance status.'}
-              {resetStep === 'request-otp' && 'We\'ll send a recovery code to your email.'}
-              {resetStep === 'verify-otp' && 'Enter the 8-digit code sent to your email.'}
-              {resetStep === 'update-password' && 'Choose a strong new password for your account.'}
+            <p className="text-white/85 text-lg lg:text-xl font-medium leading-relaxed max-w-md drop-shadow-[0_1px_6px_rgba(0,0,0,0.2)]">
+              Experience a frictionless transition into your next academic chapter. Our editorial-grade interface streamlines departmental sign-offs, fee verifications, and document submissions with precision and security.
             </p>
           </div>
 
-          {/* Error & Success Messages */}
-          {error && (
-            <div role="alert" aria-live="assertive" className="mb-6 bg-destructive/10 border-l-4 border-destructive p-4 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex items-center">
-                <Lock className="h-5 w-5 text-destructive mr-3 shrink-0" />
-                <p className="text-sm font-medium text-destructive">{error}</p>
+          {/* ==================== RIGHT: LOGIN CARD ==================== */}
+          <div className="w-full md:w-auto md:min-w-[400px] lg:min-w-[420px] md:ml-8 lg:ml-16">
+            {/* Mobile Header */}
+            <div className="md:hidden flex items-center gap-2 mb-6">
+              <Building2 className="w-6 h-6 text-white" />
+              <span className="font-extrabold text-white text-xl tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                NO DUE PORTAL
+              </span>
+            </div>
+
+            {/* Glass Card */}
+            <div className="bg-white/90 dark:bg-[hsl(224,28%,13%)]/95 backdrop-blur-2xl rounded-[2rem] shadow-[0_32px_80px_-12px_rgba(0,0,0,0.25)] border border-white/30 dark:border-[hsl(220,20%,22%)] p-8 lg:p-10">
+              {/* Welcome Text */}
+              <div className="mb-8">
+                <h3 className="text-2xl font-extrabold text-gray-900 dark:text-foreground mb-1.5 tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                  {resetStep === 'login' && 'Welcome Back'}
+                  {resetStep === 'request-otp' && 'Reset Password'}
+                  {resetStep === 'verify-otp' && 'Verify Identity'}
+                  {resetStep === 'update-password' && 'New Password'}
+                </h3>
+                <p className="text-gray-500 dark:text-muted-foreground font-medium text-sm">
+                  {resetStep === 'login' && 'Log in to manage your university clearance status.'}
+                  {resetStep === 'request-otp' && 'We\'ll send a recovery code to your email.'}
+                  {resetStep === 'verify-otp' && 'Enter the 8-digit code sent to your email.'}
+                  {resetStep === 'update-password' && 'Choose a strong new password for your account.'}
+                </p>
               </div>
-            </div>
-          )}
 
-          {successMessage && (
-            <div role="status" aria-live="polite" className="mb-6 bg-emerald-500/10 border-l-4 border-emerald-500 p-4 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
-              <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{successMessage}</p>
-            </div>
-          )}
+              {/* Error & Success Messages */}
+              {error && (
+                <div role="alert" aria-live="assertive" className="mb-5 bg-red-50 dark:bg-destructive/10 border-l-4 border-red-500 dark:border-destructive p-3 rounded-xl">
+                  <div className="flex items-center">
+                    <Lock className="h-4 w-4 text-red-500 dark:text-destructive mr-2.5 shrink-0" />
+                    <p className="text-sm font-medium text-red-600 dark:text-destructive">{error}</p>
+                  </div>
+                </div>
+              )}
 
-          {/* ============ LOGIN CARD (Glass) ============ */}
-          <div className="bg-card/80 dark:bg-[hsl(224,28%,13%)] backdrop-blur-xl p-8 rounded-[2rem] shadow-[0px_32px_64px_-12px_rgba(0,75,202,0.08)] dark:shadow-[0px_8px_32px_-4px_rgba(0,0,0,0.5),0px_0px_0px_1px_rgba(56,120,255,0.06)] border border-border/40 dark:border-[hsl(220,20%,22%)]">
-            
-            {/* ---------------- LOGIN VIEW ---------------- */}
-            {resetStep === 'login' && (
-              <form className="space-y-7" onSubmit={handleLogin} aria-label="Login form">
+              {successMessage && (
+                <div role="status" aria-live="polite" className="mb-5 bg-emerald-50 dark:bg-emerald-500/10 border-l-4 border-emerald-500 p-3 rounded-xl">
+                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{successMessage}</p>
+                </div>
+              )}
+
+              {/* ---- LOGIN VIEW ---- */}
+              {resetStep === 'login' && (
+                <form className="space-y-6" onSubmit={handleLogin} aria-label="Login form">
                 {/* Floating Email Input */}
                 <div className="relative group">
                   <input
@@ -523,14 +528,16 @@ const Login = () => {
             )}
           </div>
 
-          {/* Footer */}
-          <div className="mt-8 flex flex-wrap justify-center gap-6 text-[10px] uppercase tracking-[0.15em] text-muted-foreground/60 font-medium">
-            <span>© {new Date().getFullYear()} NO DUE PORTAL</span>
-            <span className="hover:text-primary cursor-pointer transition-colors">Privacy Policy</span>
-            <span className="hover:text-primary cursor-pointer transition-colors">Accessibility</span>
           </div>
         </div>
-      </section>
+
+        {/* ==================== FOOTER ==================== */}
+        <div className="relative z-10 pb-6 flex flex-wrap justify-center gap-6 text-[10px] uppercase tracking-[0.15em] text-white/60 font-medium">
+          <span>© {new Date().getFullYear()} NO DUE PORTAL</span>
+          <span className="hover:text-white cursor-pointer transition-colors">Privacy Policy</span>
+          <span className="hover:text-white cursor-pointer transition-colors">Accessibility</span>
+        </div>
+      </div>
     </div>
   );
 };
