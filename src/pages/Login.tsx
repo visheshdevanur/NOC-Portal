@@ -229,7 +229,7 @@ const Login = () => {
       {/* ==================== FULL-SCREEN BACKGROUND IMAGE ==================== */}
       <div className="absolute inset-0">
         <img
-          src="/campus-bg.png"
+          src="/campus-bg.jpg"
           alt="College Campus"
           className="w-full h-full object-cover"
         />
