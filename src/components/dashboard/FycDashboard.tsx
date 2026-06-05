@@ -477,9 +477,10 @@ export default function FycDashboard() {
   };
 
   const handleRemoveImportedTeacher = async (userId: string, userName: string) => {
-    if (!confirm(`Remove "${userName}" from your department? (This will NOT delete their account)`)) return;
+    if (!confirm(`Remove "${userName}" from your imported list? (This will NOT delete their account)`)) return;
     try {
-      const { error } = await supabase.from('profiles').update({ created_by: null }).eq('id', userId);
+      // Remove from imported_teachers table
+      const { error } = await supabase.from('imported_teachers').delete().eq('teacher_id', userId);
       if (error) throw error;
       
       await supabase.from('activity_logs').insert([{
@@ -490,19 +491,24 @@ export default function FycDashboard() {
         details: `Removed imported teacher ${userName} from FYC`
       }]);
 
-      setUserSuccess(`"${userName}" removed from your department.`);
+      setUserSuccess(`"${userName}" removed from your imported list.`);
       fetchUsers();
     } catch (err: any) {
       setUserError(await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
     }
   };
 
-  // ==================== IMPORT TEACHERS ======================
   const fetchDeptTeachersForImport = async (deptId: string) => {
     if (!deptId) { setImportTeachersList([]); return; }
     setLoadingImportTeachers(true);
     setImportError(null);
     try {
+      // Get already-imported teacher IDs to exclude
+      const { data: alreadyImported } = await supabase
+        .from('imported_teachers')
+        .select('teacher_id');
+      const importedIds = new Set((alreadyImported || []).map(i => i.teacher_id));
+
       const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, role, email, created_by, departments!profiles_department_id_fkey(name)')
@@ -510,7 +516,9 @@ export default function FycDashboard() {
         .in('role', ['teacher', 'faculty'])
         .order('full_name');
       if (error) throw error;
-      setImportTeachersList(data || []);
+
+      // Filter out already-imported teachers
+      setImportTeachersList((data || []).filter(t => !importedIds.has(t.id)));
       setSelectedImportIds(new Set());
     } catch (err: any) {
       setImportError(await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
@@ -522,19 +530,24 @@ export default function FycDashboard() {
 
   const handleImportTeachers = async () => {
     if (selectedImportIds.size === 0) { setImportError('Select at least one teacher to import.'); return; }
+    if (!importDeptId) { setImportError('No department selected.'); return; }
     setImportingTeachers(true);
     setImportError(null);
     setImportSuccess(null);
     try {
-      let count = 0;
-      for (const teacherId of selectedImportIds) {
-        const { error } = await supabase
-          .from('profiles')
-          .update({ created_by: user!.id })
-          .eq('id', teacherId);
-        if (error) throw error;
-        count++;
-      }
+      // Get tenant_id from FYC's profile
+      const { data: fycProfile } = await supabase.from('profiles').select('tenant_id').eq('id', user!.id).single();
+      const tenantId = fycProfile?.tenant_id || null;
+
+      // Insert into imported_teachers table
+      const records = Array.from(selectedImportIds).map(teacherId => ({
+        department_id: importDeptId,
+        teacher_id: teacherId,
+        created_by: user!.id,
+        tenant_id: tenantId
+      }));
+      const { error } = await supabase.from('imported_teachers').insert(records);
+      if (error) throw error;
 
       // Log the import
       const teacherNames = importTeachersList
@@ -546,10 +559,10 @@ export default function FycDashboard() {
         user_role: 'fyc',
         user_name: user?.email,
         action: 'Imported Teachers',
-        details: `Imported ${count} teacher(s) from department: ${teacherNames}`
+        details: `Imported ${records.length} teacher(s) from department: ${teacherNames}`
       }]);
 
-      setImportSuccess(`Successfully imported ${count} teacher(s)!`);
+      setImportSuccess(`Successfully imported ${records.length} teacher(s)!`);
       setSelectedImportIds(new Set());
       setShowImportModal(false);
       setImportDeptId('');
