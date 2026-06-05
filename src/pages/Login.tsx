@@ -273,11 +273,8 @@ const Login = () => {
           {/* ==================== RIGHT/BOTTOM: LOGIN CARD ==================== */}
           <div className="w-full md:w-auto md:min-w-[400px] lg:min-w-[420px] md:ml-8 lg:ml-16">
 
-            {/* Glass Card — frosted blend with background */}
-            <div className="relative">
-              {/* Top gradient fade for blending */}
-              <div className="absolute -top-8 left-4 right-4 h-8 bg-gradient-to-b from-transparent to-white/70 dark:to-[hsl(224,28%,13%)]/70 rounded-t-[2rem] pointer-events-none" />
-              <div className="bg-white/80 dark:bg-[hsl(224,28%,13%)]/85 backdrop-blur-3xl rounded-[2rem] shadow-[0_8px_60px_-12px_rgba(0,0,0,0.15),0_0_0_1px_rgba(255,255,255,0.2)] border border-white/40 dark:border-white/5 p-8 lg:p-10">
+            {/* Glass Card */}
+            <div className="bg-white/75 dark:bg-[hsl(224,28%,13%)]/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_16px_48px_-8px_rgba(0,0,0,0.2)] border border-white/50 dark:border-white/10 p-8 lg:p-10">
               {/* Welcome Text */}
               <div className="mb-8">
                 <h3 className="text-2xl font-extrabold text-gray-900 dark:text-foreground mb-1.5 tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
@@ -522,7 +519,6 @@ const Login = () => {
                 </button>
               </form>
             )}
-          </div>
           </div>
 
           </div>
