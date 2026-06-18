@@ -169,22 +169,34 @@ export const getHodTeacherAssignments = async (departmentId: string) => {
   const teacherIds = teachers.map(t => t.id);
   if (teacherIds.length === 0) return [];
 
-  const { data: enrollments, error: eErr } = await supabase
-    .from('subject_enrollment')
-    .select('teacher_id, subject_id, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
-    .in('teacher_id', teacherIds);
-  if (eErr) throw eErr;
+  // Paginated fetch to avoid Supabase 1000-row default limit
+  let allEnrollments: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data: batch, error: eErr } = await supabase
+      .from('subject_enrollment')
+      .select('teacher_id, subject_id, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
+      .in('teacher_id', teacherIds)
+      .range(from, from + 999);
+    if (eErr) throw eErr;
+    if (!batch || batch.length === 0) break;
+    allEnrollments = allEnrollments.concat(batch);
+    if (batch.length < 1000) break;
+    from += 1000;
+  }
 
   const assignmentMap: Record<string, { subjects: Record<string, { subject_name: string; subject_code: string; semester: string; sections: Set<string> }> }> = {};
 
-  for (const enrollment of (enrollments || [])) {
+  for (const enrollment of allEnrollments) {
     const tid = enrollment.teacher_id;
     if (!tid) continue;
     if (!assignmentMap[tid]) assignmentMap[tid] = { subjects: {} };
 
     const subj = (enrollment as any).subjects;
     const studentProfile = (enrollment as any).profiles;
-    const subjectKey = enrollment.subject_id;
+    const semesterId = subj?.semester_id || studentProfile?.semester_id || '';
+    // Use composite key to differentiate same subject across semesters
+    const subjectKey = `${enrollment.subject_id}__${semesterId}`;
     const section = studentProfile?.section || 'Unassigned';
     const semesterName = subj?.semesters?.name || 'N/A';
 

@@ -8,9 +8,10 @@ import {
   submitClearanceRequest,
   getStudentIAAttendance,
   getStudentLibraryDues,
+  getStudentOtherDues,
   isFirstYearSem
 } from '../../lib/api';
-import { CheckCircle2, Clock, XCircle, AlertCircle, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap, Eye, User, Hash, Layers, MapPin } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, AlertCircle, BookOpen, Building2, UserCog, RefreshCw, Hand, ShieldCheck, GraduationCap, Eye, User, Hash, Layers, MapPin, Banknote } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type ClearanceRequest = {
@@ -61,7 +62,7 @@ export default function StudentDashboard() {
     queryKey: ['student-dashboard', user?.id, profile?.semester_id],
     queryFn: async () => {
       if (!user) return null;
-      const [req, deptRes, semRes, subsDataRes, subs, depts, iaData, libData] = await Promise.all([
+      const [req, deptRes, semRes, subsDataRes, subs, depts, iaData, libData, otherDuesData, tenantRes] = await Promise.all([
         getStudentClearanceRequest(user.id),
         profile?.department_id ? supabase.from('departments').select('name').eq('id', profile.department_id).single() : Promise.resolve({ data: null }),
         profile?.semester_id ? supabase.from('semesters').select('name').eq('id', profile.semester_id).single() : Promise.resolve({ data: null }),
@@ -69,17 +70,21 @@ export default function StudentDashboard() {
         getStudentSubjects(user.id),
         getStudentDues(user.id),
         getStudentIAAttendance(user.id),
-        getStudentLibraryDues(user.id)
+        getStudentLibraryDues(user.id),
+        getStudentOtherDues(user.id),
+        profile?.tenant_id ? supabase.from('tenants').select('name').eq('id', profile.tenant_id).single() : Promise.resolve({ data: null })
       ]);
       return {
         request: req as ClearanceRequest | null,
         departmentName: deptRes.data?.name || 'N/A',
         semesterName: semRes.data?.name || 'N/A',
+        tenantName: tenantRes.data?.name || 'NOC PORTAL',
         availableSubjects: subsDataRes.data || [],
         enrollments: (subs || []) as unknown as SubjectEnrollment[],
         deptClearances: (depts || []) as any[],
         iaRecords: (iaData || []) as unknown as IAAttendanceRecord[],
         libraryDue: libData || null,
+        otherDues: (otherDuesData || []) as any[],
       };
     },
     enabled: !!user,
@@ -89,6 +94,7 @@ export default function StudentDashboard() {
   // Derive state from query data
   const request = studentData?.request ?? null;
   const departmentName = studentData?.departmentName ?? 'N/A';
+  const tenantName = studentData?.tenantName ?? 'NOC PORTAL';
   const semesterName = studentData?.semesterName ?? 'N/A';
   const availableSubjects = studentData?.availableSubjects ?? [];
   const enrollments = studentData?.enrollments ?? [];
@@ -97,6 +103,7 @@ export default function StudentDashboard() {
   const enrolledSubjectIds = new Set(enrollments.map(e => (e as any).subject_id));
   const iaRecords = (studentData?.iaRecords ?? []).filter(r => enrolledSubjectIds.has(r.subject_id));
   const libraryDue = studentData?.libraryDue ?? null;
+  const otherDues = studentData?.otherDues ?? [];
   const errorMsg = localErrorMsg || (queryError ? (queryError as Error).message : null);
 
 
@@ -300,8 +307,13 @@ export default function StudentDashboard() {
   // allAttendanceFinesPaid is derived from pendingAttendanceDues — true when all fines are resolved
   // This is already captured by allFacultyCleared (fee_verified === true), kept for explicit hall ticket check
   const allAttendanceFinesPaid = pendingAttendanceDues.length === 0;
-  // Hall ticket requires: HOD approved + all faculty cleared + IA eligible + all fines paid + library + dept
-  const canDownloadHallTicket = isHodApproved && allFacultyCleared && allIAEligible && allAttendanceFinesPaid && libraryPass && deptPass;
+
+  // Other Dues: pending dues that must be paid before clearance
+  const pendingOtherDues = useMemo(() => otherDues.filter((d: any) => d.status === 'pending' && d.amount > 0), [otherDues]);
+  const allOtherDuesCleared = pendingOtherDues.length === 0;
+
+  // Hall ticket requires: HOD approved + all faculty cleared + IA eligible + all fines paid + library + dept + other dues
+  const canDownloadHallTicket = isHodApproved && allFacultyCleared && allIAEligible && allAttendanceFinesPaid && libraryPass && deptPass && allOtherDuesCleared;
 
   if (loading) return <div className="animate-pulse flex flex-col gap-6">
     <div className="h-48 bg-card rounded-2xl w-full"></div>
@@ -457,11 +469,13 @@ export default function StudentDashboard() {
                         ? 'Blocked: Library dues pending'
                         : !deptPass
                           ? 'Blocked: Accounts dues pending'
-                          : `Requires ${isFirstYear ? 'FYC' : 'HOD'} Final Approval`}
+                          : !allOtherDuesCleared
+                            ? 'Blocked: Other dues pending'
+                            : `Requires ${isFirstYear ? 'FYC' : 'HOD'} Final Approval`}
             </p>
             {!canDownloadHallTicket && (
               <p className="text-xs text-destructive mt-1 font-medium">
-                ⚠ {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : `Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval.`}
+                ⚠ {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : !allOtherDuesCleared ? 'Pay all other pending dues first.' : `Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval.`}
               </p>
             )}
           </div>
@@ -729,6 +743,108 @@ export default function StudentDashboard() {
         </div>
       )}
 
+      {/* ========= OTHER DUES SECTION ========= */}
+      {otherDues.length > 0 && (
+        <div className="bg-card rounded-3xl p-8 shadow-sm border border-border">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-3">
+              <div className="w-10 h-10 bg-violet-500/10 rounded-xl flex items-center justify-center">
+                <Banknote className="w-5 h-5 text-violet-500" />
+              </div>
+              Other Dues
+            </h2>
+            {pendingOtherDues.length > 0 && (
+              <span className="bg-violet-500/10 text-violet-600 font-bold text-sm px-4 py-2 rounded-full">
+                {pendingOtherDues.length} Pending · ₹{pendingOtherDues.reduce((s: number, d: any) => s + (d.amount || 0), 0)}
+              </span>
+            )}
+          </div>
+
+          <div className="mb-4 flex items-start gap-3 p-4 bg-violet-500/10 border border-violet-500/20 rounded-xl">
+            <AlertCircle className="w-5 h-5 text-violet-500 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-violet-700 dark:text-violet-300 font-medium">
+              <strong>Note:</strong> These are additional dues assigned by your department. You must clear all pending dues to receive your No Due certificate.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
+                  <th className="p-4 font-semibold">Department</th>
+                  <th className="p-4 font-semibold">Remarks</th>
+                  <th className="p-4 font-semibold text-center">Amount</th>
+                  <th className="p-4 font-semibold text-center">Status</th>
+                  <th className="p-4 font-semibold text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {otherDues.map((due: any) => {
+                  const isPaid = due.status === 'paid';
+                  const hasDue = due.amount > 0;
+                  return (
+                    <tr key={due.id} className="hover:bg-secondary/20 transition-colors">
+                      <td className="p-4 font-medium text-foreground">{due.departments?.name || 'Department'}</td>
+                      <td className="p-4 text-sm text-muted-foreground">{due.remarks || '—'}</td>
+                      <td className="p-4 text-center">
+                        {hasDue ? (
+                          <span className={`px-3 py-1 rounded-lg font-bold ${isPaid ? 'bg-emerald-500/10 text-emerald-600' : 'bg-violet-500/10 text-violet-600'}`}>
+                            ₹{due.amount}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-center">
+                        {isPaid ? (
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">✅ Paid</span>
+                        ) : hasDue ? (
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-violet-500/10 text-violet-600">⏳ Pending</span>
+                        ) : (
+                          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Due</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-right">
+                        {hasDue && !isPaid ? (
+                          <button
+                            onClick={async () => {
+                              try {
+                                setLocalErrorMsg(null);
+                                const { createOtherDuesHdfcSession } = await import('../../lib/api');
+                                const session = await createOtherDuesHdfcSession(due.amount, due.id) as any;
+                                sessionStorage.setItem('hdfc_order_id', session.order_id);
+                                localStorage.setItem('hdfc_order_id', session.order_id);
+                                if (session.order_token) {
+                                  sessionStorage.setItem('hdfc_order_token', session.order_token);
+                                  localStorage.setItem('hdfc_order_token', session.order_token);
+                                }
+                                sessionStorage.setItem('hdfc_payment_amount', String(due.amount));
+                                localStorage.setItem('hdfc_payment_amount', String(due.amount));
+                                sessionStorage.setItem('hdfc_payment_description', `Other Due: ${due.remarks || 'Department Due'}`);
+                                localStorage.setItem('hdfc_payment_description', `Other Due: ${due.remarks || 'Department Due'}`);
+                                window.location.href = session.payment_link;
+                              } catch (err: any) {
+                                setLocalErrorMsg('Payment error: ' + (err.message || 'Please try again'));
+                              }
+                            }}
+                            disabled={!!payingEnrollmentId || payingAll}
+                            className="px-5 py-2.5 bg-violet-500 hover:bg-violet-600 text-white font-bold rounded-xl transition-all shadow-sm disabled:opacity-50 text-sm"
+                          >
+                            Pay Now
+                          </button>
+                        ) : isPaid ? (
+                          <span className="text-emerald-600 text-sm font-medium">Cleared</span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Faculty Clearances — hidden from student view; logic retained */}
         <div className="hidden">
@@ -938,7 +1054,7 @@ export default function StudentDashboard() {
               </div>
 
               <div className="text-center mb-10 relative z-10 pointer-events-none">
-                <h1 className="text-3xl font-bold uppercase tracking-widest text-primary mb-2">NOC PORTAL</h1>
+                <h1 className="text-3xl font-bold uppercase tracking-widest text-primary mb-2">{tenantName}</h1>
                 <h2 className="text-xl font-semibold text-muted-foreground">OFFICIAL NO DUE CLEARANCE REPORT</h2>
               </div>
               

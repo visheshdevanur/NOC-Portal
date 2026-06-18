@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router-dom';
  * 4. Always provides a link back to the dashboard
  */
 
-/** Generate a printable HTML receipt and trigger download */
+/** Generate and download a PDF receipt directly */
 function downloadReceipt(details: {
   orderId: string;
   paymentId?: string;
@@ -26,54 +26,56 @@ function downloadReceipt(details: {
   tenantName?: string;
 }) {
   const headerTitle = details.tenantName || 'NO DUE PORTAL';
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Payment Receipt - ${details.orderId}</title>
-<style>
-  body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; color: #1a1a1a; }
-  .header { text-align: center; border-bottom: 3px solid #004bca; padding-bottom: 20px; margin-bottom: 30px; }
-  .header h1 { font-size: 24px; margin: 0 0 4px; color: #004bca; }
-  .header p { font-size: 13px; color: #666; margin: 0; }
-  .badge { display: inline-block; padding: 4px 16px; border-radius: 20px; font-size: 13px; font-weight: 700; }
-  .badge-success { background: #dcfce7; color: #166534; }
-  .badge-pending { background: #fef3c7; color: #92400e; }
-  .row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; }
-  .row .label { color: #666; font-size: 14px; }
-  .row .value { font-weight: 600; font-size: 14px; text-align: right; max-width: 60%; word-break: break-all; }
-  .amount { font-size: 28px; font-weight: 800; color: #166534; text-align: center; margin: 24px 0; }
-  .footer { text-align: center; margin-top: 40px; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 16px; }
-  @media print { body { margin: 0; } }
-</style></head><body>
-<div class="header">
-  <h1>${headerTitle}</h1>
-  <p>Payment Receipt</p>
-</div>
-<div style="text-align:center;margin-bottom:24px;">
-  <span class="badge ${details.status === 'CHARGED' ? 'badge-success' : 'badge-pending'}">
-    ${details.status === 'CHARGED' ? 'PAYMENT SUCCESSFUL' : 'PAYMENT PROCESSING'}
-  </span>
-</div>
-<div class="amount">\u20B9${details.amount}</div>
-${details.studentName ? `<div class="row"><span class="label">Student</span><span class="value">${details.studentName}</span></div>` : ''}
-<div class="row"><span class="label">Order ID</span><span class="value" style="font-family:monospace;font-size:12px;">${details.orderId}</span></div>
-${details.paymentId ? `<div class="row"><span class="label">Transaction ID</span><span class="value" style="font-family:monospace;font-size:12px;">${details.paymentId}</span></div>` : ''}
-<div class="row"><span class="label">Date</span><span class="value">${details.date}</span></div>
-<div class="row"><span class="label">Payment Method</span><span class="value">HDFC SmartGateway</span></div>
-<div class="row"><span class="label">Purpose</span><span class="value">Attendance Fine</span></div>
-<div class="footer">
-  <p>This is a computer-generated receipt. No signature required.</p>
-  <p>For queries, contact your institution's accounts department.</p>
-</div>
-</body></html>`;
 
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `receipt_${details.orderId}.html`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Create a hidden container with receipt HTML
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.left = '-9999px';
+  container.style.top = '0';
+  container.style.width = '600px';
+  container.innerHTML = `
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 30px; color: #1a1a1a; background: white;">
+      <div style="text-align: center; border-bottom: 3px solid #004bca; padding-bottom: 20px; margin-bottom: 30px;">
+        <h1 style="font-size: 24px; margin: 0 0 4px; color: #004bca; letter-spacing: 2px;">${headerTitle}</h1>
+        <p style="font-size: 13px; color: #666; margin: 0;">Official Payment Receipt</p>
+      </div>
+      <div style="text-align:center;margin-bottom:24px;">
+        <span style="display: inline-block; padding: 6px 20px; border-radius: 20px; font-size: 13px; font-weight: 700; ${details.status === 'CHARGED' ? 'background: #dcfce7; color: #166534;' : 'background: #fef3c7; color: #92400e;'}">
+          ${details.status === 'CHARGED' ? 'PAYMENT SUCCESSFUL' : 'PAYMENT PROCESSING'}
+        </span>
+      </div>
+      <div style="font-size: 32px; font-weight: 800; color: #166534; text-align: center; margin: 24px 0;">\u20B9${details.amount}</div>
+      ${details.studentName ? `<div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee;"><span style="color: #666; font-size: 14px;">Student</span><span style="font-weight: 600; font-size: 14px;">${details.studentName}</span></div>` : ''}
+      <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee;"><span style="color: #666; font-size: 14px;">Order ID</span><span style="font-weight: 600; font-size: 12px; font-family: monospace; word-break: break-all;">${details.orderId}</span></div>
+      ${details.paymentId ? `<div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee;"><span style="color: #666; font-size: 14px;">Transaction ID</span><span style="font-weight: 600; font-size: 12px; font-family: monospace; word-break: break-all;">${details.paymentId}</span></div>` : ''}
+      <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee;"><span style="color: #666; font-size: 14px;">Date</span><span style="font-weight: 600; font-size: 14px;">${details.date}</span></div>
+      <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee;"><span style="color: #666; font-size: 14px;">Payment Method</span><span style="font-weight: 600; font-size: 14px;">HDFC SmartGateway</span></div>
+      <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee;"><span style="color: #666; font-size: 14px;">Purpose</span><span style="font-weight: 600; font-size: 14px;">Attendance / Other Dues</span></div>
+      <div style="text-align: center; margin-top: 40px; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 16px;">
+        <p>This is a computer-generated receipt. No signature required.</p>
+        <p>For queries, contact your institution's accounts department.</p>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(container);
+
+  import('html2pdf.js').then((html2pdfModule) => {
+    const html2pdf = html2pdfModule.default;
+    html2pdf()
+      .set({
+        margin: 10,
+        filename: `receipt_${details.orderId}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      })
+      .from(container.firstElementChild as HTMLElement)
+      .save()
+      .then(() => {
+        document.body.removeChild(container);
+      });
+  });
 }
 
 /**

@@ -14,3 +14,4 @@ export * from './admin';
 export * from './payment';
 export * from './library';
 export * from './promotion';
+export * from './otherDues';

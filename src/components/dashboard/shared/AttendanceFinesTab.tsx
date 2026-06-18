@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Pencil, Plus, Trash2, Search, X, CheckCircle2, ChevronDown, ChevronRight, Building2, Banknote, Globe, Wallet, Download } from 'lucide-react';
+import { Pencil, Plus, Trash2, Search, X, CheckCircle2, ChevronDown, ChevronRight, Building2, Banknote, Globe, Wallet, Download, Snowflake } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../lib/useAuth';
 import { 
   getStaffAttendanceFines, 
   deleteAttendanceCategory, 
@@ -9,7 +10,9 @@ import {
   clearStudentFine, 
   overrideAttendanceFine,
   isFirstYearSem,
-  getAllDepartments
+  getAllDepartments,
+  getAttendanceFreezeStatus,
+  setAttendanceFreezeStatus,
 } from '../../../lib/api';
 
 interface AttendanceFinesTabProps {
@@ -18,6 +21,7 @@ interface AttendanceFinesTabProps {
 }
 
 export default function AttendanceFinesTab({ departmentId, role }: AttendanceFinesTabProps) {
+  const { profile } = useAuth();
   const [categories, setCategories] = useState<any[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
   
@@ -30,7 +34,6 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   const [editingCat, setEditingCat] = useState<any>(null);
   const [catSaving, setCatSaving] = useState(false);
   const [catError, setCatError] = useState<string | null>(null);
-
 
   const [reduceFineId, setReduceFineId] = useState<string | null>(null);
   const [reduceFineAmount, setReduceFineAmount] = useState('');
@@ -47,6 +50,10 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   const [loadingFineSummary, setLoadingFineSummary] = useState(false);
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
 
+  // Attendance freeze state
+  const [attendanceFrozen, setAttendanceFrozen] = useState(false);
+  const [freezeLoading, setFreezeLoading] = useState(false);
+
   const isFycGlobal = role === 'fyc' && !departmentId;
   const isAdminGlobal = role === 'admin';
   const canManageCategories = role === 'admin';
@@ -62,6 +69,33 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       }).catch(console.error);
     }
   }, [role, departmentId]);
+
+  // Load freeze status for any role (so banner shows for faculty/hod/fyc)
+  useEffect(() => {
+    if (!profile?.tenant_id) return;
+    getAttendanceFreezeStatus(profile.tenant_id)
+      .then(setAttendanceFrozen)
+      .catch(console.error);
+  }, [profile?.tenant_id]);
+
+  const handleToggleFreeze = async () => {
+    if (!profile?.tenant_id) return;
+    setFreezeLoading(true);
+    try {
+      const next = !attendanceFrozen;
+      await setAttendanceFreezeStatus(profile.tenant_id, next);
+      setAttendanceFrozen(next);
+      setSuccessMsg(next
+        ? '🔒 Attendance frozen — faculty cannot update until unfrozen.'
+        : '🔓 Attendance unfrozen — faculty can now update attendance.');
+      setTimeout(() => setSuccessMsg(null), 5000);
+    } catch (err: any) {
+      console.error(err);
+      alert('Failed to update freeze status: ' + err.message);
+    } finally {
+      setFreezeLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (canViewCategories) fetchAttendanceCategories();
@@ -460,6 +494,18 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
 
   return (
     <div className="space-y-6">
+
+      {/* ============ FREEZE BANNER (visible to all when frozen) ============ */}
+      {attendanceFrozen && !isAdminGlobal && (
+        <div className="flex items-center gap-3 p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-700 dark:text-blue-300">
+          <Snowflake className="w-5 h-5 shrink-0" />
+          <div>
+            <p className="font-semibold text-sm">Attendance is currently frozen</p>
+            <p className="text-xs text-muted-foreground mt-0.5">The admin has frozen attendance updates. You cannot upload or manually update attendance until it is unfrozen.</p>
+          </div>
+        </div>
+      )}
+
       {/* ==================== FINE COLLECTION SUMMARY ==================== */}
       {showFineSummary && (
         <div className="bg-card rounded-3xl p-6 shadow-sm border border-border">
@@ -474,15 +520,34 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
               </h2>
               <p className="text-muted-foreground text-sm mt-1">Attendance fine collection breakdown by department — Cash vs Online Payment.</p>
             </div>
-            {fineSummary.length > 0 && (
-              <button
-                onClick={handleExportFineSummary}
-                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-sm text-sm"
-              >
-                <Download className="w-4 h-4" />
-                Export CSV
-              </button>
-            )}
+            {/* Freeze toggle (admin only) + Export CSV */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {isAdminGlobal && (
+                <button
+                  id="attendance-freeze-toggle"
+                  onClick={handleToggleFreeze}
+                  disabled={freezeLoading}
+                  className={`flex items-center gap-2 px-5 py-2.5 font-bold rounded-xl transition-all shadow-sm text-sm ${
+                    attendanceFrozen
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'bg-secondary hover:bg-secondary/80 text-foreground border border-border'
+                  }`}
+                  title={attendanceFrozen ? 'Click to unfreeze attendance (faculty will be able to update again)' : 'Click to freeze attendance (faculty cannot update)'}
+                >
+                  <Snowflake className="w-4 h-4" />
+                  {freezeLoading ? 'Updating…' : attendanceFrozen ? 'Unfreeze Attendance' : 'Freeze Attendance'}
+                </button>
+              )}
+              {fineSummary.length > 0 && (
+                <button
+                  onClick={handleExportFineSummary}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all shadow-sm text-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  Export CSV
+                </button>
+              )}
+            </div>
           </div>
 
           {loadingFineSummary ? (

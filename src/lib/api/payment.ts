@@ -39,3 +39,16 @@ export const checkHdfcOrderStatus = async (orderId: string) => {
     order_id: orderId,
   });
 };
+
+/**
+ * Create an HDFC SmartGateway payment session for other dues.
+ * Returns { payment_link, order_id, amount } from the edge function.
+ */
+export const createOtherDuesHdfcSession = async (amount: number, dueId: string) => {
+  const { invokeWithRetry } = await import('../invokeWithRetry');
+  return invokeWithRetry('create-hdfc-session', {
+    amount,
+    enrollment_id: dueId, // reuse enrollment_id field for other_due_id
+    due_type: 'other_dues',
+  });
+};

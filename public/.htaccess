@@ -1,0 +1,27 @@
+Options -MultiViews
+RewriteEngine On
+RewriteBase /nodue/
+
+# -----------------------------------------------
+# Explicit SPA Route Redirects
+# -----------------------------------------------
+
+# Login Page -> mitmysore.in/nodue/login
+RewriteRule ^login/?$ index.html [L]
+
+# Super Admin Panel -> mitmysore.in/nodue/superadmin
+RewriteRule ^superadmin/?$ index.html [L]
+
+# Payment Callback -> mitmysore.in/nodue/payment/callback
+RewriteRule ^payment/callback/?$ index.html [L]
+
+# -----------------------------------------------
+# General SPA Fallback
+# -----------------------------------------------
+
+# Don't rewrite actual files or directories
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Send everything else to index.html (React SPA fallback)
+RewriteRule ^ index.html [L]

@@ -5,7 +5,7 @@ import {
   getUsersByDeptAndRoles,
   getSubjectsByDepartment, createSubject, deleteSubject,
   assignTeacherToSection, updateSubjectAPI, getSemestersByDepartment, updateUserAPI,
-  updateStudentPaidAmount, getAllDepartments, logActivity
+  updateStudentPaidAmount, getAllDepartments, logActivity, normalizeSemName, humanizeError
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 
@@ -95,6 +95,7 @@ export default function ClerkDashboard() {
   const [importSelectedSubjects, setImportSelectedSubjects] = useState<string[]>([]);
   const [importTargetSemId, setImportTargetSemId] = useState('');
   const [importFetchingSubjects, setImportFetchingSubjects] = useState(false);
+  const [importSubjectSearch, setImportSubjectSearch] = useState('');
   const [importLoading, setImportLoading] = useState(false);
 
   // Semesters State
@@ -450,8 +451,9 @@ export default function ClerkDashboard() {
         let semesterId: string | undefined;
 
         if (role === 'student' && semNameOrId) {
+          const normalizedSem = normalizeSemName(semNameOrId);
           const matchedSem = (fetchedSemesters || []).find(s => 
-            (s.name.toLowerCase() === semNameOrId.toLowerCase() || s.id === semNameOrId) && 
+            (s.name.toLowerCase() === normalizedSem.toLowerCase() || s.name.toLowerCase() === semNameOrId.toLowerCase() || s.id === semNameOrId) && 
             s.department_id === targetDeptId
           );
           if (matchedSem) {
@@ -496,18 +498,18 @@ export default function ClerkDashboard() {
           const { offset, chunk } = batch[idx];
           if (res.status === 'rejected') {
             errorCount += chunk.length;
-            errorDetails.push(`Batch ${Math.floor(offset / CHUNK_SIZE) + 1}: ${res.reason?.message || 'Request failed'}`);
+            errorDetails.push(`Batch ${Math.floor(offset / CHUNK_SIZE) + 1}: ${humanizeError(res.reason)}`);
             return;
           }
           const { data, error } = res.value;
           if (error) {
             errorCount += chunk.length;
-            errorDetails.push(`Batch ${Math.floor(offset / CHUNK_SIZE) + 1}: ${error.message}`);
+            errorDetails.push(`Batch ${Math.floor(offset / CHUNK_SIZE) + 1}: ${humanizeError(error)}`);
             return;
           }
           if (data?.error) {
             errorCount += chunk.length;
-            errorDetails.push(`Batch ${Math.floor(offset / CHUNK_SIZE) + 1}: ${data.error}`);
+            errorDetails.push(`Batch ${Math.floor(offset / CHUNK_SIZE) + 1}: ${humanizeError(data.error)}`);
             return;
           }
           const result = data?.data || data;
@@ -516,14 +518,14 @@ export default function ClerkDashboard() {
           errorCount += (result?.errors || 0);
           if (data?.errorDetails) {
             for (const e of data.errorDetails) {
-              errorDetails.push(`Row ${e.row + 1 + offset} (${e.email}): ${e.error}`);
+              errorDetails.push(`Row ${e.row + 1 + offset} (${e.email}): ${humanizeError(e.error)}`);
             }
           }
         });
       }
 
       if (errorCount > 0) {
-        setUserError(`Created ${successCount}, Updated ${updatedCount}, Errors ${errorCount}. Details: ${errorDetails.slice(0, 5).join(' | ')}${errorDetails.length > 5 ? '...' : ''}`);
+        setUserError(`Upload completed with issues — ${successCount} created, ${updatedCount} updated, ${errorCount} failed. Details: ${errorDetails.slice(0, 5).join(' | ')}${errorDetails.length > 5 ? '...' : ''}`);
       } else {
         setUserSuccess(`Successfully uploaded ${successCount} new + ${updatedCount} updated users!`);
       }
@@ -703,7 +705,8 @@ export default function ClerkDashboard() {
           continue; 
         }
 
-        const sem = fetchedSemesters.find(s => s.name.toLowerCase() === semester_name.toLowerCase() || s.id === semester_name);
+        const normalizedSemN = normalizeSemName(semester_name);
+        const sem = fetchedSemesters.find(s => s.name.toLowerCase() === normalizedSemN.toLowerCase() || s.name.toLowerCase() === semester_name.toLowerCase() || s.id === semester_name);
         if (!sem) {
           errorCount++;
           errorDetails.push(`Row ${i + 1} (${subject_code}): Target semester "${semester_name}" not found in database.`);
@@ -1572,6 +1575,18 @@ export default function ClerkDashboard() {
                     <div className="p-4 text-center text-muted-foreground animate-pulse text-sm">Loading subjects...</div>
                   ) : importSourceSubjects.length > 0 ? (
                     <div>
+                      <div className="mb-3">
+                        <div className="relative">
+                          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                          <input
+                            type="text"
+                            placeholder="Search subjects by name or code..."
+                            className="pl-9 pr-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 w-full text-sm"
+                            value={importSubjectSearch}
+                            onChange={e => setImportSubjectSearch(e.target.value)}
+                          />
+                        </div>
+                      </div>
                       <div className="flex justify-between items-center mb-2">
                         <label className="block text-sm font-medium text-foreground">Select Subjects to Import</label>
                         <button onClick={() => {
@@ -1582,7 +1597,7 @@ export default function ClerkDashboard() {
                         </button>
                       </div>
                       <div className="bg-background rounded-xl border border-border p-3 space-y-2 max-h-56 overflow-y-auto">
-                        {importSourceSubjects.map(sub => {
+                        {importSourceSubjects.filter(sub => !importSubjectSearch || sub.subject_name?.toLowerCase().includes(importSubjectSearch.toLowerCase()) || sub.subject_code?.toLowerCase().includes(importSubjectSearch.toLowerCase())).map(sub => {
                           const alreadyExists = subjects.some(s => s.subject_code === sub.subject_code);
                           return (
                             <label key={sub.id} className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${alreadyExists ? 'opacity-50 cursor-not-allowed' : 'hover:bg-secondary cursor-pointer'}`}>

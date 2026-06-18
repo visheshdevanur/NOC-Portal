@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Lock, Mail, KeyRound, Eye, EyeOff, ArrowRight, Building2 } from 'lucide-react';
+import { Lock, Mail, KeyRound, Eye, EyeOff, ArrowRight, Building2, Phone } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
+import ContactUsModal from '../components/ContactUsModal';
 
 type ResetStep = 'login' | 'request-otp' | 'verify-otp' | 'update-password';
 
@@ -25,6 +26,7 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showContactUs, setShowContactUs] = useState(false);
 
   // Focus state for floating labels
   const [emailFocused, setEmailFocused] = useState(false);
@@ -250,22 +252,22 @@ const Login = () => {
 
           {/* ==================== LEFT/TOP: BRAND OVERLAY ==================== */}
           <div className="flex flex-col justify-center max-w-xl lg:max-w-2xl mb-8 md:mb-0">
-            {/* Logo */}
-            <div className="mb-6 md:mb-10 flex items-center gap-3">
-              <div className="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-white/20 backdrop-blur-lg flex items-center justify-center shadow-lg">
-                <Building2 className="w-5 h-5 md:w-6 md:h-6 text-white" />
+            {/* Logo + Title */}
+            <div className="mb-4 md:mb-6 flex items-center gap-4">
+              <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-white/20 backdrop-blur-lg flex items-center justify-center shadow-lg border border-white/30">
+                <Building2 className="w-7 h-7 md:w-8 md:h-8 text-white" />
               </div>
-              <h1 className="text-white font-extrabold text-lg md:text-xl tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>
+              <h1 className="text-white font-extrabold text-3xl md:text-4xl lg:text-5xl tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.3)]" style={{ fontFamily: 'Manrope, sans-serif' }}>
                 NO DUE PORTAL
               </h1>
             </div>
 
-            {/* Hero Text */}
-            <h2 className="text-white text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight mb-4 md:mb-8 leading-[1.05] drop-shadow-[0_2px_12px_rgba(0,0,0,0.3)]" style={{ fontFamily: 'Manrope, sans-serif' }}>
-              College<br />Clearance<br />Portal
-            </h2>
+            {/* Subtitle */}
+            <p className="text-white/70 text-sm md:text-base lg:text-lg font-semibold uppercase tracking-[0.2em] mb-6 md:mb-10 ml-1" style={{ fontFamily: 'Manrope, sans-serif' }}>
+              DUES CLEARANCE MANAGEMENT SYSTEM
+            </p>
 
-            <p className="text-white/85 text-sm md:text-lg lg:text-xl font-medium leading-relaxed max-w-md drop-shadow-[0_1px_6px_rgba(0,0,0,0.2)]">
+            <p className="text-white/85 text-sm md:text-base lg:text-lg font-medium leading-relaxed max-w-md drop-shadow-[0_1px_6px_rgba(0,0,0,0.2)]">
               Experience a frictionless transition into your next academic chapter. Our editorial-grade interface streamlines departmental sign-offs, fee verifications, and document submissions with precision and security.
             </p>
           </div>
@@ -519,6 +521,16 @@ const Login = () => {
                 </button>
               </form>
             )}
+
+              {/* Contact Us */}
+              {resetStep === 'login' && (
+                <div className="mt-6 text-center">
+                  <button onClick={() => setShowContactUs(true)} className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 dark:text-muted-foreground hover:text-primary transition-colors">
+                    <Phone className="w-4 h-4" />
+                    Contact Us
+                  </button>
+                </div>
+              )}
           </div>
 
           </div>
@@ -531,6 +543,9 @@ const Login = () => {
           <span className="hover:text-white cursor-pointer transition-colors">Accessibility</span>
         </div>
       </div>
+
+      {/* ==================== CONTACT US MODAL ==================== */}
+      {showContactUs && <ContactUsModal onClose={() => setShowContactUs(false)} />}
     </div>
   );
 };

@@ -147,6 +147,21 @@ serve(async (req) => {
       })
     }
 
+    // 5b. If this was an other_dues payment, mark the due as paid
+    const { data: paidOrder } = await adminClient
+      .from('payment_orders')
+      .select('due_type, metadata')
+      .eq('gateway_order_id', orderId)
+      .single()
+
+    if (paidOrder?.due_type === 'other_dues' && paidOrder?.metadata?.other_due_id) {
+      await adminClient
+        .from('other_dues')
+        .update({ status: 'paid', updated_at: new Date().toISOString() })
+        .eq('id', paidOrder.metadata.other_due_id)
+      log({ level: 'INFO', fn: 'hdfc-webhook', action: 'other_due_paid', meta: { dueId: paidOrder.metadata.other_due_id } })
+    }
+
     // S-13: Audit log for successful payment
     await adminClient.from('activity_logs').insert([{
       action: 'Payment Verified (Webhook)',

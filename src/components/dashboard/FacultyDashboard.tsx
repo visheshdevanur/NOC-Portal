@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
-import { getFacultyPendingStudents, markFacultySubjectStatus, batchMarkFacultyAttendance, getTeacherSubjectsList, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
-import { Search, ClipboardList, BookOpen, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Building2, Layers, RefreshCw } from 'lucide-react';
+import { getFacultyPendingStudents, markFacultySubjectStatus, batchMarkFacultyAttendance, getTeacherSubjectsList, getIAAttendanceForSubject, getTeacherIAAttendance, getAttendanceFreezeStatus } from '../../lib/api';
+import { Search, ClipboardList, BookOpen, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Building2, Layers, RefreshCw, Snowflake } from 'lucide-react';
 import { parseInstituteAttendanceSheet } from '../../lib/instituteAttendanceParser';
 
 type SubjectEnrollment = {
@@ -42,9 +42,12 @@ type IARecord = {
 
 
 export default function FacultyDashboard() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   // Tab state
   const [activeTab, setActiveTab] = useState<'clearance' | 'manage-ia'>('clearance');
+
+  // Attendance freeze state (set by admin in AttendanceFinesTab)
+  const [attendanceFrozen, setAttendanceFrozen] = useState(false);
 
   // === Clearance Tab State (existing) ===
   const [searchTerm, setSearchTerm] = useState('');
@@ -54,6 +57,14 @@ export default function FacultyDashboard() {
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [csvUploadMsg, setCsvUploadMsg] = useState<string | null>(null);
   const clearanceCsvRef = useRef<HTMLInputElement>(null);
+
+  // Fetch freeze status on mount (when profile is available)
+  useEffect(() => {
+    if (!profile?.tenant_id) return;
+    getAttendanceFreezeStatus(profile.tenant_id)
+      .then(setAttendanceFrozen)
+      .catch(console.error);
+  }, [profile?.tenant_id]);
 
   // === Manage IAs Tab State ===
   const [teacherSubjects, setTeacherSubjects] = useState<TeacherSubject[]>([]);
@@ -175,7 +186,14 @@ export default function FacultyDashboard() {
   const handleAttendanceCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Block upload when frozen
+    if (attendanceFrozen) {
+      setCsvUploadMsg('❄️ Attendance is currently frozen by the admin. Uploads are not allowed.');
+      e.target.value = '';
+      return;
+    }
     setCsvUploadMsg('⏳ Uploading...');
+
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -283,7 +301,14 @@ export default function FacultyDashboard() {
   const handleInstituteExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Block upload when frozen
+    if (attendanceFrozen) {
+      setCsvUploadMsg('❄️ Attendance is currently frozen by the admin. Uploads are not allowed.');
+      e.target.value = '';
+      return;
+    }
     setCsvUploadMsg('⏳ Reading Excel file…');
+
 
     try {
       // Dynamically import SheetJS so it stays out of the main bundle
@@ -451,6 +476,11 @@ export default function FacultyDashboard() {
   };
 
   const updateAttendance = async (id: string) => {
+    // Block manual update when frozen
+    if (attendanceFrozen) {
+      alert('❄️ Attendance is currently frozen by the admin. Manual updates are not allowed.');
+      return;
+    }
     try {
       const enrollment = students.find(s => s.id === id);
       if (!enrollment) return;
@@ -492,6 +522,7 @@ export default function FacultyDashboard() {
       fetchData();
     }
   };
+
 
   // Group IA records by ia_number — always show all 3 IAs
   const iasByNumber: Record<number, IARecord[]> = { 1: [], 2: [], 3: [] };
@@ -600,6 +631,17 @@ export default function FacultyDashboard() {
       {/* ======================== CLEARANCE TAB ======================== */}
       {activeTab === 'clearance' && (
         <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+          {/* Frozen banner — prominently shown when admin has frozen attendance */}
+          {attendanceFrozen && (
+            <div className="flex items-center gap-3 px-6 py-4 bg-blue-500/10 border-b border-blue-500/20 text-blue-700 dark:text-blue-300">
+              <Snowflake className="w-5 h-5 shrink-0 animate-pulse" />
+              <div>
+                <p className="font-bold text-sm">Attendance is frozen by the admin</p>
+                <p className="text-xs text-muted-foreground mt-0.5">You cannot update attendance (manually or via upload) until the admin unfreezes it.</p>
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading students...</div>
           ) : students.length === 0 ? (

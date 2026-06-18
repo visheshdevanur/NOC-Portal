@@ -94,7 +94,9 @@ serve(async (req) => {
     const orderToken = generateOrderToken()
 
     // Step 5: DB FIRST — Auto-expire stale orders + create record atomically
-    const primaryEnrollmentId = enrollment_id || (enrollment_ids?.length > 0 ? enrollment_ids[0] : null)
+    // For 'other_dues', enrollment_id is actually an other_due_id — don't pass it as enrollment
+    const isOtherDues = due_type === 'other_dues'
+    const primaryEnrollmentId = isOtherDues ? null : (enrollment_id || (enrollment_ids?.length > 0 ? enrollment_ids[0] : null))
 
     // Expire stale 'created' orders older than 3 minutes before creating new one
     // This prevents "unpaid order already exists" errors from abandoned/failed attempts
@@ -105,33 +107,64 @@ serve(async (req) => {
       .eq('status', 'created')
       .lt('created_at', new Date(Date.now() - 3 * 60 * 1000).toISOString())
 
-    // Create DB order record (validates enrollment, amount, duplicates atomically)
-    const { data: dbOrderId, error: rpcError } = await adminClient.rpc('create_payment_order_atomic', {
-      p_student_id: user.id,
-      p_enrollment_id: primaryEnrollmentId || null,
-      p_amount: amount,
-      p_due_type: due_type || 'attendance_fine',
-      p_gateway_order_id: orderId,
-      p_tenant_id: profile.tenant_id,
-      p_gateway_type: 'hdfc',
-      p_payment_link: null, // Will be updated after HDFC call
-    })
+    // Create DB order record
+    let dbOrderId: string | null = null
 
-    if (rpcError) {
-      const msg = rpcError.message
-      if (msg.includes('already exists')) return jsonRes({ error: 'An unpaid order already exists' }, 409)
-      if (msg.includes('already been paid')) return jsonRes({ error: 'This fine has already been paid' }, 400)
-      // S-21: Sanitize error — don't leak internal DB details to client
-      log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'rpc_failed', error: msg })
-      return jsonRes({ error: 'Failed to create payment order. Please try again.' }, 500)
-    }
+    if (isOtherDues) {
+      // For other_dues: direct insert (RPC validates enrollment_id which doesn't apply here)
+      const insertPayload: any = {
+        student_id: user.id,
+        amount: amount,
+        due_type: 'other_dues',
+        gateway_order_id: orderId,
+        tenant_id: profile.tenant_id,
+        status: 'created',
+      }
+      // Only add optional columns if they exist in the schema
+      try { insertPayload.gateway_type = 'hdfc' } catch {}
+      try { insertPayload.order_token = orderToken } catch {}
+      try { insertPayload.metadata = enrollment_id ? { other_due_id: enrollment_id } : null } catch {}
 
-    // Store order_token for IDOR protection in callback mode
-    if (dbOrderId) {
-      await adminClient
+      const { data: insertedOrder, error: insertError } = await adminClient
         .from('payment_orders')
-        .update({ order_token: orderToken })
-        .eq('id', dbOrderId)
+        .insert(insertPayload)
+        .select('id')
+        .single()
+
+      if (insertError) {
+        log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'insert_failed', error: insertError.message })
+        return jsonRes({ error: 'Failed to create payment order. Please try again.' }, 500)
+      }
+      dbOrderId = insertedOrder?.id || null
+    } else {
+      // For attendance fines: use the validated RPC
+      const { data: rpcOrderId, error: rpcError } = await adminClient.rpc('create_payment_order_atomic', {
+        p_student_id: user.id,
+        p_enrollment_id: primaryEnrollmentId || null,
+        p_amount: amount,
+        p_due_type: due_type || 'attendance_fine',
+        p_gateway_order_id: orderId,
+        p_tenant_id: profile.tenant_id,
+        p_gateway_type: 'hdfc',
+        p_payment_link: null,
+      })
+
+      if (rpcError) {
+        const msg = rpcError.message
+        if (msg.includes('already exists')) return jsonRes({ error: 'An unpaid order already exists' }, 409)
+        if (msg.includes('already been paid')) return jsonRes({ error: 'This fine has already been paid' }, 400)
+        log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'rpc_failed', error: msg })
+        return jsonRes({ error: 'Failed to create payment order. Please try again.' }, 500)
+      }
+      dbOrderId = rpcOrderId
+
+      // Store order_token for IDOR protection
+      if (dbOrderId) {
+        await adminClient
+          .from('payment_orders')
+          .update({ order_token: orderToken })
+          .eq('id', dbOrderId)
+      }
     }
 
     // For bulk payments, store all enrollment_ids in the payment order
@@ -145,7 +178,7 @@ serve(async (req) => {
     // Step 6: Now call HDFC /orders endpoint (DB record already created)
     // Build return URL: try env vars first, then use the request's Origin header as fallback
     const requestOrigin = req.headers.get('Origin') || req.headers.get('Referer')?.replace(/\/+$/, '') || ''
-    const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN') || requestOrigin || 'https://noc-portal-self.vercel.app'
+    const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN') || requestOrigin || 'https://mitmysore.in/nodue'
     const baseReturnUrl = PAYMENT_RETURN_URL || `${allowedOrigin}/payment/callback`
     // Include order_id in return URL so callback page works even if localStorage is cleared
     const returnUrl = `${baseReturnUrl}?order_id=${orderId}&order_token=${orderToken}`

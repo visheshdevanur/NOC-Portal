@@ -5,11 +5,12 @@ import { approveHodRequest, getAllDepartments, getFycStaffActivityLogs, isFirstY
 import { supabase } from '../../lib/supabase';
 import StudentDuesOverviewTab from './shared/StudentDuesOverviewTab';
 import AttendanceFinesTab from './shared/AttendanceFinesTab';
+import OtherDuesTab from './shared/OtherDuesTab';
 
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
-  GraduationCap, BookOpen, Eye, Clock, Import, Check, Banknote, FileWarning
+  GraduationCap, BookOpen, Eye, Clock, Import, Check, Banknote, FileWarning, Edit
 } from 'lucide-react';
 import { logAndFormatError } from '../../lib/errorHandler';
 
@@ -33,6 +34,7 @@ type UserProfile = {
   department_id: string | null;
   section: string | null;
   roll_number?: string | null;
+  email?: string | null;
   created_at: string;
   semesters?: { name: string } | null;
   departments?: { name: string } | null;
@@ -61,7 +63,7 @@ type TeacherWithAssignments = {
   }[];
 };
 
-type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs' | 'studentdues' | 'attendances';
+type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs' | 'studentdues' | 'attendances' | 'otherDues';
 
 
 
@@ -83,6 +85,7 @@ export default function FycDashboard() {
   const [userCreating, setUserCreating] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
+  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
 
   // Import Teachers state
   const [showImportModal, setShowImportModal] = useState(false);
@@ -93,6 +96,7 @@ export default function FycDashboard() {
   const [importingTeachers, setImportingTeachers] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [importSearchQuery, setImportSearchQuery] = useState('');
 
   // Students state
   const [departmentStudents, setDepartmentStudents] = useState<UserProfile[]>([]);
@@ -312,13 +316,22 @@ export default function FycDashboard() {
         return;
       }
 
-      const { data: enrollments, error: eErr } = await supabase
-        .from('subject_enrollment')
-        .select('teacher_id, subject_id, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
-        .in('teacher_id', teacherIds);
-      if (eErr) throw eErr;
+      // Paginate enrollment query to avoid 1000-row limit
+      let allEnrollments: any[] = [];
+      let offset = 0;
+      while (true) {
+        const { data: batch, error: eErr } = await supabase
+          .from('subject_enrollment')
+          .select('teacher_id, subject_id, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
+          .in('teacher_id', teacherIds)
+          .range(offset, offset + 999);
+        if (eErr) throw eErr;
+        allEnrollments = [...allEnrollments, ...(batch || [])];
+        if (!batch || batch.length < 1000) break;
+        offset += 1000;
+      }
 
-      const filteredEnrollments = (enrollments || []).filter((e: any) => isFirstYearSem(e.subjects?.semesters?.name || ''));
+      const filteredEnrollments = allEnrollments.filter((e: any) => isFirstYearSem(e.subjects?.semesters?.name || ''));
 
       const assignmentMap: Record<string, { subjects: Record<string, { subject_name: string; subject_code: string; semester: string; sections: Set<string> }> }> = {};
 
@@ -329,7 +342,9 @@ export default function FycDashboard() {
 
         const subj = (enrollment as any).subjects;
         const studentProfile = (enrollment as any).profiles;
-        const subjectKey = enrollment.subject_id;
+        // Use composite key: subject_id + semester_id to handle same subject across semesters
+        const semesterId = subj?.semester_id || '';
+        const subjectKey = `${enrollment.subject_id}__${semesterId}`;
         const section = studentProfile?.section || 'Unassigned';
         const semesterName = subj?.semesters?.name || 'N/A';
 
@@ -476,6 +491,34 @@ export default function FycDashboard() {
     }
   };
 
+  const handleUpdateUser = async () => {
+    if (!editingUser) return;
+    setUserCreating(true);
+    setUserError(null);
+    try {
+      const { error } = await supabase.from('profiles').update({
+        full_name: editingUser.full_name,
+        roll_number: editingUser.roll_number,
+        email: editingUser.email,
+      }).eq('id', editingUser.id);
+      if (error) throw error;
+      setUserSuccess(`"${editingUser.full_name}" updated.`);
+      await supabase.from('activity_logs').insert([{
+        user_id: user?.id,
+        user_role: 'fyc',
+        user_name: user?.email,
+        action: 'Updated User',
+        details: `Updated user "${editingUser.full_name}"`
+      }]);
+      setEditingUser(null);
+      fetchUsers();
+    } catch (err: any) {
+      setUserError(await logAndFormatError(err, { dashboard_name: 'FycDashboard' }));
+    } finally {
+      setUserCreating(false);
+    }
+  };
+
   const handleRemoveImportedTeacher = async (userId: string, userName: string) => {
     if (!confirm(`Remove "${userName}" from your imported list? (This will NOT delete their account)`)) return;
     try {
@@ -583,10 +626,19 @@ export default function FycDashboard() {
   };
 
   const toggleAllImport = () => {
-    if (selectedImportIds.size === importTeachersList.length) {
-      setSelectedImportIds(new Set());
+    const visibleTeachers = importTeachersList.filter(t =>
+      !importSearchQuery || t.full_name?.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
+      t.email?.toLowerCase().includes(importSearchQuery.toLowerCase())
+    );
+    const allVisibleSelected = visibleTeachers.every(t => selectedImportIds.has(t.id));
+    if (allVisibleSelected) {
+      const next = new Set(selectedImportIds);
+      visibleTeachers.forEach(t => next.delete(t.id));
+      setSelectedImportIds(next);
     } else {
-      setSelectedImportIds(new Set(importTeachersList.map(t => t.id)));
+      const next = new Set(selectedImportIds);
+      visibleTeachers.forEach(t => next.add(t.id));
+      setSelectedImportIds(next);
     }
   };
 
@@ -647,6 +699,7 @@ export default function FycDashboard() {
     { id: 'collegeDues', label: 'College Dues', icon: <Banknote className="w-4 h-4" /> },
     { id: 'studentdues', label: 'Student Dues Overview', icon: <Eye className="w-4 h-4" /> },
     { id: 'attendances', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4 text-destructive" /> },
+    { id: 'otherDues', label: 'Other Dues', icon: <Banknote className="w-4 h-4 text-amber-500" /> },
     { id: 'users', label: 'Clerks & Teachers', icon: <Users className="w-4 h-4" /> },
     { id: 'teacherDetails', label: 'Teacher Details', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> },
@@ -878,7 +931,7 @@ export default function FycDashboard() {
                     <Import className="w-5 h-5 text-blue-500" />
                     Import Teachers from Department
                   </h3>
-                  <button onClick={() => { setShowImportModal(false); setImportDeptId(''); setImportTeachersList([]); setSelectedImportIds(new Set()); }} className="p-2 rounded-xl hover:bg-secondary transition-colors">
+                  <button onClick={() => { setShowImportModal(false); setImportDeptId(''); setImportTeachersList([]); setSelectedImportIds(new Set()); setImportSearchQuery(''); }} className="p-2 rounded-xl hover:bg-secondary transition-colors">
                     <X className="w-5 h-5 text-muted-foreground" />
                   </button>
                 </div>
@@ -919,20 +972,43 @@ export default function FycDashboard() {
                         <div className="p-8 text-center text-muted-foreground">No teachers found in this department.</div>
                       ) : (
                         <>
+                          {/* Search bar for import teacher list */}
+                          <div className="px-4 pt-3 pb-2 border-b border-border">
+                            <div className="relative">
+                              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                              <input
+                                type="text"
+                                placeholder="Search teachers by name or email..."
+                                className="pl-9 pr-4 py-2 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 w-full text-sm"
+                                value={importSearchQuery}
+                                onChange={e => setImportSearchQuery(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          {(() => {
+                            const filteredImportList = importTeachersList.filter(t =>
+                              !importSearchQuery || t.full_name?.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
+                              t.email?.toLowerCase().includes(importSearchQuery.toLowerCase())
+                            );
+                            const allVisibleSelected = filteredImportList.length > 0 && filteredImportList.every(t => selectedImportIds.has(t.id));
+                            return (
+                              <>
                           <div className="bg-secondary/50 px-4 py-3 border-b border-border flex items-center justify-between">
                             <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-foreground">
                               <input
                                 type="checkbox"
                                 className="w-4 h-4 rounded border-border text-blue-500 focus:ring-blue-500"
-                                checked={selectedImportIds.size === importTeachersList.length && importTeachersList.length > 0}
+                                checked={allVisibleSelected}
                                 onChange={toggleAllImport}
                               />
-                              Select All ({importTeachersList.length} teachers)
+                              Select All ({filteredImportList.length} teacher{filteredImportList.length !== 1 ? 's' : ''})
                             </label>
                             <span className="text-xs text-muted-foreground">{selectedImportIds.size} selected</span>
                           </div>
                           <div className="max-h-[40vh] overflow-y-auto">
-                            {importTeachersList.map(teacher => {
+                            {filteredImportList.length === 0 ? (
+                              <div className="p-6 text-center text-muted-foreground text-sm">No teachers match "{importSearchQuery}"</div>
+                            ) : filteredImportList.map(teacher => {
                               const isAlreadyManaged = teacher.created_by === user?.id;
                               return (
                                 <label
@@ -967,6 +1043,9 @@ export default function FycDashboard() {
                               );
                             })}
                           </div>
+                              </>
+                            );
+                          })()}
                         </>
                       )}
                     </div>
@@ -974,7 +1053,7 @@ export default function FycDashboard() {
                 </div>
 
                 <div className="flex gap-3 mt-6">
-                  <button onClick={() => { setShowImportModal(false); setImportDeptId(''); setImportTeachersList([]); setSelectedImportIds(new Set()); }} className="flex-1 py-2.5 px-4 rounded-xl border border-border font-medium hover:bg-secondary transition-all">Cancel</button>
+                  <button onClick={() => { setShowImportModal(false); setImportDeptId(''); setImportTeachersList([]); setSelectedImportIds(new Set()); setImportSearchQuery(''); }} className="flex-1 py-2.5 px-4 rounded-xl border border-border font-medium hover:bg-secondary transition-all">Cancel</button>
                   <button
                     onClick={handleImportTeachers}
                     disabled={importingTeachers || selectedImportIds.size === 0}
@@ -1050,6 +1129,53 @@ export default function FycDashboard() {
             </div>
           )}
 
+          {/* Edit User Modal */}
+          {editingUser && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-card rounded-3xl p-8 shadow-2xl border border-border w-full max-w-lg">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
+                    <Edit className="w-5 h-5 text-violet-500" />
+                    Edit User
+                  </h3>
+                  <button onClick={() => setEditingUser(null)} className="p-2 rounded-xl hover:bg-secondary transition-colors">
+                    <X className="w-5 h-5 text-muted-foreground" />
+                  </button>
+                </div>
+                {userError && (
+                  <div className="p-4 mb-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex justify-between items-center">
+                    <span><strong>Error:</strong> {userError}</span>
+                    <button onClick={() => setUserError(null)}><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Full Name</label>
+                    <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={editingUser.full_name} onChange={e => setEditingUser({ ...editingUser, full_name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Email (Login ID)</label>
+                    <input type="email" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" placeholder="user@example.com" value={(editingUser as any).email || ''} onChange={e => setEditingUser({ ...editingUser, email: e.target.value } as any)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">{editingUser.role === 'teacher' || editingUser.role === 'faculty' ? 'Teacher ID' : 'ID'}</label>
+                    <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500" value={editingUser.roll_number || ''} onChange={e => setEditingUser({ ...editingUser, roll_number: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Role</label>
+                    <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl text-muted-foreground" value={editingUser.role} disabled />
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-8">
+                  <button onClick={() => setEditingUser(null)} className="flex-1 py-3 px-4 rounded-xl border border-border font-medium hover:bg-secondary">Cancel</button>
+                  <button onClick={handleUpdateUser} disabled={userCreating} className="flex-1 py-3 px-4 rounded-xl bg-violet-500 text-white font-bold hover:bg-violet-600 disabled:opacity-50">
+                    {userCreating ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Users Table */}
           <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
             {loadingUsers ? (
@@ -1089,15 +1215,20 @@ export default function FycDashboard() {
                               {u.role}
                             </span>
                           </td>
-                          <td className="p-4 text-right">
+                          <td className="p-4 text-right flex gap-2 justify-end">
                             {isImported ? (
                               <button onClick={() => handleRemoveImportedTeacher(u.id, u.full_name)} className="p-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white transition-colors" title="Remove from dept">
                                 <X className="w-4 h-4" />
                               </button>
                             ) : (
-                              <button onClick={() => handleDeleteUser(u.id, u.full_name)} className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors" title="Delete user">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <>
+                                <button onClick={() => setEditingUser({ ...u })} className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-colors" title="Edit user">
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDeleteUser(u.id, u.full_name)} className="p-2 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-colors" title="Delete user">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </>
                             )}
                           </td>
                         </tr>
@@ -1712,6 +1843,11 @@ export default function FycDashboard() {
       {/* ========= ATTENDANCE FINES TAB ========= */}
       {activeTab === 'attendances' && (
         <AttendanceFinesTab role="fyc" />
+      )}
+
+      {/* ========= OTHER DUES TAB ========= */}
+      {activeTab === 'otherDues' && (
+        <OtherDuesTab role="fyc" userId={user?.id} />
       )}
 
     </div>

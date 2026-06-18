@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import { logActivity } from './shared';
+import { logActivity, normalizeSemName } from './shared';
 
 // =======================
 // ADMIN: ALL USERS & HALL-TICKET STATUS
@@ -51,6 +51,17 @@ export const getSubjectsByDepartment = async (departmentId: string) => {
 };
 
 export const createSubject = async (subject: { subject_name: string; subject_code: string; department_id: string; semester_id: string }) => {
+  // Check for duplicate subject_code in same department + semester
+  const { data: existing } = await supabase
+    .from('subjects')
+    .select('id')
+    .eq('department_id', subject.department_id)
+    .eq('semester_id', subject.semester_id)
+    .ilike('subject_code', subject.subject_code)
+    .limit(1);
+  if (existing && existing.length > 0) {
+    throw new Error(`Subject with code "${subject.subject_code.toUpperCase()}" already exists in this semester.`);
+  }
   const { data, error } = await supabase.from('subjects').insert(subject).select();
   if (error) throw error;
   return data;
@@ -192,7 +203,7 @@ export const getImportableTeachers = async (departmentId: string) => {
 };
 
 export const getImportedTeachersForDept = async (departmentId: string) => {
-  const { data, error } = await supabase.from('imported_teachers').select('teacher_id, created_at, profiles!inner(id, full_name, email, role, roll_number, departments!profiles_department_id_fkey(name))').eq('department_id', departmentId);
+  const { data, error } = await supabase.from('imported_teachers').select('teacher_id, created_at, profiles!inner(id, full_name, email, role, roll_number, department_id, departments!profiles_department_id_fkey(name))').eq('department_id', departmentId);
   if (error && error.code === '42P01') return [];
   if (error) throw error;
   return data || [];
@@ -226,22 +237,57 @@ export const bulkAssignTeacherToSectionCSV = async (departmentId: string, rows: 
   const { data: allDepts } = await supabase.from('departments').select('id, name');
   const deptNameMap = new Map((allDepts || []).map(d => [d.name.toLowerCase(), d.id]));
   const semCache = new Map<string, Map<string, string>>();
-  const subCache = new Map<string, any[]>();
   const getSemMap = async (deptId: string) => { if (semCache.has(deptId)) return semCache.get(deptId)!; const { data: sems } = await supabase.from('semesters').select('id, name').eq('department_id', deptId); const map = new Map((sems || []).map(s => [s.name.toLowerCase(), s.id])); semCache.set(deptId, map); return map; };
-  const getSubjects = async () => { if (subCache.has('all')) return subCache.get('all')!; const { data: subs } = await supabase.from('subjects').select('id, subject_code, semester_id'); subCache.set('all', subs || []); return subs || []; };
-  const { data: teachers } = await supabase.from('profiles').select('id, roll_number').in('role', ['teacher', 'faculty']);
-  const teacherMap = new Map((teachers || []).map(t => [t.roll_number?.toLowerCase(), t.id]));
+
+  // Direct DB lookup for a subject by code + department (most reliable, bypasses cache/RLS issues)
+  const findSubjectDirect = async (subjectCode: string, deptId: string): Promise<any | null> => {
+    const { data } = await supabase
+      .from('subjects')
+      .select('id, subject_code, semester_id, department_id')
+      .eq('department_id', deptId)
+      .ilike('subject_code', subjectCode)
+      .limit(1);
+    return data && data.length > 0 ? data[0] : null;
+  };
+
+  // Fallback: search across ALL departments
+  const findSubjectAnyDept = async (subjectCode: string): Promise<any | null> => {
+    const { data } = await supabase
+      .from('subjects')
+      .select('id, subject_code, semester_id, department_id')
+      .ilike('subject_code', subjectCode)
+      .limit(1);
+    return data && data.length > 0 ? data[0] : null;
+  };
+
+  // Only fetch teachers native to this department + imported into this department
+  const { data: nativeTeachers } = await supabase.from('profiles').select('id, roll_number').in('role', ['teacher', 'faculty']).eq('department_id', departmentId);
+  const { data: importedData } = await supabase.from('imported_teachers').select('profiles!inner(id, roll_number)').eq('department_id', departmentId);
+  const importedTeachers = (importedData || []).map((imp: any) => imp.profiles).filter(Boolean);
+  const allValidTeachers = [...(nativeTeachers || []), ...importedTeachers];
+  const teacherMap = new Map<string, string>();
+  allValidTeachers.forEach(t => { if (t.roll_number) teacherMap.set(t.roll_number.toLowerCase(), t.id); });
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     try {
       let rowDeptId = departmentId;
       if (row.dept_name) { const resolved = deptNameMap.get(row.dept_name.toLowerCase()); if (!resolved) throw new Error(`Department '${row.dept_name}' not found.`); rowDeptId = resolved; }
       const semMap = await getSemMap(rowDeptId);
-      const semId = semMap.get(row.semester_name.toLowerCase());
+      const normalizedSemInput = normalizeSemName(row.semester_name);
+      const semId = semMap.get(normalizedSemInput.toLowerCase()) || semMap.get(row.semester_name.toLowerCase());
       if (!semId) throw new Error(`Semester '${row.semester_name}' not found.`);
-      const subs = await getSubjects();
-      const sub = subs.find(s => s.subject_code.toLowerCase() === row.subject_code.toLowerCase() && s.semester_id === semId);
-      if (!sub) throw new Error(`Subject '${row.subject_code}' not found in semester '${row.semester_name}'.`);
+
+      // Try direct DB query for this department first
+      let sub = await findSubjectDirect(row.subject_code, rowDeptId);
+      // If not found and CSV dept differs from UI dept, try the UI department
+      if (!sub && rowDeptId !== departmentId) {
+        sub = await findSubjectDirect(row.subject_code, departmentId);
+      }
+      // Last resort: search across ALL departments
+      if (!sub) {
+        sub = await findSubjectAnyDept(row.subject_code);
+      }
+      if (!sub) throw new Error(`Subject '${row.subject_code}' not found in any department.`);
       const tProfileId = teacherMap.get(row.teacher_id.toLowerCase());
       if (!tProfileId) throw new Error(`Teacher with ID '${row.teacher_id}' not found.`);
       await assignTeacherToSection(sub.id, row.section.toUpperCase(), tProfileId, semId);
@@ -257,3 +303,34 @@ export const promoteStudents = async (sourceSemesterId: string, targetSemesterId
   if (error) throw error;
   return data as number;
 };
+
+// =======================
+// ATTENDANCE FREEZE TOGGLE
+// =======================
+
+/** Returns whether attendance is currently frozen for the given tenant. */
+export const getAttendanceFreezeStatus = async (tenantId: string): Promise<boolean> => {
+  const { data, error } = await supabase
+    .from('tenants')
+    .select('attendance_frozen')
+    .eq('id', tenantId)
+    .single();
+  if (error) throw error;
+  return data?.attendance_frozen ?? false;
+};
+
+/** Admin-only: freeze or unfreeze attendance updates for the given tenant. */
+export const setAttendanceFreezeStatus = async (tenantId: string, frozen: boolean): Promise<void> => {
+  const { error } = await supabase
+    .from('tenants')
+    .update({ attendance_frozen: frozen })
+    .eq('id', tenantId);
+  if (error) throw error;
+  logActivity(
+    frozen ? 'Froze Attendance' : 'Unfroze Attendance',
+    frozen
+      ? 'Admin froze attendance — faculty cannot update attendance until unfrozen.'
+      : 'Admin unfroze attendance — faculty can now update attendance.',
+  );
+};
+

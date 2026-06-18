@@ -5,13 +5,14 @@ import { supabase } from '../../lib/supabase';
 import {
   ShieldCheck, Users, Activity, BookOpen, AlertTriangle,
   Plus, Trash2, Search, UserPlus, X, Building2,
-  Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft, ArrowUpCircle, FileWarning
+  Settings, Download, GraduationCap, Eye, ChevronDown, ChevronRight, CornerUpLeft, ArrowUpCircle, FileWarning, Banknote
 } from 'lucide-react';
 import { logAndFormatError } from '../../lib/errorHandler';
 import { logActivity } from '../../lib/api';
 import AttendanceFinesTab from './shared/AttendanceFinesTab';
+import OtherDuesTab from './shared/OtherDuesTab';
 
-type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'logs' | 'academic' | 'attendanceFines';
+type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'logs' | 'academic' | 'attendanceFines' | 'otherDues';
 
 type Department = {
   id: string;
@@ -532,6 +533,14 @@ export default function AdminDashboard() {
     }
 
     try {
+      // If assigning an HOD who already belongs to another department, clear that department's hod_id first
+      if (newDept.hod_id) {
+        const { data: hodProfile } = await supabase.from('profiles').select('department_id').eq('id', newDept.hod_id).single();
+        if (hodProfile?.department_id) {
+          await supabase.from('departments').update({ hod_id: null }).eq('hod_id', newDept.hod_id);
+        }
+      }
+
       const { data: deptData, error: deptErr } = await supabase.from('departments').insert([{
         name: newDept.name,
         hod_id: newDept.hod_id || null
@@ -547,6 +556,7 @@ export default function AdminDashboard() {
       setNewDept({ name: '', hod_id: '' });
       setShowCreateDept(false);
       fetchDepartments();
+      fetchUsers(); // Refresh core staff to reflect updated assignments
     } catch (err: any) {
       setDeptError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally {
@@ -560,20 +570,43 @@ export default function AdminDashboard() {
     setDeptError(null);
 
     try {
+      // 1. Get the CURRENT department data to find the old HOD
+      const { data: currentDept } = await supabase.from('departments').select('hod_id').eq('id', editingDept.id).single();
+      const oldHodId = currentDept?.hod_id;
+      const newHodId = editingDept.hod_id || null;
+
+      // 2. If HOD is changing, clean up both sides to prevent conflicts
+      if (oldHodId !== newHodId) {
+        // Clear old HOD's department_id (they're no longer assigned here)
+        if (oldHodId) {
+          await supabase.from('profiles').update({ department_id: null }).eq('id', oldHodId);
+        }
+        // If new HOD already belongs to another department, clear that department's hod_id
+        if (newHodId) {
+          const { data: newHodProfile } = await supabase.from('profiles').select('department_id').eq('id', newHodId).single();
+          if (newHodProfile?.department_id && newHodProfile.department_id !== editingDept.id) {
+            await supabase.from('departments').update({ hod_id: null }).eq('hod_id', newHodId);
+          }
+        }
+      }
+
+      // 3. Update the department record
       const { error } = await supabase.from('departments').update({
         name: editingDept.name,
-        hod_id: editingDept.hod_id || null
+        hod_id: newHodId
       }).eq('id', editingDept.id);
       if (error) throw error;
 
-      if (editingDept.hod_id) {
-        await supabase.from('profiles').update({ department_id: editingDept.id }).eq('id', editingDept.hod_id);
+      // 4. Set the new HOD's department_id to this department
+      if (newHodId) {
+        await supabase.from('profiles').update({ department_id: editingDept.id }).eq('id', newHodId);
       }
 
       setDeptSuccess(`Department "${editingDept.name}" updated!`);
       logActivity('Updated Department', `Updated department "${editingDept.name}"`);
       setEditingDept(null);
       fetchDepartments();
+      fetchUsers(); // Refresh core staff to reflect updated department assignments
     } catch (err: any) {
       setDeptError(await logAndFormatError(err, { dashboard_name: 'AdminDashboard' }));
     } finally {
@@ -972,6 +1005,7 @@ export default function AdminDashboard() {
     { id: 'hods', label: 'Core Staff', icon: <UserPlus className="w-4 h-4" /> },
     { id: 'subjects', label: 'Subjects / Semester', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'attendanceFines', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4" /> },
+    { id: 'otherDues', label: 'Other Dues', icon: <Banknote className="w-4 h-4 text-amber-500" /> },
     { id: 'allusers', label: 'All Users', icon: <Eye className="w-4 h-4" /> },
 
     { id: 'logs', label: 'Activity Logs', icon: <Activity className="w-4 h-4" /> },
@@ -1839,6 +1873,11 @@ export default function AdminDashboard() {
       {/* ========= ATTENDANCE FINES TAB ========= */}
       {activeTab === 'attendanceFines' && (
         <AttendanceFinesTab role="admin" />
+      )}
+
+      {/* ========= OTHER DUES TAB (read-only for admin) ========= */}
+      {activeTab === 'otherDues' && (
+        <OtherDuesTab role="admin" />
       )}
 
       {/* Logs Tab */}

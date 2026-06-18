@@ -170,6 +170,15 @@ serve(async (req) => {
         log({ level: 'ERROR', fn: 'hdfc-order-status', action: 'rpc_failed', error: rpcError.message, meta: { order_id } })
       } else {
         log({ level: 'INFO', fn: 'hdfc-order-status', action: 'rpc_success', meta: { order_id, result: JSON.stringify(rpcResult) } })
+
+        // If this was an other_dues payment, mark the due as paid
+        if (orderRecord.due_type === 'other_dues' && orderRecord.metadata?.other_due_id) {
+          await adminClient
+            .from('other_dues')
+            .update({ status: 'paid', updated_at: new Date().toISOString() })
+            .eq('id', orderRecord.metadata.other_due_id)
+          log({ level: 'INFO', fn: 'hdfc-order-status', action: 'other_due_paid', meta: { dueId: orderRecord.metadata.other_due_id } })
+        }
       }
     }
 

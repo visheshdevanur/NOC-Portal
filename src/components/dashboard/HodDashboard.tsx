@@ -9,6 +9,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import StudentDuesOverviewTab from './shared/StudentDuesOverviewTab';
 import AttendanceFinesTab from './shared/AttendanceFinesTab';
+import OtherDuesTab from './shared/OtherDuesTab';
 
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X, Import,
@@ -37,6 +38,7 @@ type UserProfile = {
   department_id: string | null;
   section: string | null;
   roll_number?: string | null;
+  email?: string | null;
   created_at: string;
   created_by?: string | null;
   semesters?: { name: string } | null;
@@ -68,7 +70,7 @@ type TeacherWithAssignments = {
   }[];
 };
 
-type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs' | 'studentdues' | 'attendances';
+type TabType = 'approvals' | 'users' | 'students' | 'fineApprovals' | 'collegeDues' | 'teacherDetails' | 'activityLogs' | 'studentdues' | 'attendances' | 'otherDues';
 
 export default function HodDashboard() {
   const { user, profile } = useAuth();
@@ -150,10 +152,16 @@ export default function HodDashboard() {
     queryFn: async () => {
       const data = await getUsersByDeptAndRoles(profile!.department_id!, ['staff', 'teacher', 'faculty']);
       const importedData = await import('../../lib/api').then(m => m.getImportedTeachersForDept(profile!.department_id!));
-      const importedIds = new Set((importedData || []).map((i: any) => i.teacher_id));
-      // Show native department users (exclude imported ones which are shown separately)
+      // Only treat as "imported" if teacher's native department differs from this HOD's department
+      // Teachers whose profile.department_id matches this department are native, not imported
+      const trulyImported = (importedData || []).filter((i: any) => {
+        const teacherDeptId = i.profiles?.department_id;
+        return teacherDeptId !== profile!.department_id;
+      });
+      const importedIds = new Set(trulyImported.map((i: any) => i.teacher_id));
+      // Show native department users (exclude truly-imported ones which are shown separately)
       const filtered = (data as UserProfile[]).filter(u => !importedIds.has(u.id));
-      return { users: filtered, imported: importedData };
+      return { users: filtered, imported: trulyImported };
     },
     enabled: !!profile?.department_id && activeTab === 'users',
   });
@@ -346,6 +354,7 @@ export default function HodDashboard() {
       const { error } = await supabase.from('profiles').update({
         full_name: editingUser.full_name,
         roll_number: editingUser.roll_number,
+        email: editingUser.email,
       }).eq('id', editingUser.id);
       if (error) throw error;
       setUserSuccess(`"${editingUser.full_name}" updated.`);
@@ -427,6 +436,7 @@ export default function HodDashboard() {
     { id: 'collegeDues', label: 'College Dues', icon: <Banknote className="w-4 h-4" /> },
     { id: 'studentdues', label: 'Student Dues Overview', icon: <Eye className="w-4 h-4" /> },
     { id: 'attendances', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4 text-destructive" /> },
+    { id: 'otherDues', label: 'Other Dues', icon: <Banknote className="w-4 h-4 text-amber-500" /> },
     { id: 'users', label: 'Staff & Teachers', icon: <Users className="w-4 h-4" /> },
     { id: 'teacherDetails', label: 'Teacher Details', icon: <GraduationCap className="w-4 h-4" /> },
     { id: 'students', label: 'Students', icon: <User className="w-4 h-4" /> },
@@ -709,10 +719,10 @@ export default function HodDashboard() {
                 {importDeptFilter && (() => {
                   const filtered = importableTeachers.filter(t => {
                     if (importDeptFilter === '__fyc__') return !t.department_id;
-                    // Show teachers native to this dept, but exclude those imported INTO this dept from elsewhere
+                    // Show teachers whose native department matches the selected filter
                     if (t.department_id !== importDeptFilter) return false;
-                    // Also exclude teachers that are already imported into this dept by someone else
-                    if (t._importedIntoDepts && t._importedIntoDepts.includes(importDeptFilter)) return false;
+                    // Exclude teachers already imported into THIS HOD's department (not the filter dept)
+                    if (t._importedIntoDepts && profile?.department_id && t._importedIntoDepts.includes(profile.department_id)) return false;
                     return true;
                   });
                   return (
@@ -871,6 +881,10 @@ export default function HodDashboard() {
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1.5">Full Name</label>
                     <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" value={editingUser.full_name} onChange={e => setEditingUser({ ...editingUser, full_name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Email (Login ID)</label>
+                    <input type="email" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="user@example.com" value={editingUser.email || ''} onChange={e => setEditingUser({ ...editingUser, email: e.target.value })} />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1.5">{editingUser.role === 'teacher' || editingUser.role === 'faculty' ? 'Teacher ID' : 'ID'}</label>
@@ -1592,6 +1606,11 @@ export default function HodDashboard() {
       {/* ========= ATTENDANCE FINES TAB ========= */}
       {activeTab === 'attendances' && profile?.department_id && (
         <AttendanceFinesTab departmentId={profile.department_id} role="hod" />
+      )}
+
+      {/* ========= OTHER DUES TAB ========= */}
+      {activeTab === 'otherDues' && profile?.department_id && (
+        <OtherDuesTab departmentId={profile.department_id} role="hod" userId={user?.id} />
       )}
 
     </div>
