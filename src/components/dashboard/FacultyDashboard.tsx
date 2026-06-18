@@ -711,11 +711,16 @@ export default function FacultyDashboard() {
                   </button>
                   <button
                     onClick={() => clearanceCsvRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"
-                    title="Upload the institute's Excel attendance sheet (.xlsx) or a CSV file"
+                    disabled={attendanceFrozen}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors border ${
+                      attendanceFrozen
+                        ? 'bg-secondary/50 text-muted-foreground border-border cursor-not-allowed opacity-50'
+                        : 'bg-primary/10 text-primary hover:bg-primary/20 border-primary/30'
+                    }`}
+                    title={attendanceFrozen ? '❄️ Attendance is frozen by admin' : "Upload the institute's Excel attendance sheet (.xlsx) or a CSV file"}
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    Upload Attendance
+                    {attendanceFrozen ? 'Upload Frozen' : 'Upload Attendance'}
                   </button>
                   {/* Accepts both institute Excel (.xlsx/.xls) and plain CSV */}
                   <input
@@ -925,13 +930,17 @@ export default function FacultyDashboard() {
                                 <div className="flex items-center gap-2">
                                   <input 
                                     type="number" min="0" max="100"
+                                    readOnly={attendanceFrozen}
+                                    disabled={attendanceFrozen}
                                     className={`w-20 p-2 border rounded-xl text-sm bg-background transition-colors focus:ring-2 focus:ring-primary focus:outline-none ${
-                                      (student.attendance_pct || 0) < 85 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
+                                      attendanceFrozen
+                                        ? 'opacity-50 cursor-not-allowed bg-secondary/40'
+                                        : (student.attendance_pct || 0) < 85 ? 'border-destructive/50 text-destructive' : 'border-emerald-500/50 text-emerald-600'
                                     }`}
                                     value={student.attendance_pct === null ? '' : student.attendance_pct}
-                                    onChange={e => handleAttendanceChange(student.id, e.target.value)}
-                                    onBlur={() => updateAttendance(student.id)}
-                                    onKeyDown={e => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); } }}
+                                    onChange={e => !attendanceFrozen && handleAttendanceChange(student.id, e.target.value)}
+                                    onBlur={() => !attendanceFrozen && updateAttendance(student.id)}
+                                    onKeyDown={e => { if (e.key === 'Enter' && !attendanceFrozen) { (e.target as HTMLInputElement).blur(); } }}
                                   />
                                   <span className="text-xs text-muted-foreground font-medium">Min 85%</span>
                                 </div>
