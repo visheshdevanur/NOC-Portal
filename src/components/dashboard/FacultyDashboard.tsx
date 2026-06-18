@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
-import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
+import { getFacultyPendingStudents, markFacultySubjectStatus, batchMarkFacultyAttendance, getTeacherSubjectsList, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
 import { Search, ClipboardList, BookOpen, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Building2, Layers, RefreshCw } from 'lucide-react';
 import { parseInstituteAttendanceSheet } from '../../lib/instituteAttendanceParser';
 
@@ -210,8 +210,8 @@ export default function FacultyDashboard() {
         });
 
         // Parse all rows first
-        const tasks: { enrollment: SubjectEnrollment; status: string; pct: number; remarks: string }[] = [];
-        let errors = 0;
+        const batchUpdates: { enrollmentId: string; status: string; attendancePct: number; remarks: string }[] = [];
+        let parseErrors = 0;
 
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].replace(/"/g, '').split(',').map(c => c.trim());
@@ -225,18 +225,18 @@ export default function FacultyDashboard() {
             enrollment = filtered.find(s => (s.profiles?.roll_number || '').toLowerCase().trim() === roll);
           }
 
-          if (!enrollment) { errors++; continue; }
+          if (!enrollment) { parseErrors++; continue; }
 
           // Calculate pct from class counts if provided, else use direct pct
           let pct: number;
           if (totalIdx !== -1 && attendedIdx !== -1) {
             const total = parseInt(cols[totalIdx] || '0');
             const attended = parseInt(cols[attendedIdx] || '0');
-            if (isNaN(total) || isNaN(attended) || total <= 0) { errors++; continue; }
+            if (isNaN(total) || isNaN(attended) || total <= 0) { parseErrors++; continue; }
             pct = Math.round((attended / total) * 100);
           } else {
             const rawPct = parseInt(cols[pctIdx] || '');
-            if (isNaN(rawPct) || rawPct < 0 || rawPct > 100) { errors++; continue; }
+            if (isNaN(rawPct) || rawPct < 0 || rawPct > 100) { parseErrors++; continue; }
             pct = rawPct;
           }
 
@@ -244,9 +244,6 @@ export default function FacultyDashboard() {
           const subjectIAs = freshIAs.filter((ia: any) => ia.subject_id === enrollment?.subject_id);
           const iaPresentCount = subjectIAs.filter((ia: any) => ia.student_id === enrollment?.student_id && ia.is_present).length;
 
-          // BOTH conditions ALWAYS required for COMPLETED:
-          // 1. Attendance >= 85%
-          // 2. Minimum 2 IAs present (strictly enforced)
           const attendanceOk = pct >= 85;
           const iaOk = iaPresentCount >= 2;
 
@@ -254,35 +251,22 @@ export default function FacultyDashboard() {
           let remarks: string;
 
           if (attendanceOk && iaOk) {
-            status = 'completed';
-            remarks = ''; // No remarks for cleared students
+            status = 'completed'; remarks = '';
           } else if (!attendanceOk && !iaOk) {
-            status = 'rejected';
-            remarks = `Low Attendance (<85%) & Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+            status = 'rejected'; remarks = `Low Attendance (<85%) & Insufficient IA Attendance (${iaPresentCount}/2 required)`;
           } else if (!attendanceOk) {
-            status = 'rejected';
-            remarks = `Low Attendance (<85%)`;
+            status = 'rejected'; remarks = `Low Attendance (<85%)`;
           } else {
-            status = 'rejected';
-            remarks = `Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+            status = 'rejected'; remarks = `Insufficient IA Attendance (${iaPresentCount}/2 required)`;
           }
 
-          tasks.push({ enrollment, status, pct, remarks });
+          batchUpdates.push({ enrollmentId: enrollment.id, status, attendancePct: pct, remarks });
         }
 
-        // Run ALL DB updates in parallel (batched for speed)
-        const BATCH_SIZE = 20;
-        let updated = 0;
-        for (let b = 0; b < tasks.length; b += BATCH_SIZE) {
-          const batch = tasks.slice(b, b + BATCH_SIZE);
-          const results = await Promise.allSettled(
-            batch.map(t => markFacultySubjectStatus(t.enrollment.id, t.status, t.pct, t.remarks))
-          );
-          updated += results.filter(r => r.status === 'fulfilled').length;
-          errors += results.filter(r => r.status === 'rejected').length;
-        }
-
-        setCsvUploadMsg(`✅ Updated ${updated} students.${errors > 0 ? ` ${errors} errors/unmatched.` : ''}`);
+        // Fast bulk update: 1 auth call, 50 parallel, 1 log entry
+        const { updated, errors: dbErrors } = await batchMarkFacultyAttendance(batchUpdates);
+        const totalErrors = parseErrors + dbErrors;
+        setCsvUploadMsg(`✅ Updated ${updated} students.${totalErrors > 0 ? ` ${totalErrors} errors/unmatched.` : ''}`);
         await fetchData();
       } catch (err: any) {
         setCsvUploadMsg(`Error: ${err.message}`);
@@ -408,28 +392,20 @@ export default function FacultyDashboard() {
         tasks.push({ enrollment, status, pct, remarks });
       }
 
-      // ── Batch DB updates ────────────────────────────────────────────────
-      const BATCH_SIZE = 20;
-      let updated = 0;
-      let dbErrors = 0;
-      for (let b = 0; b < tasks.length; b += BATCH_SIZE) {
-        const batch = tasks.slice(b, b + BATCH_SIZE);
-        const results = await Promise.allSettled(
-          batch.map(t => markFacultySubjectStatus(t.enrollment.id, t.status, t.pct, t.remarks)),
-        );
-        updated += results.filter(r => r.status === 'fulfilled').length;
-        dbErrors += results.filter(r => r.status === 'rejected').length;
-      }
+      // Fast bulk update: 1 auth call, 50 parallel, 1 log entry
+      const batchInput = tasks.map(t => ({
+        enrollmentId: t.enrollment.id,
+        status: t.status,
+        attendancePct: t.pct,
+        remarks: t.remarks,
+      }));
+      const { updated, errors: dbErrors } = await batchMarkFacultyAttendance(batchInput);
 
-      const rowErrSummary = parsed.rowErrors.length > 0
-        ? ` ${parsed.rowErrors.length} row issue(s).`
-        : '';
+      const rowErrSummary = parsed.rowErrors.length > 0 ? ` ${parsed.rowErrors.length} row issue(s).` : '';
       const unmatchedSummary = unmatched > 0 ? ` ${unmatched} USN(s) not matched.` : '';
       const dbErrSummary = dbErrors > 0 ? ` ${dbErrors} DB error(s).` : '';
 
-      setCsvUploadMsg(
-        `✅ Updated ${updated} students.${rowErrSummary}${unmatchedSummary}${dbErrSummary}`,
-      );
+      setCsvUploadMsg(`✅ Updated ${updated} students.${rowErrSummary}${unmatchedSummary}${dbErrSummary}`);
       await fetchData();
     } catch (err: any) {
       setCsvUploadMsg(`❌ Error reading Excel: ${err.message}`);

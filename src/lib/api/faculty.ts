@@ -5,20 +5,49 @@ import { sanitizeRemarks, sanitizeNumber } from '../sanitize';
 // =======================
 // FACULTY SPECIFIC
 // =======================
+
+/**
+ * Fetch ALL subject_enrollment rows for a faculty member.
+ *
+ * Supabase PostgREST defaults to a 1 000-row page limit.
+ * For faculty teaching large cohorts (3 000+ students) we must paginate
+ * through every page and concatenate the results.
+ */
 export const getFacultyPendingStudents = async (facultyId: string) => {
-  const { data, error } = await supabase
-    .from('subject_enrollment')
-    .select('*, profiles!subject_enrollment_student_id_fkey(full_name, section, semester_id, roll_number, department_id, semesters(name), departments!profiles_department_id_fkey(name)), subjects(*, departments!subjects_department_id_fkey(name))')
-    .eq('teacher_id', facultyId);
-  if (error) throw error;
-  return data;
+  const PAGE_SIZE = 1000;
+  const allData: any[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('subject_enrollment')
+      .select(
+        '*, ' +
+        'profiles!subject_enrollment_student_id_fkey(' +
+          'full_name, section, semester_id, roll_number, department_id, ' +
+          'semesters(name), ' +
+          'departments!profiles_department_id_fkey(name)' +
+        '), ' +
+        'subjects(*, departments!subjects_department_id_fkey(name))',
+      )
+      .eq('teacher_id', facultyId)
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < PAGE_SIZE) break; // reached the last page
+    from += PAGE_SIZE;
+  }
+
+  return allData;
 };
 
 export const markFacultySubjectStatus = async (
-  enrollmentId: string, 
-  status: string, 
-  attendancePct: number, 
-  remarks: string
+  enrollmentId: string,
+  status: string,
+  attendancePct: number,
+  remarks: string,
 ) => {
   // Sanitize inputs
   attendancePct = sanitizeNumber(attendancePct, 0, 100);
@@ -56,17 +85,118 @@ export const markFacultySubjectStatus = async (
   return data;
 };
 
+/**
+ * High-performance batch attendance update for bulk CSV/Excel uploads.
+ *
+ * Key optimisations vs the single-row version:
+ *  - getUser() is called ONCE for the whole batch (not once per student)
+ *  - logActivity() is called ONCE at the end (not once per student)
+ *  - Updates run in parallel chunks of CONCURRENCY (default 50) instead of 20
+ *  - No redundant .select() on each update (write-only, faster)
+ */
+export const batchMarkFacultyAttendance = async (
+  updates: {
+    enrollmentId: string;
+    status: string;
+    attendancePct: number;
+    remarks: string;
+  }[],
+): Promise<{ updated: number; errors: number }> => {
+  if (updates.length === 0) return { updated: 0, errors: 0 };
+
+  // One auth call for the entire batch
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const CONCURRENCY = 50;
+  let updated = 0;
+  let errors = 0;
+
+  for (let i = 0; i < updates.length; i += CONCURRENCY) {
+    const chunk = updates.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      chunk.map(async ({ enrollmentId, status, attendancePct, remarks }) => {
+        // Inline sanitise (avoids extra function call overhead)
+        const pct = Math.min(100, Math.max(0, Math.round(Number(attendancePct) || 0)));
+        const safeRemarks = (remarks || '').slice(0, 500);
+        let finalStatus = status;
+        let finalRemarks = safeRemarks;
+
+        if (pct < 85 && finalStatus === 'completed') {
+          finalStatus = 'rejected';
+          finalRemarks = finalRemarks || 'Low Attendance (<85%)';
+        }
+
+        const payload: any = {
+          status: finalStatus,
+          attendance_pct: pct,
+          remarks: finalRemarks,
+        };
+        if (finalStatus === 'completed') {
+          payload.attendance_fee = 0;
+          payload.attendance_fee_verified = false;
+        }
+
+        const { error } = await supabase
+          .from('subject_enrollment')
+          .update(payload)
+          .eq('id', enrollmentId)
+          .eq('teacher_id', user.id); // RLS + ownership check
+
+        if (error) throw error;
+      }),
+    );
+
+    updated += results.filter(r => r.status === 'fulfilled').length;
+    errors  += results.filter(r => r.status === 'rejected').length;
+  }
+
+  // Single audit-log entry for the whole bulk operation
+  if (updated > 0) {
+    logActivity(
+      'Bulk Attendance Update',
+      `Updated attendance for ${updated} students via template upload`,
+    );
+  }
+
+  return { updated, errors };
+};
+
 // =======================
 // IA ATTENDANCE
 // =======================
+
+/**
+ * Fetch distinct subjects assigned to a teacher.
+ * Uses pagination to handle teachers with large enrolment counts.
+ */
 export const getTeacherSubjectsList = async (teacherId: string) => {
-  const { data, error } = await supabase
-    .from('subject_enrollment')
-    .select('subject_id, subjects!subject_enrollment_subject_id_fkey(id, subject_name, subject_code, semester_id, department_id, semesters(name), departments!subjects_department_id_fkey(name))')
-    .eq('teacher_id', teacherId);
-  if (error) throw error;
+  const PAGE_SIZE = 1000;
+  const allData: any[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('subject_enrollment')
+      .select(
+        'subject_id, subjects!subject_enrollment_subject_id_fkey(' +
+          'id, subject_name, subject_code, semester_id, department_id, ' +
+          'semesters(name), ' +
+          'departments!subjects_department_id_fkey(name)' +
+        ')',
+      )
+      .eq('teacher_id', teacherId)
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
   const subjectMap = new Map();
-  (data || []).forEach((row: any) => {
+  allData.forEach((row: any) => {
     if (row.subjects && !subjectMap.has(row.subject_id)) {
       subjectMap.set(row.subject_id, row.subjects);
     }
@@ -129,25 +259,45 @@ export const getIAAttendanceForSubject = async (subjectId: string, _teacherId: s
   return data?.data || [];
 };
 
+/**
+ * Fetch IA attendance for multiple subjects IN PARALLEL.
+ *
+ * Previous implementation looped sequentially (one edge-function call per
+ * subject) which was very slow for teachers with many subjects.
+ * Now all invocations fire at the same time with Promise.allSettled.
+ */
 export const getTeacherIAAttendance = async (_teacherId: string, subjectIds?: string[]) => {
-  // Use edge function to bypass RLS and get ALL IA records (including COE-uploaded)
-  // Query by subject_ids instead of teacher_id so COE records are included
   if (!subjectIds || subjectIds.length === 0) return [];
-  
+
+  // All edge-function calls in parallel
+  const settled = await Promise.allSettled(
+    subjectIds.map(subjectId =>
+      supabase.functions.invoke('admin-api', {
+        body: { action: 'get-ia-data', subject_id: subjectId },
+      }),
+    ),
+  );
+
   const allRecords: any[] = [];
-  for (const subjectId of subjectIds) {
-    const { data, error } = await supabase.functions.invoke('admin-api', {
-      body: { action: 'get-ia-data', subject_id: subjectId },
+  settled.forEach((result, idx) => {
+    if (result.status === 'rejected') {
+      console.error('Error fetching IA for subject', subjectIds[idx], result.reason);
+      return;
+    }
+    const { data, error } = result.value;
+    if (error || data?.error) {
+      console.error('Edge fn error for subject', subjectIds[idx], error || data.error);
+      return;
+    }
+    (data?.data || []).forEach((r: any) => {
+      allRecords.push({
+        student_id: r.student_id,
+        subject_id: r.subject_id,
+        ia_number:  r.ia_number,
+        is_present: r.is_present,
+      });
     });
-    if (error) { console.error('Error fetching IA for subject', subjectId, error); continue; }
-    if (data?.error) { console.error('Edge fn error:', data.error); continue; }
-    const records = data?.data || [];
-    allRecords.push(...records.map((r: any) => ({
-      student_id: r.student_id,
-      subject_id: r.subject_id,
-      ia_number: r.ia_number,
-      is_present: r.is_present,
-    })));
-  }
+  });
+
   return allRecords;
 };
