@@ -55,7 +55,7 @@ function App() {
 
   return (
     <ThemeProvider remoteTheme={profile?.theme} userId={user?.id} storageKey={`noc-theme-${user ? user.id : 'guest'}`}>
-      <BrowserRouter>
+      <BrowserRouter basename={(import.meta.env.VITE_BASE_PATH ?? '/nodue/').replace(/\/$/, '') || '/'}>
         {/* Session inactivity warning banner */}
         {sessionWarning && (
           <div style={{
