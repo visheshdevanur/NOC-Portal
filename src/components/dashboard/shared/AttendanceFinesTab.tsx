@@ -95,14 +95,13 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           setCategories([]);
         }
       } else if (isFycGlobal) {
-        // FYC: use same canonical source as admin (is_first_year=false, dept[0])
-        // Avoids showing stale is_first_year=true records that were never cleaned up
+        // FYC: fetch first-year categories (is_first_year=true — where FYC stores them)
         if (allDepartments.length > 0) {
           const { data, error } = await supabase
             .from('attendance_fine_categories')
             .select('*')
             .eq('department_id', allDepartments[0].id)
-            .eq('is_first_year', false)
+            .eq('is_first_year', true)
             .order('id', { ascending: false }); // newest first → stale dupes skipped
           if (error) throw error;
           // Deduplicate by range — keeps newest record for each min/max pair
