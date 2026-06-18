@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
 import { getFacultyPendingStudents, markFacultySubjectStatus, getTeacherSubjectsList, getIAAttendanceForSubject, getTeacherIAAttendance } from '../../lib/api';
 import { Search, ClipboardList, BookOpen, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Building2, Layers, RefreshCw } from 'lucide-react';
+import { parseInstituteAttendanceSheet } from '../../lib/instituteAttendanceParser';
 
 type SubjectEnrollment = {
   id: string;
@@ -291,6 +292,164 @@ export default function FacultyDashboard() {
     e.target.value = '';
   };
 
+  // ─── Institute Excel template upload (.xlsx / .xls) ─────────────────────────
+  // Handles the monthly attendance report exported from the college software.
+  // Extracts: USN (→ roll_number), Total classes, Present classes, Subject code.
+  // Everything else in the sheet (P/A date columns, %, header metadata) is ignored.
+  const handleInstituteExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvUploadMsg('⏳ Reading Excel file…');
+
+    try {
+      // Dynamically import SheetJS so it stays out of the main bundle
+      const XLSX = await import('xlsx');
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      // header:1 → 2-D array; defval:'' → empty cells become '' not undefined
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(firstSheet, {
+        header: 1,
+        defval: '',
+        raw: true,   // keep numeric values as JS numbers (not formatted strings)
+      });
+
+      const parsed = parseInstituteAttendanceSheet(rows);
+
+      // ── Fatal structural errors ──────────────────────────────────────────
+      if (parsed.fatalErrors.length > 0) {
+        setCsvUploadMsg(`❌ ${parsed.fatalErrors[0]}`);
+        e.target.value = '';
+        return;
+      }
+
+      if (parsed.rows.length === 0) {
+        setCsvUploadMsg('❌ No student data found in the file.');
+        e.target.value = '';
+        return;
+      }
+
+      // ── Optional: warn if file subject doesn't match selected subject ───
+      if (parsed.subjectCode && selectedSubject) {
+        const selectedCode = selectedSubject.split(' — ')[0].toUpperCase().trim();
+        if (parsed.subjectCode.toUpperCase() !== selectedCode) {
+          setCsvUploadMsg(
+            `⚠️ File subject code (${parsed.subjectCode}) doesn't match selected subject (${selectedCode}). Processing anyway…`,
+          );
+        }
+      }
+
+      // ── Fetch fresh IA data ──────────────────────────────────────────────
+      const subjectIds = [...new Set(students.map(s => s.subject_id).filter(Boolean))];
+      const freshIAs = await getTeacherIAAttendance(user!.id, subjectIds) || [];
+
+      // ── Build enrollment lookup: USN (lower) + subject_code (lower) → enrollment
+      const enrollmentMap = new Map<string, SubjectEnrollment>();
+      students.forEach(s => {
+        const key = `${(s.profiles?.roll_number || '').toLowerCase().trim()}_${s.subjects.subject_code.toLowerCase().trim()}`;
+        enrollmentMap.set(key, s);
+      });
+
+      // ── Match parsed rows to enrollments ────────────────────────────────
+      const tasks: { enrollment: SubjectEnrollment; status: string; pct: number; remarks: string }[] = [];
+      let unmatched = 0;
+
+      for (const pr of parsed.rows) {
+        const usnKey = pr.usn.toLowerCase().trim();
+
+        // Try: USN + file subject code (most precise)
+        let enrollment = parsed.subjectCode
+          ? enrollmentMap.get(`${usnKey}_${parsed.subjectCode.toLowerCase()}`)
+          : undefined;
+
+        // Fallback: USN + selected subject code
+        if (!enrollment && selectedSubject) {
+          const selCode = selectedSubject.split(' — ')[0].toLowerCase().trim();
+          enrollment = enrollmentMap.get(`${usnKey}_${selCode}`);
+        }
+
+        // Fallback: USN alone (first match across any subject)
+        if (!enrollment) {
+          enrollment = filtered.find(
+            s => (s.profiles?.roll_number || '').toLowerCase().trim() === usnKey,
+          );
+        }
+
+        if (!enrollment) { unmatched++; continue; }
+
+        const pct = pr.attendancePct;
+
+        // Determine clearance status (same logic as CSV upload)
+        const subjectIAs = freshIAs.filter((ia: any) => ia.subject_id === enrollment!.subject_id);
+        const iaPresentCount = subjectIAs.filter(
+          (ia: any) => ia.student_id === enrollment!.student_id && ia.is_present,
+        ).length;
+
+        const attendanceOk = pct >= 85;
+        const iaOk = iaPresentCount >= 2;
+
+        let status: string;
+        let remarks: string;
+
+        if (attendanceOk && iaOk) {
+          status = 'completed';
+          remarks = '';
+        } else if (!attendanceOk && !iaOk) {
+          status = 'rejected';
+          remarks = `Low Attendance (<85%) & Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+        } else if (!attendanceOk) {
+          status = 'rejected';
+          remarks = `Low Attendance (<85%)`;
+        } else {
+          status = 'rejected';
+          remarks = `Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+        }
+
+        tasks.push({ enrollment, status, pct, remarks });
+      }
+
+      // ── Batch DB updates ────────────────────────────────────────────────
+      const BATCH_SIZE = 20;
+      let updated = 0;
+      let dbErrors = 0;
+      for (let b = 0; b < tasks.length; b += BATCH_SIZE) {
+        const batch = tasks.slice(b, b + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map(t => markFacultySubjectStatus(t.enrollment.id, t.status, t.pct, t.remarks)),
+        );
+        updated += results.filter(r => r.status === 'fulfilled').length;
+        dbErrors += results.filter(r => r.status === 'rejected').length;
+      }
+
+      const rowErrSummary = parsed.rowErrors.length > 0
+        ? ` ${parsed.rowErrors.length} row issue(s).`
+        : '';
+      const unmatchedSummary = unmatched > 0 ? ` ${unmatched} USN(s) not matched.` : '';
+      const dbErrSummary = dbErrors > 0 ? ` ${dbErrors} DB error(s).` : '';
+
+      setCsvUploadMsg(
+        `✅ Updated ${updated} students.${rowErrSummary}${unmatchedSummary}${dbErrSummary}`,
+      );
+      await fetchData();
+    } catch (err: any) {
+      setCsvUploadMsg(`❌ Error reading Excel: ${err.message}`);
+    }
+
+    e.target.value = '';
+  };
+
+  // Unified handler — routes to Excel or CSV parser based on file extension
+  const handleAttendanceFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+      handleInstituteExcelUpload(e);
+    } else {
+      handleAttendanceCSVUpload(e);
+    }
+  };
+
   const downloadCSV = (content: string, filename: string) => {
     const blob = new Blob([content], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -535,13 +694,27 @@ export default function FacultyDashboard() {
                   <button
                     onClick={() => clearanceCsvRef.current?.click()}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors border border-primary/30"
+                    title="Upload the institute's Excel attendance sheet (.xlsx) or a CSV file"
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    Upload CSV
+                    Upload Attendance
                   </button>
-                  <input ref={clearanceCsvRef} type="file" accept=".csv" className="hidden" onChange={handleAttendanceCSVUpload} />
+                  {/* Accepts both institute Excel (.xlsx/.xls) and plain CSV */}
+                  <input
+                    ref={clearanceCsvRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={handleAttendanceFileUpload}
+                  />
                   {csvUploadMsg && (
-                    <span className={`text-xs font-medium ${csvUploadMsg.startsWith('Error') ? 'text-destructive' : 'text-emerald-600'}`}>
+                    <span className={`text-xs font-medium ${
+                      csvUploadMsg.startsWith('Error') || csvUploadMsg.startsWith('❌')
+                        ? 'text-destructive'
+                        : csvUploadMsg.startsWith('⚠️')
+                          ? 'text-amber-600'
+                          : 'text-emerald-600'
+                    }`}>
                       {csvUploadMsg}
                     </span>
                   )}
