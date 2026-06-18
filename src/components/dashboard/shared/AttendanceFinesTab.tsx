@@ -95,37 +95,46 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           setCategories([]);
         }
       } else if (isFycGlobal) {
-        // FYC: fetch all first-year categories
+        // FYC: use same canonical source as admin (is_first_year=false, dept[0])
+        // Avoids showing stale is_first_year=true records that were never cleaned up
         if (allDepartments.length > 0) {
           const { data, error } = await supabase
             .from('attendance_fine_categories')
             .select('*')
             .eq('department_id', allDepartments[0].id)
-            .eq('is_first_year', true)
-            .order('min_pct');
+            .eq('is_first_year', false)
+            .order('id', { ascending: false }); // newest first → stale dupes skipped
           if (error) throw error;
-          setCategories(data || []);
+          // Deduplicate by range — keeps newest record for each min/max pair
+          const seen = new Set<string>();
+          const unique = (data || []).filter(c => {
+            const key = `${c.min_pct}|${c.max_pct}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          setCategories(unique.sort((a, b) => a.min_pct - b.min_pct));
         } else {
           setCategories([]);
         }
       } else if (departmentId) {
-        // HOD: fetch non-first-year categories for their department
+        // HOD: fetch non-first-year categories; deduplicate by range (newest wins)
         const { data, error } = await supabase
           .from('attendance_fine_categories')
           .select('*')
           .eq('department_id', departmentId)
           .eq('is_first_year', false)
-          .order('min_pct');
+          .order('id', { ascending: false }); // newest first
         if (error) throw error;
-        // Deduplicate by label+min+max+amount in case of duplicate DB rows
+        // Deduplicate by range — prevents stale renamed categories from appearing
         const seen = new Set<string>();
         const unique = (data || []).filter(c => {
-          const key = `${c.label}|${c.min_pct}|${c.max_pct}|${c.fine_amount}`;
+          const key = `${c.min_pct}|${c.max_pct}`;
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
         });
-        setCategories(unique);
+        setCategories(unique.sort((a, b) => a.min_pct - b.min_pct));
       }
     } catch (err) { console.error(err); }
     finally { setLoadingCategories(false); }
@@ -358,25 +367,32 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
         return true; // admin sees all
       });
 
-      // 4. Group by department
-      const deptMap: Record<string, { name: string, cashPaid: number, cashCount: number, onlinePaid: number, onlineCount: number, pendingAmount: number, pendingCount: number }> = {};
+      // 4. Group by department (+ semester breakdown per dept)
+      type SemRow = { semName: string; cashPaid: number; cashCount: number; onlinePaid: number; onlineCount: number; pendingAmount: number; pendingCount: number };
+      const deptMap: Record<string, { name: string; cashPaid: number; cashCount: number; onlinePaid: number; onlineCount: number; pendingAmount: number; pendingCount: number; semBreakdown: Record<string, SemRow> }> = {};
       for (const item of filtered) {
         const deptName = item.profiles?.departments?.name || 'Unassigned';
         const deptId = item.profiles?.department_id || 'unknown';
-        if (!deptMap[deptId]) deptMap[deptId] = { name: deptName, cashPaid: 0, cashCount: 0, onlinePaid: 0, onlineCount: 0, pendingAmount: 0, pendingCount: 0 };
+        if (!deptMap[deptId]) deptMap[deptId] = { name: deptName, cashPaid: 0, cashCount: 0, onlinePaid: 0, onlineCount: 0, pendingAmount: 0, pendingCount: 0, semBreakdown: {} };
 
         const fee = item.attendance_fee || 0;
+        const semName = item.profiles?.semesters?.name || 'Unknown';
+        const semId = item.profiles?.semester_id || 'unknown';
+        if (!deptMap[deptId].semBreakdown[semId]) {
+          deptMap[deptId].semBreakdown[semId] = { semName, cashPaid: 0, cashCount: 0, onlinePaid: 0, onlineCount: 0, pendingAmount: 0, pendingCount: 0 };
+        }
+
         if (item.attendance_fee_verified) {
           if (onlinePaidIds.has(item.id)) {
-            deptMap[deptId].onlinePaid += fee;
-            deptMap[deptId].onlineCount++;
+            deptMap[deptId].onlinePaid += fee; deptMap[deptId].onlineCount++;
+            deptMap[deptId].semBreakdown[semId].onlinePaid += fee; deptMap[deptId].semBreakdown[semId].onlineCount++;
           } else {
-            deptMap[deptId].cashPaid += fee;
-            deptMap[deptId].cashCount++;
+            deptMap[deptId].cashPaid += fee; deptMap[deptId].cashCount++;
+            deptMap[deptId].semBreakdown[semId].cashPaid += fee; deptMap[deptId].semBreakdown[semId].cashCount++;
           }
         } else {
-          deptMap[deptId].pendingAmount += fee;
-          deptMap[deptId].pendingCount++;
+          deptMap[deptId].pendingAmount += fee; deptMap[deptId].pendingCount++;
+          deptMap[deptId].semBreakdown[semId].pendingAmount += fee; deptMap[deptId].semBreakdown[semId].pendingCount++;
         }
       }
 
@@ -509,22 +525,57 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
                     <span className="font-bold text-foreground">₹{(dept.cashPaid + dept.onlinePaid).toLocaleString()}</span>
                   </button>
                   {expandedDepts.has(dept.deptId) && (
-                    <div className="px-4 pb-4 pt-0 grid grid-cols-1 md:grid-cols-3 gap-3 border-t border-border bg-secondary/10">
-                      <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
-                        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Wallet className="w-3 h-3" /> Cash Collected</div>
-                        <div className="text-lg font-bold text-emerald-600">₹{dept.cashPaid.toLocaleString()}</div>
-                        <div className="text-xs text-muted-foreground">{dept.cashCount} student(s)</div>
+                    <div className="border-t border-border bg-secondary/10">
+                      {/* Summary tiles */}
+                      <div className="px-4 pt-4 pb-2 grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                          <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Wallet className="w-3 h-3" /> Cash Collected</div>
+                          <div className="text-lg font-bold text-emerald-600">₹{dept.cashPaid.toLocaleString()}</div>
+                          <div className="text-xs text-muted-foreground">{dept.cashCount} student(s)</div>
+                        </div>
+                        <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/10">
+                          <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Globe className="w-3 h-3" /> Online Payment</div>
+                          <div className="text-lg font-bold text-blue-600">₹{dept.onlinePaid.toLocaleString()}</div>
+                          <div className="text-xs text-muted-foreground">{dept.onlineCount} student(s)</div>
+                        </div>
+                        <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
+                          <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Banknote className="w-3 h-3" /> Pending</div>
+                          <div className="text-lg font-bold text-amber-600">₹{dept.pendingAmount.toLocaleString()}</div>
+                          <div className="text-xs text-muted-foreground">{dept.pendingCount} student(s)</div>
+                        </div>
                       </div>
-                      <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/10">
-                        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Globe className="w-3 h-3" /> Online Payment</div>
-                        <div className="text-lg font-bold text-blue-600">₹{dept.onlinePaid.toLocaleString()}</div>
-                        <div className="text-xs text-muted-foreground">{dept.onlineCount} student(s)</div>
-                      </div>
-                      <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
-                        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Banknote className="w-3 h-3" /> Pending</div>
-                        <div className="text-lg font-bold text-amber-600">₹{dept.pendingAmount.toLocaleString()}</div>
-                        <div className="text-xs text-muted-foreground">{dept.pendingCount} student(s)</div>
-                      </div>
+                      {/* Semester-wise breakdown (admin only) */}
+                      {isAdminGlobal && dept.semBreakdown && Object.keys(dept.semBreakdown).length > 0 && (
+                        <div className="px-4 pb-4">
+                          <div className="text-xs font-semibold text-muted-foreground mb-2 mt-1 uppercase tracking-wide">Semester-wise Breakdown</div>
+                          <div className="overflow-x-auto rounded-xl border border-border">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-secondary/60 text-foreground border-b border-border">
+                                  <th className="px-3 py-2 font-semibold">Semester</th>
+                                  <th className="px-3 py-2 font-semibold text-emerald-600">Cash (₹)</th>
+                                  <th className="px-3 py-2 font-semibold text-blue-600">Online (₹)</th>
+                                  <th className="px-3 py-2 font-semibold text-amber-600">Pending (₹)</th>
+                                  <th className="px-3 py-2 font-semibold text-right">Collected (₹)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border">
+                                {Object.values(dept.semBreakdown)
+                                  .sort((a: any, b: any) => a.semName.localeCompare(b.semName, undefined, { numeric: true }))
+                                  .map((sem: any, si: number) => (
+                                    <tr key={si} className="hover:bg-secondary/20">
+                                      <td className="px-3 py-2 font-medium">{sem.semName}</td>
+                                      <td className="px-3 py-2 text-emerald-600 font-bold">₹{sem.cashPaid.toLocaleString()} <span className="text-muted-foreground font-normal">({sem.cashCount})</span></td>
+                                      <td className="px-3 py-2 text-blue-600 font-bold">₹{sem.onlinePaid.toLocaleString()} <span className="text-muted-foreground font-normal">({sem.onlineCount})</span></td>
+                                      <td className="px-3 py-2 text-amber-600 font-bold">₹{sem.pendingAmount.toLocaleString()} <span className="text-muted-foreground font-normal">({sem.pendingCount})</span></td>
+                                      <td className="px-3 py-2 text-right font-bold">₹{(sem.cashPaid + sem.onlinePaid).toLocaleString()}</td>
+                                    </tr>
+                                  ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
