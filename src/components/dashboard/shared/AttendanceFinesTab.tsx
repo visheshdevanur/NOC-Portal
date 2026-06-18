@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Pencil, Plus, Trash2, Search, X, CheckCircle2, ChevronDown, ChevronRight, Building2, Banknote, Globe, Wallet, Download, Snowflake } from 'lucide-react';
+import { Pencil, Plus, Trash2, Search, X, CheckCircle2, ChevronDown, ChevronRight, Building2, Banknote, Globe, Wallet, Download, Snowflake, RefreshCw } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../lib/useAuth';
 import { 
@@ -54,6 +54,9 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   const [attendanceFrozen, setAttendanceFrozen] = useState(false);
   const [freezeLoading, setFreezeLoading] = useState(false);
 
+  // Fine summary manual-refresh state
+  const [refreshing, setRefreshing] = useState(false);
+
   const isFycGlobal = role === 'fyc' && !departmentId;
   const isAdminGlobal = role === 'admin';
   const canManageCategories = role === 'admin';
@@ -94,6 +97,19 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       alert('Failed to update freeze status: ' + err.message);
     } finally {
       setFreezeLoading(false);
+    }
+  };
+
+  /** Manually re-fetch all fines data — useful after faculty updates attendance */
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchAttendanceFines(),
+        showFineSummary ? fetchFineSummary() : Promise.resolve(),
+      ]);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -520,8 +536,19 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
               </h2>
               <p className="text-muted-foreground text-sm mt-1">Attendance fine collection breakdown by department — Cash vs Online Payment.</p>
             </div>
-            {/* Freeze toggle (admin only) + Export CSV */}
+            {/* Refresh + Freeze toggle (admin only) + Export CSV */}
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Refresh button — visible to all roles so they can pull latest data after faculty updates */}
+              <button
+                id="refresh-fine-summary"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-2 px-4 py-2.5 font-medium rounded-xl transition-all shadow-sm text-sm bg-secondary hover:bg-secondary/80 text-foreground border border-border disabled:opacity-50"
+                title="Reload fines data — use this after faculty updates attendance to see the latest amounts"
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </button>
               {isAdminGlobal && (
                 <button
                   id="attendance-freeze-toggle"
