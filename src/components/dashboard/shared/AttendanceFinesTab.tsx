@@ -199,14 +199,24 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
       if (departmentId) {
         allData = await getStaffAttendanceFines(departmentId);
       } else {
-        // FYC/Admin: fetch all fined/rejected enrollments across all departments
-        const { data, error } = await supabase
-          .from('subject_enrollment')
-          .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
-          .or('status.eq.rejected,attendance_fee.gt.0');
-        if (error) throw error;
-        allData = data || [];
+        // FYC/Admin: paginate ALL fined/rejected enrollments across all departments
+        // A single query is capped at server max_rows=1000; must paginate for 15k+ students
+        let from = 0;
+        const PAGE = 1000;
+        while (true) {
+          const { data, error } = await supabase
+            .from('subject_enrollment')
+            .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+            .or('status.eq.rejected,attendance_fee.gt.0')
+            .range(from, from + PAGE - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          allData = allData.concat(data);
+          if (data.length < PAGE) break;
+          from += PAGE;
+        }
       }
+
       const filtered = (allData || []).filter((item: any) => {
         const semName = item.profiles?.semesters?.name || '';
         if (role === 'admin') return true; // Admin sees all semesters

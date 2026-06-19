@@ -212,9 +212,24 @@ export default function AdminDashboard() {
   const fetchAdminLogs = async () => {
     setLogsLoading(true);
     try {
-      const { data, error } = await supabase.from('activity_logs').select('*').in('user_role', ADMIN_VISIBLE_ROLES).order('created_at', { ascending: false }).limit(10000);
-      if (error) throw error;
-      setAdminLogs(data || []);
+      // Paginate through ALL activity logs (no row cap)
+      let allLogs: any[] = [];
+      let from = 0;
+      const PAGE = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('activity_logs')
+          .select('*')
+          .in('user_role', ADMIN_VISIBLE_ROLES)
+          .order('created_at', { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allLogs = allLogs.concat(data);
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+      setAdminLogs(allLogs);
     } catch (err: any) { console.error('Failed to fetch logs:', err); }
     finally { setLogsLoading(false); }
   };
@@ -636,12 +651,23 @@ export default function AdminDashboard() {
   const fetchAllUsers = async () => {
     setAllUsersLoading(true);
     try {
-      // Supabase max_rows is 1000 — split queries and paginate students
+      // Paginate ALL non-student users — previously .limit(10000) was capped at server max_rows=1000
       const selectFields = '*, departments!profiles_department_id_fkey(name), semesters!profiles_semester_id_fkey(name)';
-      // 1. Fetch all non-student users (< 200, fits in one query)
-      const staffRes = await supabase.from('profiles').select(selectFields).neq('role', 'student').order('created_at', { ascending: false }).limit(10000);
-      if (staffRes.error) throw staffRes.error;
-      // 2. Paginate students in batches of 1000 (Supabase server max)
+      let allStaff: any[] = [];
+      let staffOffset = 0;
+      while (true) {
+        const staffBatch = await supabase
+          .from('profiles')
+          .select(selectFields)
+          .neq('role', 'student')
+          .order('created_at', { ascending: false })
+          .range(staffOffset, staffOffset + 999);
+        if (staffBatch.error) throw staffBatch.error;
+        allStaff = [...allStaff, ...(staffBatch.data || [])];
+        if (!staffBatch.data || staffBatch.data.length < 1000) break;
+        staffOffset += 1000;
+      }
+      // Paginate students in batches of 1000 (Supabase server max_rows)
       let allStudents: any[] = [];
       let offset = 0;
       while (true) {
@@ -651,7 +677,7 @@ export default function AdminDashboard() {
         if (!batch.data || batch.data.length < 1000) break;
         offset += 1000;
       }
-      const combined = [...(staffRes.data || []), ...allStudents];
+      const combined = [...allStaff, ...allStudents];
       setAllUsers(combined as UserProfile[]);
 
       // Fetch imported teachers mapping to know who created them
