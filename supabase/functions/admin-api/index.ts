@@ -4,12 +4,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
 
 import { getCorsHeaders, validateOrigin, log, checkRateLimit, sanitize, isValidUUID } from '../_shared/utils.ts'
 
-const corsHeaders = getCorsHeaders()
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
+// Per-request jsonResponse — CORS headers reflect the request origin dynamically
+function makeJsonRes(requestOrigin: string) {
+  return (body: unknown, status = 200) => new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...getCorsHeaders(requestOrigin), 'Content-Type': 'application/json' },
   })
 }
 
@@ -62,8 +61,11 @@ async function validateSuperAdmin(req: Request) {
 }
 
 serve(async (req) => {
+  const requestOrigin = req.headers.get('Origin') || ''
+  const jsonResponse = makeJsonRes(requestOrigin)
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: getCorsHeaders(req.headers.get('Origin') || '') })
+    return new Response('ok', { headers: getCorsHeaders(requestOrigin) })
   }
 
   // Reject cross-origin requests in production

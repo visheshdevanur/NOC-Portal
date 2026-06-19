@@ -35,30 +35,6 @@ export function log(entry: LogEntry) {
   }
 }
 
-// ─── CORS Helper ───
-
-export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
-  const allowedEnv = Deno.env.get('ALLOWED_ORIGIN') || '*'
-
-  let resolvedOrigin: string
-  if (allowedEnv === '*') {
-    resolvedOrigin = '*'
-  } else {
-    const allowedList = allowedEnv.split(',').map((o: string) => o.trim())
-    if (requestOrigin && allowedList.includes(requestOrigin)) {
-      resolvedOrigin = requestOrigin  // exact match — reflect it back
-    } else {
-      resolvedOrigin = allowedList[0] // fallback to first configured origin
-    }
-  }
-
-  return {
-    'Access-Control-Allow-Origin': resolvedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    ...(resolvedOrigin !== '*' ? { 'Vary': 'Origin' } : {}),
-  }
-}
-
 // ─── Request Timer ───
 
 export function startTimer(): () => number {
@@ -67,9 +43,6 @@ export function startTimer(): () => number {
 }
 
 // ─── In-Memory Rate Limiter ───
-// Simple sliding window rate limiter for Edge Functions.
-// Note: Each Edge Function instance has its own memory, so this limits
-// per-instance, not globally. For global rate limiting, use Redis or DB.
 
 interface RateLimitEntry {
   count: number
@@ -87,7 +60,6 @@ export function checkRateLimit(
   const entry = rateLimitStore.get(key)
 
   if (!entry || now - entry.windowStart > windowMs) {
-    // New window
     rateLimitStore.set(key, { count: 1, windowStart: now })
     return { allowed: true, remaining: maxRequests - 1, resetMs: windowMs }
   }
@@ -106,55 +78,78 @@ export function checkRateLimit(
 }
 
 // ─── CORS Helper ───
+//
+// ALLOWED_ORIGIN env var controls which origins are permitted.
+// Supports comma-separated values for multiple domains:
+//   ALLOWED_ORIGIN=https://noc-portal-self.vercel.app,https://mitmysore.in
+// If unset or '*', all origins are allowed (dev mode).
+// The request origin is reflected back when matched — required by CORS spec.
 
-/**
- * Returns CORS headers. In production, ALLOWED_ORIGIN must be set
- * in Supabase Dashboard → Edge Function Secrets.
- * If not set, defaults to '*' for local development only.
- */
-export function getCorsHeaders(): Record<string, string> {
-  const origin = Deno.env.get('ALLOWED_ORIGIN') || '*'
+export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
+  const allowedEnv = Deno.env.get('ALLOWED_ORIGIN') || '*'
+
+  let resolvedOrigin: string
+  if (allowedEnv === '*') {
+    resolvedOrigin = '*'
+  } else {
+    const allowedList = allowedEnv.split(',').map((o: string) => o.trim())
+    if (requestOrigin && allowedList.includes(requestOrigin)) {
+      resolvedOrigin = requestOrigin  // exact match — reflect back (required by spec)
+    } else {
+      resolvedOrigin = allowedList[0] // fallback to primary origin
+    }
+  }
+
   return {
-    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Origin': resolvedOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    ...(resolvedOrigin !== '*' ? { 'Vary': 'Origin' } : {}),
   }
 }
 
 /**
- * Validates the request Origin header against ALLOWED_ORIGIN.
- * Returns a 403 Response if the origin is not allowed, or null if OK.
- * 
- * Webhooks (no Origin header) and local dev (ALLOWED_ORIGIN not set) are allowed through.
- * 
- * IMPORTANT: Set ALLOWED_ORIGIN in Supabase Dashboard → Settings → Edge Functions → Secrets
- * Example: ALLOWED_ORIGIN=https://your-domain.vercel.app
+ * Validates the request Origin against the ALLOWED_ORIGIN list.
+ * Returns a 403 Response (WITH CORS headers) if not allowed, or null if OK.
+ * Webhooks (no Origin header) and unset ALLOWED_ORIGIN are always allowed.
  */
 export function validateOrigin(req: Request): Response | null {
-  const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN')
+  const allowedEnv = Deno.env.get('ALLOWED_ORIGIN')
 
-  // If ALLOWED_ORIGIN is not configured, allow all (dev mode)
-  if (!allowedOrigin) return null
+  // Not configured or wildcard — allow all (dev mode or open access)
+  if (!allowedEnv || allowedEnv === '*') return null
 
   const requestOrigin = req.headers.get('Origin')
 
-  // Webhooks and server-to-server calls don't have Origin headers — allow them
+  // Webhooks and server-to-server calls have no Origin — allow them
   if (!requestOrigin) return null
 
-  // Check if origin matches
-  if (requestOrigin !== allowedOrigin) {
-    return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
+  const allowedList = allowedEnv.split(',').map((o: string) => o.trim())
 
-  return null
+  if (allowedList.includes(requestOrigin)) return null  // origin is in the allowed list
+
+  // Origin not allowed — return 403 WITH CORS headers so browser can read the error
+  return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
+    status: 403,
+    headers: {
+      ...getCorsHeaders(requestOrigin),
+      'Content-Type': 'application/json',
+    },
+  })
 }
 
-export function jsonResponse(body: unknown, status = 200, extraHeaders?: Record<string, string>, requestOrigin?: string) {
+export function jsonResponse(
+  body: unknown,
+  status = 200,
+  extraHeaders?: Record<string, string>,
+  requestOrigin?: string
+) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...getCorsHeaders(requestOrigin), 'Content-Type': 'application/json', ...extraHeaders },
+    headers: {
+      ...getCorsHeaders(requestOrigin),
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    },
   })
 }
 
