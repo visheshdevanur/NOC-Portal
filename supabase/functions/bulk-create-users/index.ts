@@ -15,7 +15,7 @@ const ROLE_HIERARCHY: Record<string, string[]> = {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: getCorsHeaders(req.headers.get('Origin') || '') })
   }
 
   const originError = validateOrigin(req)

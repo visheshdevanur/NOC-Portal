@@ -23,7 +23,6 @@ export function log(entry: LogEntry) {
     ts: new Date().toISOString(),
     ...entry,
   }
-
   switch (entry.level) {
     case 'ERROR':
       console.error(JSON.stringify(payload))
@@ -33,6 +32,30 @@ export function log(entry: LogEntry) {
       break
     default:
       console.log(JSON.stringify(payload))
+  }
+}
+
+// ─── CORS Helper ───
+
+export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
+  const allowedEnv = Deno.env.get('ALLOWED_ORIGIN') || '*'
+
+  let resolvedOrigin: string
+  if (allowedEnv === '*') {
+    resolvedOrigin = '*'
+  } else {
+    const allowedList = allowedEnv.split(',').map((o: string) => o.trim())
+    if (requestOrigin && allowedList.includes(requestOrigin)) {
+      resolvedOrigin = requestOrigin  // exact match — reflect it back
+    } else {
+      resolvedOrigin = allowedList[0] // fallback to first configured origin
+    }
+  }
+
+  return {
+    'Access-Control-Allow-Origin': resolvedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    ...(resolvedOrigin !== '*' ? { 'Vary': 'Origin' } : {}),
   }
 }
 
@@ -128,10 +151,10 @@ export function validateOrigin(req: Request): Response | null {
   return null
 }
 
-export function jsonResponse(body: unknown, status = 200, extraHeaders?: Record<string, string>) {
+export function jsonResponse(body: unknown, status = 200, extraHeaders?: Record<string, string>, requestOrigin?: string) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...getCorsHeaders(), 'Content-Type': 'application/json', ...extraHeaders },
+    headers: { ...getCorsHeaders(requestOrigin), 'Content-Type': 'application/json', ...extraHeaders },
   })
 }
 

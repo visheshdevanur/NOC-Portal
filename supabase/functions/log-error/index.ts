@@ -40,7 +40,7 @@ type Severity = typeof VALID_SEVERITIES[number]
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: getCorsHeaders(req.headers.get('Origin') || '') })
   }
 
   // Reject cross-origin requests in production

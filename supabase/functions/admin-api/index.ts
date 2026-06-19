@@ -63,7 +63,7 @@ async function validateSuperAdmin(req: Request) {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: getCorsHeaders(req.headers.get('Origin') || '') })
   }
 
   // Reject cross-origin requests in production

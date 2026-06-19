@@ -47,7 +47,7 @@ function generateOrderToken(): string {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: getCorsHeaders(req.headers.get('Origin') || '') })
   }
 
   try {
