@@ -87,8 +87,8 @@ serve(async (req) => {
     // Note: order_token IDOR protection is available but relaxed for reliability.
     // The order_id itself is a cryptographic random string only known to the student.
 
-    // Already processed — return immediately
-    if (orderRecord.status === 'paid') {
+    // Already processed — return immediately UNLESS force_refetch is requested
+    if (orderRecord.status === 'paid' && !body.force_refetch) {
       return jsonResponse({
         status: 'CHARGED',
         order_id,
@@ -117,10 +117,10 @@ serve(async (req) => {
 
     let { res: statusRes, data: statusData } = await checkHdfcStatus()
 
-    // Log full HDFC response for debugging
+    // Log full HDFC response for debugging (no truncation)
     log({ level: 'INFO', fn: 'hdfc-order-status', action: 'hdfc_response', meta: {
       httpStatus: statusRes.status,
-      fullBody: JSON.stringify(statusData).substring(0, 500),
+      fullBody: JSON.stringify(statusData),
     }})
 
     if (!statusRes.ok) {
@@ -188,9 +188,34 @@ serve(async (req) => {
       await adminClient.from('payment_orders').update({ status: 'failed' }).eq('id', orderRecord.id)
     }
 
-    // Return normalized status + raw HDFC status for debugging
+    // Store full raw HDFC response in payment_orders.metadata for audit/debugging
+    // This allows admin to query the exact response HDFC returned
+    try {
+      const existingMeta = orderRecord.metadata || {}
+      await adminClient
+        .from('payment_orders')
+        .update({
+          metadata: {
+            ...existingMeta,
+            hdfc_raw_response: statusData,
+            hdfc_status_checked_at: new Date().toISOString(),
+          }
+        })
+        .eq('id', orderRecord.id)
+    } catch (metaErr) {
+      log({ level: 'WARN', fn: 'hdfc-order-status', action: 'meta_store_failed', error: String(metaErr) })
+    }
+
+    // Return normalized status + raw HDFC response for debugging and receipt
     const normalizedStatus = isSuccess ? 'CHARGED' : txnStatus
-    return jsonResponse({ status: normalizedStatus, order_id, amount: amountPaid, payment_id: paymentId, hdfc_raw_status: txnStatus })
+    return jsonResponse({
+      status: normalizedStatus,
+      order_id,
+      amount: amountPaid,
+      payment_id: paymentId,
+      hdfc_raw_status: txnStatus,
+      hdfc_raw_response: statusData,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
     log({ level: 'ERROR', fn: 'hdfc-order-status', action: 'failed', error: message })
