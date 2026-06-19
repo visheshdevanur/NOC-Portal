@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
-import { logActivity } from './shared';
+import { logActivity, isFirstYearSem } from './shared';
+
 
 // =======================
 // HOD SPECIFIC
@@ -169,13 +170,24 @@ export const getHodTeacherAssignments = async (departmentId: string) => {
   const teacherIds = teachers.map(t => t.id);
   if (teacherIds.length === 0) return [];
 
-  // Paginated fetch to avoid Supabase 1000-row default limit
+  // ── Allowed semester IDs: HOD's own department + any first-year semester ──
+  const { data: allSemesters } = await supabase
+    .from('semesters')
+    .select('id, name, department_id');
+
+  const allowedSemIds = new Set(
+    (allSemesters || [])
+      .filter((s: any) => s.department_id === departmentId || isFirstYearSem(s.name))
+      .map((s: any) => s.id)
+  );
+
+  // ── Paginated enrollment fetch (includes attendance_pct for count) ──
   let allEnrollments: any[] = [];
   let from = 0;
   while (true) {
     const { data: batch, error: eErr } = await supabase
       .from('subject_enrollment')
-      .select('teacher_id, subject_id, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
+      .select('teacher_id, subject_id, attendance_pct, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
       .in('teacher_id', teacherIds)
       .range(from, from + 999);
     if (eErr) throw eErr;
@@ -185,9 +197,23 @@ export const getHodTeacherAssignments = async (departmentId: string) => {
     from += 1000;
   }
 
-  const assignmentMap: Record<string, { subjects: Record<string, { subject_name: string; subject_code: string; semester: string; sections: Set<string> }> }> = {};
+  // ── Filter: only enrollments where student's semester belongs to HOD's scope ──
+  const scopedEnrollments = allEnrollments.filter((e: any) => {
+    const studentSemId = e.profiles?.semester_id;
+    return studentSemId && allowedSemIds.has(studentSemId);
+  });
 
-  for (const enrollment of allEnrollments) {
+  type SubjectEntry = {
+    subject_name: string;
+    subject_code: string;
+    semester: string;
+    sections: Set<string>;
+    attendanceBySec: Record<string, { total: number; filled: number }>;
+  };
+
+  const assignmentMap: Record<string, { subjects: Record<string, SubjectEntry> }> = {};
+
+  for (const enrollment of scopedEnrollments) {
     const tid = enrollment.teacher_id;
     if (!tid) continue;
     if (!assignmentMap[tid]) assignmentMap[tid] = { subjects: {} };
@@ -195,7 +221,6 @@ export const getHodTeacherAssignments = async (departmentId: string) => {
     const subj = (enrollment as any).subjects;
     const studentProfile = (enrollment as any).profiles;
     const semesterId = subj?.semester_id || studentProfile?.semester_id || '';
-    // Use composite key to differentiate same subject across semesters
     const subjectKey = `${enrollment.subject_id}__${semesterId}`;
     const section = studentProfile?.section || 'Unassigned';
     const semesterName = subj?.semesters?.name || 'N/A';
@@ -205,10 +230,22 @@ export const getHodTeacherAssignments = async (departmentId: string) => {
         subject_name: subj?.subject_name || 'Unknown',
         subject_code: subj?.subject_code || '',
         semester: semesterName,
-        sections: new Set()
+        sections: new Set(),
+        attendanceBySec: {},
       };
     }
-    assignmentMap[tid].subjects[subjectKey].sections.add(section);
+
+    const entry = assignmentMap[tid].subjects[subjectKey];
+    entry.sections.add(section);
+
+    // Attendance count per section
+    if (!entry.attendanceBySec[section]) {
+      entry.attendanceBySec[section] = { total: 0, filled: 0 };
+    }
+    entry.attendanceBySec[section].total++;
+    if (enrollment.attendance_pct !== null && enrollment.attendance_pct !== undefined) {
+      entry.attendanceBySec[section].filled++;
+    }
   }
 
   return teachers.map(teacher => ({
@@ -218,11 +255,14 @@ export const getHodTeacherAssignments = async (departmentId: string) => {
           subject_name: s.subject_name,
           subject_code: s.subject_code,
           semester: s.semester,
-          sections: Array.from(s.sections)
+          sections: Array.from(s.sections),
+          attendanceBySec: s.attendanceBySec,
         }))
       : []
   }));
 };
+
+
 
 export const getHodStaffActivityLogs = async (departmentId: string) => {
   const { data, error } = await supabase

@@ -10,7 +10,7 @@ import OtherDuesTab from './shared/OtherDuesTab';
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
-  GraduationCap, BookOpen, Eye, Clock, Import, Check, Banknote, FileWarning, Edit
+  GraduationCap, BookOpen, Eye, Clock, Import, Check, Banknote, FileWarning, Edit, BarChart2
 } from 'lucide-react';
 import { logAndFormatError } from '../../lib/errorHandler';
 
@@ -60,6 +60,7 @@ type TeacherWithAssignments = {
     subject_code: string;
     semester: string;
     sections: string[];
+    attendanceBySec: Record<string, { total: number; filled: number }>;
   }[];
 };
 
@@ -119,6 +120,7 @@ export default function FycDashboard() {
   const [loadingTeacherDetails, setLoadingTeacherDetails] = useState(false);
   const [searchTeachers, setSearchTeachers] = useState('');
   const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set());
+  const [expandedAttendance, setExpandedAttendance] = useState<Set<string>>(new Set());
 
   // Activity Logs state
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
@@ -316,13 +318,19 @@ export default function FycDashboard() {
         return;
       }
 
+      // ── FY-only semester IDs (filter by student's semester, not subject's) ──
+      const { data: allSems } = await supabase.from('semesters').select('id, name');
+      const fySemIds = new Set(
+        (allSems || []).filter((s: any) => isFirstYearSem(s.name)).map((s: any) => s.id)
+      );
+
       // Paginate enrollment query to avoid 1000-row limit
       let allEnrollments: any[] = [];
       let offset = 0;
       while (true) {
         const { data: batch, error: eErr } = await supabase
           .from('subject_enrollment')
-          .select('teacher_id, subject_id, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
+          .select('teacher_id, subject_id, attendance_pct, subjects(subject_name, subject_code, semester_id, semesters(name)), profiles!subject_enrollment_student_id_fkey(section, semester_id)')
           .in('teacher_id', teacherIds)
           .range(offset, offset + 999);
         if (eErr) throw eErr;
@@ -331,9 +339,17 @@ export default function FycDashboard() {
         offset += 1000;
       }
 
-      const filteredEnrollments = allEnrollments.filter((e: any) => isFirstYearSem(e.subjects?.semesters?.name || ''));
+      // Filter: only rows where the STUDENT's semester is a first-year semester
+      const filteredEnrollments = allEnrollments.filter((e: any) => {
+        const studentSemId = e.profiles?.semester_id;
+        return studentSemId && fySemIds.has(studentSemId);
+      });
 
-      const assignmentMap: Record<string, { subjects: Record<string, { subject_name: string; subject_code: string; semester: string; sections: Set<string> }> }> = {};
+      const assignmentMap: Record<string, { subjects: Record<string, {
+        subject_name: string; subject_code: string; semester: string;
+        sections: Set<string>;
+        attendanceBySec: Record<string, { total: number; filled: number }>;
+      }> }> = {};
 
       for (const enrollment of filteredEnrollments) {
         const tid = enrollment.teacher_id;
@@ -342,7 +358,6 @@ export default function FycDashboard() {
 
         const subj = (enrollment as any).subjects;
         const studentProfile = (enrollment as any).profiles;
-        // Use composite key: subject_id + semester_id to handle same subject across semesters
         const semesterId = subj?.semester_id || '';
         const subjectKey = `${enrollment.subject_id}__${semesterId}`;
         const section = studentProfile?.section || 'Unassigned';
@@ -353,10 +368,21 @@ export default function FycDashboard() {
             subject_name: subj?.subject_name || 'Unknown',
             subject_code: subj?.subject_code || '',
             semester: semesterName,
-            sections: new Set()
+            sections: new Set(),
+            attendanceBySec: {},
           };
         }
-        assignmentMap[tid].subjects[subjectKey].sections.add(section);
+
+        const entry = assignmentMap[tid].subjects[subjectKey];
+        entry.sections.add(section);
+
+        if (!entry.attendanceBySec[section]) {
+          entry.attendanceBySec[section] = { total: 0, filled: 0 };
+        }
+        entry.attendanceBySec[section].total++;
+        if (enrollment.attendance_pct !== null && enrollment.attendance_pct !== undefined) {
+          entry.attendanceBySec[section].filled++;
+        }
       }
 
       setTeacherAssignments((teachers || []).map(teacher => ({
@@ -366,7 +392,8 @@ export default function FycDashboard() {
               subject_name: s.subject_name,
               subject_code: s.subject_code,
               semester: s.semester,
-              sections: Array.from(s.sections)
+              sections: Array.from(s.sections),
+              attendanceBySec: s.attendanceBySec,
             }))
           : []
       })));
@@ -718,6 +745,14 @@ export default function FycDashboard() {
     if (next.has(teacherId)) next.delete(teacherId);
     else next.add(teacherId);
     setExpandedTeachers(next);
+  };
+
+  const toggleAttendance = (teacherId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = new Set(expandedAttendance);
+    if (next.has(teacherId)) next.delete(teacherId);
+    else next.add(teacherId);
+    setExpandedAttendance(next);
   };
 
   const filteredTeacherDetails = teacherAssignments.filter(t =>
@@ -1679,6 +1714,17 @@ export default function FycDashboard() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => toggleAttendance(teacher.id, e)}
+                          title="Attendance upload status"
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            expandedAttendance.has(teacher.id)
+                              ? 'bg-blue-500/20 text-blue-500'
+                              : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <BarChart2 className="w-4 h-4" />
+                        </button>
                         <Eye className="w-4 h-4 text-muted-foreground" />
                         {isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
                       </div>
@@ -1723,6 +1769,73 @@ export default function FycDashboard() {
                                     </td>
                                   </tr>
                                 ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Attendance Upload Status Panel ── */}
+                    {expandedAttendance.has(teacher.id) && (
+                      <div className="border-t border-blue-500/20 p-5 bg-blue-500/5">
+                        <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 mb-3">
+                          <BarChart2 className="w-4 h-4" />
+                          Attendance Upload Status
+                        </h4>
+                        {teacher.assignments.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">No first-year assignments — nothing to track.</p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-sm">
+                              <thead>
+                                <tr className="bg-blue-500/10 text-foreground border-b border-blue-500/20">
+                                  <th className="p-2.5 font-semibold">Subject</th>
+                                  <th className="p-2.5 font-semibold">Semester</th>
+                                  <th className="p-2.5 font-semibold">Section</th>
+                                  <th className="p-2.5 font-semibold">Upload Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-blue-500/10">
+                                {teacher.assignments.flatMap(a =>
+                                  a.sections.map(sec => {
+                                    const stat = a.attendanceBySec?.[sec] ?? { total: 0, filled: 0 };
+                                    const pct = stat.total > 0 ? Math.round((stat.filled / stat.total) * 100) : 0;
+                                    const isComplete = stat.total > 0 && stat.filled === stat.total;
+                                    const isPartial = stat.filled > 0 && stat.filled < stat.total;
+                                    return (
+                                      <tr key={`${a.subject_code}-${sec}`} className="hover:bg-blue-500/5 transition-colors">
+                                        <td className="p-2.5 font-medium text-foreground">{a.subject_name}</td>
+                                        <td className="p-2.5">
+                                          <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded text-xs font-bold">{a.semester}</span>
+                                        </td>
+                                        <td className="p-2.5">
+                                          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded text-xs font-bold">{sec}</span>
+                                        </td>
+                                        <td className="p-2.5">
+                                          <div className="flex items-center gap-2">
+                                            <div className="flex-1 bg-secondary rounded-full h-1.5 min-w-[60px]">
+                                              <div
+                                                className={`h-1.5 rounded-full transition-all ${
+                                                  isComplete ? 'bg-emerald-500' : isPartial ? 'bg-amber-500' : 'bg-red-400'
+                                                }`}
+                                                style={{ width: `${pct}%` }}
+                                              />
+                                            </div>
+                                            <span className={`text-xs font-bold tabular-nums ${
+                                              isComplete ? 'text-emerald-600 dark:text-emerald-400' :
+                                              isPartial ? 'text-amber-600 dark:text-amber-400' :
+                                              'text-red-500'
+                                            }`}>
+                                              {stat.filled}/{stat.total}
+                                            </span>
+                                            <span className="text-xs text-muted-foreground">uploaded</span>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
                               </tbody>
                             </table>
                           </div>

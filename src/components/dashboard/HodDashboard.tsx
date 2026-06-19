@@ -14,7 +14,7 @@ import OtherDuesTab from './shared/OtherDuesTab';
 import {
   CheckCircle2, UserCog, Search, Users, Activity, X, Import,
   Trash2, UserPlus, Download, User, ChevronDown, ChevronRight, FileCheck,
-  GraduationCap, BookOpen, Eye, Clock, Banknote, FileWarning, Edit
+  GraduationCap, BookOpen, Eye, Clock, Banknote, FileWarning, Edit, BarChart2
 } from 'lucide-react';
 import { logAndFormatError } from '../../lib/errorHandler';
 
@@ -67,6 +67,7 @@ type TeacherWithAssignments = {
     subject_code: string;
     semester: string;
     sections: string[];
+    attendanceBySec: Record<string, { total: number; filled: number }>;
   }[];
 };
 
@@ -112,6 +113,7 @@ export default function HodDashboard() {
   // Teacher Details state
   const [searchTeachers, setSearchTeachers] = useState('');
   const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set());
+  const [expandedAttendance, setExpandedAttendance] = useState<Set<string>>(new Set());
 
   // Activity Logs state
   const [searchLogs, setSearchLogs] = useState('');
@@ -192,6 +194,7 @@ export default function HodDashboard() {
     queryKey: ['hodTeacherDetails', profile?.department_id],
     queryFn: () => import('../../lib/api').then(m => m.getHodTeacherAssignments(profile!.department_id!)),
     enabled: !!profile?.department_id && activeTab === 'teacherDetails',
+    refetchInterval: activeTab === 'teacherDetails' ? 60_000 : false,
   });
   const teacherAssignments = (teacherDetailsData || []) as TeacherWithAssignments[];
 
@@ -455,6 +458,14 @@ export default function HodDashboard() {
     if (next.has(teacherId)) next.delete(teacherId);
     else next.add(teacherId);
     setExpandedTeachers(next);
+  };
+
+  const toggleAttendance = (teacherId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = new Set(expandedAttendance);
+    if (next.has(teacherId)) next.delete(teacherId);
+    else next.add(teacherId);
+    setExpandedAttendance(next);
   };
 
   // Filter teachers by search
@@ -1457,6 +1468,17 @@ export default function HodDashboard() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => toggleAttendance(teacher.id, e)}
+                          title="Attendance upload status"
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            expandedAttendance.has(teacher.id)
+                              ? 'bg-blue-500/20 text-blue-500'
+                              : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <BarChart2 className="w-4 h-4" />
+                        </button>
                         <Eye className="w-4 h-4 text-muted-foreground" />
                         {isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
                       </div>
@@ -1502,6 +1524,73 @@ export default function HodDashboard() {
                                     </td>
                                   </tr>
                                 ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Attendance Upload Status Panel ── */}
+                    {expandedAttendance.has(teacher.id) && (
+                      <div className="border-t border-blue-500/20 p-5 bg-blue-500/5">
+                        <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 mb-3">
+                          <BarChart2 className="w-4 h-4" />
+                          Attendance Upload Status
+                        </h4>
+                        {teacher.assignments.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">No assignments — nothing to track.</p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-sm">
+                              <thead>
+                                <tr className="bg-blue-500/10 text-foreground border-b border-blue-500/20">
+                                  <th className="p-2.5 font-semibold">Subject</th>
+                                  <th className="p-2.5 font-semibold">Semester</th>
+                                  <th className="p-2.5 font-semibold">Section</th>
+                                  <th className="p-2.5 font-semibold">Upload Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-blue-500/10">
+                                {teacher.assignments.flatMap(a =>
+                                  a.sections.map(sec => {
+                                    const stat = a.attendanceBySec?.[sec] ?? { total: 0, filled: 0 };
+                                    const pct = stat.total > 0 ? Math.round((stat.filled / stat.total) * 100) : 0;
+                                    const isComplete = stat.total > 0 && stat.filled === stat.total;
+                                    const isPartial = stat.filled > 0 && stat.filled < stat.total;
+                                    return (
+                                      <tr key={`${a.subject_code}-${sec}`} className="hover:bg-blue-500/5 transition-colors">
+                                        <td className="p-2.5 font-medium text-foreground">{a.subject_name}</td>
+                                        <td className="p-2.5">
+                                          <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded text-xs font-bold">{a.semester}</span>
+                                        </td>
+                                        <td className="p-2.5">
+                                          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded text-xs font-bold">{sec}</span>
+                                        </td>
+                                        <td className="p-2.5">
+                                          <div className="flex items-center gap-2">
+                                            <div className="flex-1 bg-secondary rounded-full h-1.5 min-w-[60px]">
+                                              <div
+                                                className={`h-1.5 rounded-full transition-all ${
+                                                  isComplete ? 'bg-emerald-500' : isPartial ? 'bg-amber-500' : 'bg-red-400'
+                                                }`}
+                                                style={{ width: `${pct}%` }}
+                                              />
+                                            </div>
+                                            <span className={`text-xs font-bold tabular-nums ${
+                                              isComplete ? 'text-emerald-600 dark:text-emerald-400' :
+                                              isPartial ? 'text-amber-600 dark:text-amber-400' :
+                                              'text-red-500'
+                                            }`}>
+                                              {stat.filled}/{stat.total}
+                                            </span>
+                                            <span className="text-xs text-muted-foreground">uploaded</span>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
                               </tbody>
                             </table>
                           </div>
