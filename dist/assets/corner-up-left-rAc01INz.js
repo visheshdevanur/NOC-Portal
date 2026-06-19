@@ -1,0 +1,1 @@
+import{C as e}from"./index-brIG4H-m.js";var t=e(`corner-up-left`,[[`path`,{d:`M20 20v-7a4 4 0 0 0-4-4H4`,key:`1nkjon`}],[`path`,{d:`M9 14 4 9l5-5`,key:`102s5s`}]]);export{t};
