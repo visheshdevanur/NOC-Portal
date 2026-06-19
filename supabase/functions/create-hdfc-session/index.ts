@@ -176,12 +176,43 @@ serve(async (req) => {
     }
 
     // Step 6: Now call HDFC /orders endpoint (DB record already created)
-    // Build return URL: try env vars first, then use the request's Origin header as fallback
-    const requestOrigin = req.headers.get('Origin') || req.headers.get('Referer')?.replace(/\/+$/, '') || ''
-    const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN') || requestOrigin || 'https://mitmysore.in/nodue'
-    const baseReturnUrl = PAYMENT_RETURN_URL || `${allowedOrigin}/payment/callback`
+    // ── Build return URL (priority order) ──────────────────────────────
+    // 1. PAYMENT_RETURN_URL env var (explicit, most reliable — set per environment)
+    // 2. Referer header — includes the full path, so we can extract the SPA base (e.g. /nodue/)
+    // 3. Origin header — just the origin, must guess the SPA path prefix
+    // 4. First value from ALLOWED_ORIGIN env — last resort
+    const requestOrigin = req.headers.get('Origin') || ''
+    const refererFull  = req.headers.get('Referer') || ''
+    const allowedEnv   = Deno.env.get('ALLOWED_ORIGIN') || ''
+    // Never use the raw ALLOWED_ORIGIN string as a URL — it may be comma-separated.
+    const primaryAllowedOrigin = allowedEnv
+      ? allowedEnv.split(',')[0].trim()
+      : 'https://mitmysore.in'
+
+    let baseReturnUrl: string
+    if (PAYMENT_RETURN_URL) {
+      // Explicit env var wins — works for any deployment topology
+      baseReturnUrl = PAYMENT_RETURN_URL
+    } else {
+      try {
+        // Use Referer (full URL including path) to detect SPA sub-path like /nodue/
+        const ref = refererFull || requestOrigin
+        const refUrl = new URL(ref || `https://${primaryAllowedOrigin}`)
+        const segments = refUrl.pathname.split('/').filter(Boolean)
+        // Treat first path segment as SPA base ONLY if it looks like an app prefix
+        // (single short word, not 'dashboard', 'login' etc — specifically 'nodue')
+        const spaBase = segments.length > 0 && /^[a-z]{2,10}$/.test(segments[0]) && segments[0] !== 'payment'
+          ? `/${segments[0]}`
+          : ''
+        baseReturnUrl = `${refUrl.origin}${spaBase}/payment/callback`
+      } catch {
+        baseReturnUrl = `${requestOrigin || primaryAllowedOrigin}/payment/callback`
+      }
+    }
+
     // Include order_id in return URL so callback page works even if localStorage is cleared
     const returnUrl = `${baseReturnUrl}?order_id=${orderId}&order_token=${orderToken}`
+
     const customerIdForHdfc = user.id.replace(/-/g, '').substring(0, 20)
     const authB64 = btoa(`${HDFC_API_KEY}:`)
 
