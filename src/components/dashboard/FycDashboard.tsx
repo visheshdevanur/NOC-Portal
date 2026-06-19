@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
-import { approveHodRequest, getAllDepartments, getFycStaffActivityLogs, isFirstYearSem } from '../../lib/api';
+import { approveHodRequest, getAllDepartments, getFycStaffActivityLogs, isFirstYearSem, getFycPendingRequests } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import StudentDuesOverviewTab from './shared/StudentDuesOverviewTab';
 import AttendanceFinesTab from './shared/AttendanceFinesTab';
@@ -150,13 +150,10 @@ export default function FycDashboard() {
   const fetchRequests = async () => {
     setLoadingReqs(true);
     try {
-      const { data, error } = await supabase
-        .from('clearance_requests')
-        .select('*, profiles!inner(full_name, department_id, semesters(name), departments!profiles_department_id_fkey(name))')
-        .eq('current_stage', 'hod_review');
-      if (error) throw error;
-      const filtered = (data || []).filter((r: any) => isFirstYearSem(r.profiles?.semesters?.name || ''));
-      setRequests(filtered as unknown as ClearanceRequest[]);
+      // Use full prerequisite-gated function — same logic as HOD:
+      // student only appears when faculty + library + accounts ALL cleared
+      const data = await getFycPendingRequests();
+      setRequests((data || []) as unknown as ClearanceRequest[]);
     } catch (err) { console.error(err); }
     finally { setLoadingReqs(false); }
   };

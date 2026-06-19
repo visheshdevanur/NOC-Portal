@@ -104,7 +104,110 @@ export const getHodPendingRequests = async (departmentId: string) => {
   });
 };
 
+/**
+ * FYC Clearances: same prerequisite gates as HOD but scoped to First-Year students only.
+ * A student appears ONLY when faculty + library + accounts are all cleared/permitted.
+ */
+export const getFycPendingRequests = async () => {
+  // 1. Get FY semester IDs first (so we can server-side filter profiles)
+  const { data: allSems } = await supabase.from('semesters').select('id, name');
+  const fySemIds = (allSems || []).filter((s: any) => isFirstYearSem(s.name)).map((s: any) => s.id);
+  if (fySemIds.length === 0) return [];
+
+  // 2. Get all non-cleared clearance requests for first-year students
+  const { data: requests, error } = await supabase
+    .from('clearance_requests')
+    .select('*, profiles!inner(id, full_name, department_id, roll_number, section, semester_id, semesters(name), departments!profiles_department_id_fkey(name))')
+    .in('current_stage', ['faculty_review', 'library_review', 'department_review', 'hod_review', 'rejected'])
+    .neq('status', 'completed')
+    .in('profiles.semester_id', fySemIds);
+  if (error) throw error;
+  if (!requests || requests.length === 0) return [];
+
+  const studentIds = requests.map((r: any) => r.student_id);
+
+  const chunk = <T,>(arr: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+    return chunks;
+  };
+  const CHUNK_SIZE = 80;
+  const idChunks = chunk(studentIds, CHUNK_SIZE);
+
+  // 3. Fetch enrollments (faculty check)
+  const allEnrollments: any[] = [];
+  for (const ids of idChunks) {
+    const { data } = await supabase
+      .from('subject_enrollment')
+      .select('student_id, status, attendance_fee_verified')
+      .in('student_id', ids);
+    if (data) allEnrollments.push(...data);
+  }
+
+  // 4. Fetch library dues
+  const allLibraryDues: any[] = [];
+  for (const ids of idChunks) {
+    const { data } = await supabase
+      .from('library_dues')
+      .select('student_id, has_dues, permitted')
+      .in('student_id', ids);
+    if (data) allLibraryDues.push(...data);
+  }
+
+  // 5. Fetch college/accounts dues
+  const allCollegeDues: any[] = [];
+  for (const ids of idChunks) {
+    const { data } = await supabase
+      .from('student_dues')
+      .select('student_id, status, permitted_until')
+      .in('student_id', ids);
+    if (data) allCollegeDues.push(...data);
+  }
+
+  // 6. Build eligibility maps
+  const enrollmentsByStudent = allEnrollments.reduce((acc: any, e: any) => {
+    if (!acc[e.student_id]) acc[e.student_id] = [];
+    acc[e.student_id].push(e);
+    return acc;
+  }, {} as Record<string, any[]>);
+
+  const libraryByStudent = allLibraryDues.reduce((acc: any, l: any) => {
+    acc[l.student_id] = l;
+    return acc;
+  }, {} as Record<string, any>);
+
+  const duesByStudent = allCollegeDues.reduce((acc: any, d: any) => {
+    if (!acc[d.student_id]) acc[d.student_id] = [];
+    acc[d.student_id].push(d);
+    return acc;
+  }, {} as Record<string, any[]>);
+
+  // 7. Return ONLY students where ALL three pipelines are cleared
+  return requests.filter((req: any) => {
+    const sid = req.student_id;
+
+    // Faculty: every enrollment completed OR attendance_fee_verified
+    const enrs = enrollmentsByStudent[sid] || [];
+    const facultyCleared = enrs.length > 0 && enrs.every(
+      (e: any) => e.status === 'completed' || e.attendance_fee_verified === true
+    );
+
+    // Library: record must exist AND (no dues OR explicitly permitted)
+    const lib = libraryByStudent[sid];
+    const libraryPass = lib ? (!lib.has_dues || lib.permitted) : false;
+
+    // Accounts/College dues: all completed OR within permitted window
+    const dues = duesByStudent[sid] || [];
+    const duesPass = dues.length === 0 || dues.every(
+      (d: any) => d.status === 'completed' || (d.permitted_until && new Date(d.permitted_until) > new Date())
+    );
+
+    return facultyCleared && libraryPass && duesPass;
+  });
+};
+
 export const getHodDepartmentStudents = async (departmentId: string) => {
+
   let all: any[] = [];
   let from = 0;
   while (true) {
