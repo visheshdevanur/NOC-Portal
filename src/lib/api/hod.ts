@@ -36,7 +36,7 @@ export const getHodPendingRequests = async (departmentId: string) => {
   for (const ids of idChunks) {
     const { data } = await supabase
       .from('subject_enrollment')
-      .select('student_id, status, attendance_fee_verified')
+      .select('student_id, status, attendance_fee, attendance_fee_verified')
       .in('student_id', ids);
     if (data) allEnrollments.push(...data);
   }
@@ -83,10 +83,14 @@ export const getHodPendingRequests = async (departmentId: string) => {
   return requests.filter((req: any) => {
     const sid = req.student_id;
 
-    // Faculty clearance: every enrollment is completed OR fee verified
+    // Faculty clearance: MUST match student dashboard logic exactly:
+    //   (status='completed' OR fee_verified) AND (no fee OR fee_verified)
+    // A student with status='completed' but an unpaid attendance fine is NOT cleared.
     const enrs = enrollmentsByStudent[sid] || [];
     const facultyCleared = enrs.length > 0 && enrs.every(
-      (e: any) => e.status === 'completed' || e.attendance_fee_verified === true
+      (e: any) =>
+        (e.status === 'completed' || e.attendance_fee_verified === true) &&
+        ((e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true)
     );
 
     // Library clearance: no dues OR permitted
@@ -139,7 +143,7 @@ export const getFycPendingRequests = async () => {
   for (const ids of idChunks) {
     const { data } = await supabase
       .from('subject_enrollment')
-      .select('student_id, status, attendance_fee_verified')
+      .select('student_id, status, attendance_fee, attendance_fee_verified')
       .in('student_id', ids);
     if (data) allEnrollments.push(...data);
   }
@@ -186,10 +190,14 @@ export const getFycPendingRequests = async () => {
   return requests.filter((req: any) => {
     const sid = req.student_id;
 
-    // Faculty: every enrollment completed OR attendance_fee_verified
+    // Faculty clearance: MUST match student dashboard logic exactly:
+    //   (status='completed' OR fee_verified) AND (no fee OR fee_verified)
+    // A student with status='completed' but an unpaid attendance fine is NOT cleared.
     const enrs = enrollmentsByStudent[sid] || [];
     const facultyCleared = enrs.length > 0 && enrs.every(
-      (e: any) => e.status === 'completed' || e.attendance_fee_verified === true
+      (e: any) =>
+        (e.status === 'completed' || e.attendance_fee_verified === true) &&
+        ((e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true)
     );
 
     // Library: record must exist AND (no dues OR explicitly permitted)
