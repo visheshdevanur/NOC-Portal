@@ -101,8 +101,13 @@ serve(async (req) => {
       return jsonResponse({ error: 'Payment service not configured' }, 500, undefined, req.headers.get('Origin') || '')
     }
 
-    // ── Customer ID: full UUID without dashes (must match session creation) ──
-    const customerId = caller.id.replace(/-/g, '')
+    // ── Customer ID: must match session creation (use roll_number or UUID) ──
+    const { data: callerProfile } = await adminClient
+      .from('profiles')
+      .select('roll_number')
+      .eq('id', caller.id)
+      .single()
+    const customerId = ((callerProfile?.roll_number || caller.id.replace(/-/g, '')) as string).substring(0, 20)
 
     // ── Call HDFC Order Status API ──
     // GET /orders/{order_id} with Basic Auth
