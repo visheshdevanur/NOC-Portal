@@ -13,7 +13,7 @@ import { useAuth } from '../lib/useAuth';
  *   4. Offers receipt download on success
  */
 export default function PaymentCallback() {
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'failed' | 'pending' | 'error'>('loading');
   const [orderData, setOrderData] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -38,7 +38,7 @@ export default function PaymentCallback() {
       try {
         setStatus('loading');
         const { checkHdfcOrderStatus } = await import('../lib/api/payment');
-        const result = await checkHdfcOrderStatus(orderId);
+        const result = await checkHdfcOrderStatus(orderId) as any;
         
         setOrderData(result);
 
