@@ -231,18 +231,6 @@ serve(async (req) => {
       currency: 'INR',
     })
 
-    // DEBUG: Log exactly what we're sending to HDFC
-    log({ level: 'INFO', fn: 'create-hdfc-session', action: 'hdfc_payload_debug', meta: {
-      orderId,
-      customerIdForHdfc,
-      authUserEmail: user.email || '(null)',
-      profileEmail: profile.email || '(null)',
-      resolvedEmail: formParams.get('customer_email') || '(null)',
-      amount: formParams.get('amount'),
-      paymentPageClientId: HDFC_PAYMENT_PAGE_CLIENT_ID,
-      returnUrl,
-      userId: user.id,
-    }})
 
     const hdfcUrl = `${HDFC_BASE_URL}/orders`
 
