@@ -187,9 +187,12 @@ serve(async (req) => {
 
     // ── Call HDFC Session API ──
     // POST /session with Basic Auth
+    // Ensure amount >= 1.00 for sandbox simulators
+    const sanitizedAmount = Math.max(Number(amount), 1)
     const sessionPayload = {
       order_id: orderId,
-      amount: String(Number(amount).toFixed(2)),
+      amount: String(sanitizedAmount.toFixed(2)),
+      currency: 'INR',
       customer_id: customerId,
       customer_email: profile.email || caller.email || 'student@noc.in',
       customer_phone: '9999999999', // placeholder — profile doesn't have phone
