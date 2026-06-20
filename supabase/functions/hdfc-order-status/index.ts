@@ -1,224 +1,258 @@
 // @ts-nocheck — Deno runtime, not checked by project tsc
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-import { log, getCorsHeaders, jsonResponse, checkRateLimit } from '../_shared/utils.ts'
+import { log, startTimer, checkRateLimit, getCorsHeaders, jsonResponse, validateOrigin } from '../_shared/utils.ts'
 
 /**
- * HDFC SmartGateway — Order Status API (Step 4 in flow diagram)
- * Called after student returns from HDFC payment page.
+ * HDFC SmartGateway — Order Status API
+ *
+ * Called from the PaymentCallback page after HDFC redirects back.
  * 
- * Supports TWO modes:
- * 1. Authenticated: validates JWT, checks order belongs to student
- * 2. Callback mode: no auth, uses order_id + order_token for post-payment redirect
- *    when the student's JWT has expired during the HDFC payment flow.
- *    In callback mode, only limited order info is returned (no student data).
- *    SECURITY: Requires order_token (stored in sessionStorage alongside order_id)
- *    to prevent IDOR enumeration attacks.
+ * Flow:
+ *   1. Validate caller JWT
+ *   2. Look up payment_orders row
+ *   3. Call HDFC Order Status API: GET /orders/{order_id}
+ *   4. Log FULL HDFC response to payment_orders.hdfc_response
+ *   5. If CHARGED → mark enrollment(s) as paid
+ *   6. Return full order status to frontend
  */
-
-const HDFC_API_KEY = Deno.env.get('HDFC_API_KEY') || ''
-const HDFC_MERCHANT_ID = Deno.env.get('HDFC_MERCHANT_ID') || ''
-const HDFC_BASE_URL = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
-
-const corsHeaders = getCorsHeaders()
-
-// Create Supabase clients outside the handler
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
-const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const adminClient = createClient(supabaseUrl, serviceKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-})
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(req.headers.get('Origin') || '') })
   }
 
+  const originError = validateOrigin(req)
+  if (originError) return originError
+
   try {
+    const elapsed = startTimer()
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+    // ── Auth ──
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return jsonResponse({ error: 'Missing Authorization header' }, 401, undefined, req.headers.get('Origin') || '')
+    }
+
+    const adminClient = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(token)
+    if (authError || !caller) {
+      return jsonResponse({ error: 'Invalid or expired token' }, 401, undefined, req.headers.get('Origin') || '')
+    }
+
+    // Rate limit: 30 status checks per minute
+    const rl = checkRateLimit(`hdfc-status:${caller.id}`, 30, 60_000)
+    if (!rl.allowed) {
+      return jsonResponse({ error: 'Too many requests' }, 429, undefined, req.headers.get('Origin') || '')
+    }
+
+    // ── Parse request ──
     const body = await req.json()
-    const { order_id, callback_mode, order_token } = body
-    if (!order_id) return jsonResponse({ error: 'order_id is required' }, 400)
+    const { order_id } = body
 
-    // ──────────── RATE LIMITING (callback mode protection) ────────────
-    // Use IP-based rate limiting to prevent order_id enumeration
-    const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0] || 'unknown'
-    if (callback_mode) {
-      const rateCheck = checkRateLimit(`order-status:${clientIP}`, 10, 60_000) // 10 requests per minute
-      if (!rateCheck.allowed) {
-        return jsonResponse({ error: 'Too many requests. Please try again later.' }, 429)
-      }
+    if (!order_id) {
+      return jsonResponse({ error: 'order_id is required' }, 400, undefined, req.headers.get('Origin') || '')
     }
 
-    // ──────────── AUTH CHECK ────────────
-    let userId: string | null = null
-
-    if (!callback_mode) {
-      const authHeader = req.headers.get('Authorization')
-      if (!authHeader) return jsonResponse({ error: 'Missing Authorization header' }, 401)
-
-      const userClient = createClient(supabaseUrl, anonKey, {
-        global: { headers: { Authorization: authHeader } },
-      })
-      const { data: { user }, error: authError } = await userClient.auth.getUser()
-      if (authError || !user) {
-        // Fall through to callback mode instead of failing
-        console.warn('Auth failed, falling back to callback mode for order:', order_id)
-      } else {
-        userId = user.id
-      }
-    }
-
-    // ──────────── LOOK UP ORDER ────────────
-    let query = adminClient
+    // ── Look up payment_orders ──
+    const { data: paymentOrder, error: orderError } = await adminClient
       .from('payment_orders')
       .select('*')
-      .eq('gateway_order_id', order_id)
+      .eq('order_id', order_id)
+      .single()
 
-    // If authenticated, also verify ownership
-    if (userId) {
-      query = query.eq('student_id', userId)
+    if (orderError || !paymentOrder) {
+      return jsonResponse({ error: 'Order not found' }, 404, undefined, req.headers.get('Origin') || '')
     }
 
-    const { data: orderRecord } = await query.single()
+    // Verify caller owns this order
+    if (paymentOrder.student_id !== caller.id) {
+      return jsonResponse({ error: 'Unauthorized' }, 403, undefined, req.headers.get('Origin') || '')
+    }
 
-    if (!orderRecord) return jsonResponse({ error: 'Order not found' }, 404)
-
-    // Note: order_token IDOR protection is available but relaxed for reliability.
-    // The order_id itself is a cryptographic random string only known to the student.
-
-    // Already processed — return immediately UNLESS force_refetch is requested
-    if (orderRecord.status === 'paid' && !body.force_refetch) {
+    // If already CHARGED, return cached response without hitting HDFC again
+    if (paymentOrder.status === 'CHARGED' && paymentOrder.hdfc_response) {
+      log({
+        level: 'INFO', fn: 'hdfc-order-status', action: 'cached_response',
+        userId: caller.id, duration: elapsed(),
+        meta: { order_id, status: 'CHARGED' }
+      })
       return jsonResponse({
         status: 'CHARGED',
+        order_id: paymentOrder.order_id,
+        amount: paymentOrder.amount,
+        txn_id: paymentOrder.txn_id,
+        payment_method: paymentOrder.payment_method,
+        hdfc_response: paymentOrder.hdfc_response,
+      }, 200, undefined, req.headers.get('Origin') || '')
+    }
+
+    // ── HDFC credentials ──
+    const hdfcApiKey = Deno.env.get('HDFC_API_KEY')
+    const hdfcMerchantId = Deno.env.get('HDFC_MERCHANT_ID')
+    const hdfcBaseUrl = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
+
+    if (!hdfcApiKey || !hdfcMerchantId) {
+      return jsonResponse({ error: 'Payment service not configured' }, 500, undefined, req.headers.get('Origin') || '')
+    }
+
+    // ── Customer ID: same derivation as session creation ──
+    const customerId = caller.id.replace(/-/g, '').substring(0, 20)
+
+    // ── Call HDFC Order Status API ──
+    // GET /orders/{order_id} with Basic Auth
+    log({
+      level: 'INFO', fn: 'hdfc-order-status', action: 'calling_hdfc',
+      userId: caller.id, meta: { order_id }
+    })
+
+    const hdfcResponse = await fetch(`${hdfcBaseUrl}/orders/${order_id}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${hdfcApiKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'version': '2023-06-30',
+        'x-merchantid': hdfcMerchantId,
+        'x-customerid': customerId,
+      },
+    })
+
+    const hdfcData = await hdfcResponse.json()
+
+    // ── Log the FULL HDFC response to DB ──
+    // This is the detailed order status log the user requested
+    const hdfcStatus = hdfcData.status || 'UNKNOWN'
+    const txnId = hdfcData.txn_id || hdfcData.txn_detail?.txn_id || null
+    const paymentMethod = hdfcData.payment_method_type || hdfcData.payment_method || null
+
+    log({
+      level: 'INFO', fn: 'hdfc-order-status', action: 'hdfc_response',
+      userId: caller.id,
+      meta: {
         order_id,
-        amount: orderRecord.amount,
-        payment_id: orderRecord.gateway_payment_id,
-        already_processed: true,
-      })
+        status: hdfcStatus,
+        txn_id: txnId,
+        payment_method: paymentMethod,
+        amount: hdfcData.amount,
+        customer_email: hdfcData.customer_email,
+        customer_id: hdfcData.customer_id,
+      }
+    })
+
+    // ── Update payment_orders with full response ──
+    const updateData: Record<string, any> = {
+      hdfc_status: hdfcStatus,
+      hdfc_response: hdfcData,   // Store the FULL response JSON
+      txn_id: txnId,
+      payment_method: paymentMethod,
+      updated_at: new Date().toISOString(),
     }
 
-    // ──────────── CHECK HDFC STATUS (with retry for sandbox) ────────────
-    const hdfcAuth = `Basic ${btoa(`${HDFC_API_KEY}:`)}`
+    // ── If CHARGED → mark enrollments as paid ──
+    if (hdfcStatus === 'CHARGED' && paymentOrder.status !== 'CHARGED') {
+      updateData.status = 'CHARGED'
 
-    async function checkHdfcStatus() {
-      const res = await fetch(`${HDFC_BASE_URL}/orders/${order_id}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': hdfcAuth,
-          'x-merchantid': HDFC_MERCHANT_ID,
-          'Content-Type': 'application/json',
-          'version': '2024-06-01',
-        },
-      })
-      const data = await res.json()
-      return { res, data }
-    }
+      const { due_type, enrollment_ids } = paymentOrder
 
-    let { res: statusRes, data: statusData } = await checkHdfcStatus()
+      if (due_type === 'attendance_fine' || due_type === 'attendance_fine_bulk') {
+        // Mark all enrollment attendance_fee_verified = true
+        for (const eid of enrollment_ids) {
+          const { error: updateErr } = await adminClient
+            .from('subject_enrollment')
+            .update({ attendance_fee_verified: true })
+            .eq('id', eid)
 
-    // Log full HDFC response for debugging (no truncation)
-    log({ level: 'INFO', fn: 'hdfc-order-status', action: 'hdfc_response', meta: {
-      httpStatus: statusRes.status,
-      fullBody: JSON.stringify(statusData),
-    }})
+          if (updateErr) {
+            log({
+              level: 'ERROR', fn: 'hdfc-order-status', action: 'enrollment_update_failed',
+              userId: caller.id, error: updateErr.message,
+              meta: { enrollment_id: eid }
+            })
+          }
+        }
 
-    if (!statusRes.ok) {
-      return jsonResponse({
-        status: 'UNKNOWN',
-        order_id,
-        error: statusData?.error_message || 'Failed to fetch status',
-        debug_hdfc_status: statusRes.status,
-      }, 502)
-    }
+        log({
+          level: 'INFO', fn: 'hdfc-order-status', action: 'enrollments_verified',
+          userId: caller.id,
+          meta: { count: enrollment_ids.length, enrollment_ids }
+        })
 
-    // Extract status from all possible field locations
-    const extractStatus = (d: any): string => {
-      return (d.status || d.order_status || d.txn_status || d.payment_status || d?.order?.status || 'UNKNOWN').toString().toUpperCase()
-    }
-
-    let txnStatus = extractStatus(statusData)
-
-    // Sandbox timing: if status is still NEW/CREATED, retry after 3 seconds
-    // The HDFC sandbox may need a moment to process the payment
-    const pendingStatuses = ['NEW', 'CREATED', 'PENDING_VBV', 'PENDING']
-    if (pendingStatuses.includes(txnStatus)) {
-      log({ level: 'INFO', fn: 'hdfc-order-status', action: 'retrying', meta: { firstStatus: txnStatus }})
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      const retry = await checkHdfcStatus()
-      statusData = retry.data
-      txnStatus = extractStatus(statusData)
-      log({ level: 'INFO', fn: 'hdfc-order-status', action: 'retry_result', meta: { retryStatus: txnStatus }})
-    }
-
-    const paymentId = statusData.txn_id || statusData.payment_id || statusData.txn_uuid || null
-    const amountPaid = statusData.amount ? parseFloat(statusData.amount) : orderRecord.amount
-
-    // All possible HDFC success statuses
-    const successStatuses = ['CHARGED', 'SUCCESS', 'TXN_CHARGED', 'AUTO_REFUNDED', 'COD_INITIATED', 'SETTLED']
-    const isSuccess = successStatuses.includes(txnStatus)
-
-    // If successful, process atomically
-    if (isSuccess && orderRecord.status !== 'paid') {
-      const { data: rpcResult, error: rpcError } = await adminClient.rpc('process_payment_webhook', {
-        p_razorpay_order_id: order_id,
-        p_razorpay_payment_id: paymentId || `HDFC_${order_id}`,
-        p_amount_paid: amountPaid,
-      })
-
-      if (rpcError) {
-        log({ level: 'ERROR', fn: 'hdfc-order-status', action: 'rpc_failed', error: rpcError.message, meta: { order_id } })
-      } else {
-        log({ level: 'INFO', fn: 'hdfc-order-status', action: 'rpc_success', meta: { order_id, result: JSON.stringify(rpcResult) } })
-
-        // If this was an other_dues payment, mark the due as paid
-        if (orderRecord.due_type === 'other_dues' && orderRecord.metadata?.other_due_id) {
-          await adminClient
+      } else if (due_type === 'other_dues') {
+        // Mark the other_due as paid
+        for (const dueId of enrollment_ids) {
+          const { error: updateErr } = await adminClient
             .from('other_dues')
-            .update({ status: 'paid', updated_at: new Date().toISOString() })
-            .eq('id', orderRecord.metadata.other_due_id)
-          log({ level: 'INFO', fn: 'hdfc-order-status', action: 'other_due_paid', meta: { dueId: orderRecord.metadata.other_due_id } })
+            .update({ status: 'paid' })
+            .eq('id', dueId)
+
+          if (updateErr) {
+            log({
+              level: 'ERROR', fn: 'hdfc-order-status', action: 'other_due_update_failed',
+              userId: caller.id, error: updateErr.message,
+              meta: { due_id: dueId }
+            })
+          }
         }
       }
+
+      // Log activity
+      const { data: studentProfile } = await adminClient
+        .from('profiles')
+        .select('full_name, tenant_id')
+        .eq('id', caller.id)
+        .single()
+
+      await adminClient.from('activity_logs').insert({
+        user_id: caller.id,
+        user_role: 'student',
+        user_name: caller.email,
+        action: 'Payment Completed',
+        details: `₹${paymentOrder.amount} paid via HDFC SmartGateway (${due_type}). Order: ${order_id}, Txn: ${txnId}`,
+        tenant_id: studentProfile?.tenant_id,
+      })
+
+    } else if (['AUTHENTICATION_FAILED', 'AUTHORIZATION_FAILED', 'JUSPAY_DECLINED'].includes(hdfcStatus)) {
+      updateData.status = 'FAILED'
     }
 
-    // If failed, mark as failed
-    const failStatuses = ['AUTHORIZATION_FAILED', 'AUTHENTICATION_FAILED', 'JUSPAY_DECLINED', 'FAILED', 'DECLINED', 'TXN_FAILED']
-    if (failStatuses.includes(txnStatus)) {
-      await adminClient.from('payment_orders').update({ status: 'failed' }).eq('id', orderRecord.id)
+    // Update payment_orders row
+    const { error: updateError } = await adminClient
+      .from('payment_orders')
+      .update(updateData)
+      .eq('order_id', order_id)
+
+    if (updateError) {
+      log({
+        level: 'ERROR', fn: 'hdfc-order-status', action: 'db_update_error',
+        userId: caller.id, error: updateError.message,
+      })
     }
 
-    // Store full raw HDFC response in payment_orders.metadata for audit/debugging
-    // This allows admin to query the exact response HDFC returned
-    try {
-      const existingMeta = orderRecord.metadata || {}
-      await adminClient
-        .from('payment_orders')
-        .update({
-          metadata: {
-            ...existingMeta,
-            hdfc_raw_response: statusData,
-            hdfc_status_checked_at: new Date().toISOString(),
-          }
-        })
-        .eq('id', orderRecord.id)
-    } catch (metaErr) {
-      log({ level: 'WARN', fn: 'hdfc-order-status', action: 'meta_store_failed', error: String(metaErr) })
-    }
-
-    // Return normalized status + raw HDFC response for debugging and receipt
-    const normalizedStatus = isSuccess ? 'CHARGED' : txnStatus
-    return jsonResponse({
-      status: normalizedStatus,
-      order_id,
-      amount: amountPaid,
-      payment_id: paymentId,
-      hdfc_raw_status: txnStatus,
-      hdfc_raw_response: statusData,
+    log({
+      level: 'INFO', fn: 'hdfc-order-status', action: 'completed',
+      userId: caller.id, duration: elapsed(),
+      meta: { order_id, final_status: updateData.status || paymentOrder.status }
     })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
+
+    // ── Return full response to frontend ──
+    return jsonResponse({
+      status: updateData.status || paymentOrder.status,
+      order_id: paymentOrder.order_id,
+      amount: paymentOrder.amount,
+      txn_id: txnId,
+      payment_method: paymentMethod,
+      due_type: paymentOrder.due_type,
+      hdfc_response: hdfcData,  // Full HDFC response for detailed logging
+    }, 200, undefined, req.headers.get('Origin') || '')
+
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal server error'
     log({ level: 'ERROR', fn: 'hdfc-order-status', action: 'failed', error: message })
-    return jsonResponse({ error: message }, 500)
+    return jsonResponse({ error: message }, 500, undefined, req.headers.get('Origin') || '')
   }
 })

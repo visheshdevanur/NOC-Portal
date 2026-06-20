@@ -1,301 +1,285 @@
 // @ts-nocheck — Deno runtime, not checked by project tsc
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
-import { getCorsHeaders, log } from '../_shared/utils.ts'
+import { log, startTimer, checkRateLimit, getCorsHeaders, jsonResponse, validateOrigin } from '../_shared/utils.ts'
 
 /**
- * HDFC SmartGateway — Create Order via /orders endpoint (Basic Auth)
+ * HDFC SmartGateway — Create Payment Session
  * 
- * FIXED FLOW (DB-first):
- * 1. Authenticate user
- * 2. Parse + validate request
- * 3. Verify student profile
- * 4. Auto-expire stale orders + create DB record atomically
- * 5. Call HDFC /orders to get payment link
- * 6. Update DB record with payment link
- * 
- * This prevents orphaned HDFC orders if DB validation fails.
+ * Handles 3 due types:
+ *   - attendance_fine       (single enrollment)
+ *   - attendance_fine_bulk  (multiple enrollments)
+ *   - other_dues            (single other_dues row)
+ *
+ * Flow:
+ *   1. Validate caller JWT (must be a student)
+ *   2. Verify enrollment(s) exist and have unpaid fines
+ *   3. Call HDFC Session API (POST /session)
+ *   4. Insert payment_orders row
+ *   5. Return { payment_link, order_id, amount }
  */
-
-const HDFC_API_KEY = Deno.env.get('HDFC_API_KEY') || ''
-const HDFC_MERCHANT_ID = Deno.env.get('HDFC_MERCHANT_ID') || ''
-const HDFC_PAYMENT_PAGE_CLIENT_ID = Deno.env.get('HDFC_PAYMENT_PAGE_CLIENT_ID') || 'hdfcmaster'
-const HDFC_BASE_URL = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
-const PAYMENT_RETURN_URL = Deno.env.get('PAYMENT_RETURN_URL') || ''
-
-const corsHeaders = getCorsHeaders()
-
-function jsonRes(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
-}
-
-function generateOrderId(): string {
-  const ts = Date.now().toString(36).toUpperCase()
-  const rand = Math.random().toString(36).substring(2, 8).toUpperCase()
-  return `NOC${ts}${rand}`.substring(0, 20)
-}
-
-/** Generate a cryptographic random token for IDOR protection */
-function generateOrderToken(): string {
-  const arr = new Uint8Array(24)
-  crypto.getRandomValues(arr)
-  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('')
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(req.headers.get('Origin') || '') })
   }
 
-  try {
-    // Step 1: Authenticate user via Supabase
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return jsonRes({ error: 'Missing Authorization header' }, 401)
-    }
+  const originError = validateOrigin(req)
+  if (originError) return originError
 
+  try {
+    const elapsed = startTimer()
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const token = authHeader.replace('Bearer ', '')
+
+    // ── Auth ──
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return jsonResponse({ error: 'Missing Authorization header' }, 401, undefined, req.headers.get('Origin') || '')
+    }
 
     const adminClient = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
-
-    const { data: { user }, error: authError } = await adminClient.auth.getUser(token)
-    if (authError || !user) {
-      return jsonRes({ error: 'Invalid or expired token' }, 401)
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user: caller }, error: authError } = await adminClient.auth.getUser(token)
+    if (authError || !caller) {
+      return jsonResponse({ error: 'Invalid or expired token' }, 401, undefined, req.headers.get('Origin') || '')
     }
 
-    // Step 2: Parse request
+    // Rate limit: 10 sessions per minute per student
+    const rl = checkRateLimit(`hdfc-session:${caller.id}`, 10, 60_000)
+    if (!rl.allowed) {
+      log({ level: 'WARN', fn: 'create-hdfc-session', action: 'rate_limited', userId: caller.id })
+      return jsonResponse({ error: 'Too many payment attempts. Please wait a moment.' }, 429, {
+        'Retry-After': String(Math.ceil(rl.resetMs / 1000)),
+      }, req.headers.get('Origin') || '')
+    }
+
+    // ── Get caller profile ──
+    const { data: profile, error: profileError } = await adminClient
+      .from('profiles')
+      .select('id, email, full_name, role, roll_number')
+      .eq('id', caller.id)
+      .single()
+
+    if (profileError || !profile) {
+      return jsonResponse({ error: 'Profile not found' }, 403, undefined, req.headers.get('Origin') || '')
+    }
+
+    if (profile.role !== 'student') {
+      return jsonResponse({ error: 'Only students can make payments' }, 403, undefined, req.headers.get('Origin') || '')
+    }
+
+    // ── Parse request body ──
     const body = await req.json()
     const { amount, enrollment_id, enrollment_ids, due_type } = body
 
     if (!amount || amount <= 0) {
-      return jsonRes({ error: 'Valid amount is required' }, 400)
+      return jsonResponse({ error: 'Invalid amount' }, 400, undefined, req.headers.get('Origin') || '')
     }
 
-    // Step 3: Get student profile
-    const { data: profile, error: profileErr } = await adminClient
-      .from('profiles')
-      .select('id, role, tenant_id, full_name, email')
-      .eq('id', user.id)
-      .single()
-
-    if (profileErr || !profile) {
-      log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'profile-lookup-failed', userId: user.id, error: profileErr?.message, meta: { profileErr } })
-      return jsonRes({ error: `User profile not found (uid=${user.id.substring(0,8)}..., dbErr=${profileErr?.message || 'no row'})` }, 403)
+    if (!due_type) {
+      return jsonResponse({ error: 'due_type is required' }, 400, undefined, req.headers.get('Origin') || '')
     }
 
-    // Step 4: Generate order ID + token
-    const orderId = generateOrderId()
-    const orderToken = generateOrderToken()
+    // ── Validate enrollments / dues ──
+    let enrollmentIdList: string[] = []
 
-    // Step 5: DB FIRST — Auto-expire stale orders + create record atomically
-    // For 'other_dues', enrollment_id is actually an other_due_id — don't pass it as enrollment
-    const isOtherDues = due_type === 'other_dues'
-    const primaryEnrollmentId = isOtherDues ? null : (enrollment_id || (enrollment_ids?.length > 0 ? enrollment_ids[0] : null))
-
-    // Expire stale 'created' orders older than 3 minutes before creating new one
-    // This prevents "unpaid order already exists" errors from abandoned/failed attempts
-    await adminClient
-      .from('payment_orders')
-      .update({ status: 'expired' })
-      .eq('student_id', user.id)
-      .eq('status', 'created')
-      .lt('created_at', new Date(Date.now() - 3 * 60 * 1000).toISOString())
-
-    // Create DB order record
-    let dbOrderId: string | null = null
-
-    if (isOtherDues) {
-      // For other_dues: direct insert (RPC validates enrollment_id which doesn't apply here)
-      const insertPayload: any = {
-        student_id: user.id,
-        amount: amount,
-        due_type: 'other_dues',
-        gateway_order_id: orderId,
-        tenant_id: profile.tenant_id,
-        status: 'created',
+    if (due_type === 'attendance_fine') {
+      if (!enrollment_id) {
+        return jsonResponse({ error: 'enrollment_id is required' }, 400, undefined, req.headers.get('Origin') || '')
       }
-      // Only add optional columns if they exist in the schema
-      try { insertPayload.gateway_type = 'hdfc' } catch {}
-      try { insertPayload.order_token = orderToken } catch {}
-      try { insertPayload.metadata = enrollment_id ? { other_due_id: enrollment_id } : null } catch {}
-
-      const { data: insertedOrder, error: insertError } = await adminClient
-        .from('payment_orders')
-        .insert(insertPayload)
-        .select('id')
+      // Verify this enrollment belongs to the student and has an unpaid fine
+      const { data: enrollment } = await adminClient
+        .from('subject_enrollment')
+        .select('id, attendance_fee, attendance_fee_verified')
+        .eq('id', enrollment_id)
+        .eq('student_id', caller.id)
         .single()
 
-      if (insertError) {
-        log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'insert_failed', error: insertError.message })
-        return jsonRes({ error: 'Failed to create payment order. Please try again.' }, 500)
+      if (!enrollment) {
+        return jsonResponse({ error: 'Enrollment not found' }, 404, undefined, req.headers.get('Origin') || '')
       }
-      dbOrderId = insertedOrder?.id || null
+      if (!enrollment.attendance_fee || enrollment.attendance_fee <= 0) {
+        return jsonResponse({ error: 'No fine on this enrollment' }, 400, undefined, req.headers.get('Origin') || '')
+      }
+      if (enrollment.attendance_fee_verified) {
+        return jsonResponse({ error: 'Fine already paid' }, 400, undefined, req.headers.get('Origin') || '')
+      }
+      enrollmentIdList = [enrollment_id]
+
+    } else if (due_type === 'attendance_fine_bulk') {
+      if (!enrollment_ids || !Array.isArray(enrollment_ids) || enrollment_ids.length === 0) {
+        return jsonResponse({ error: 'enrollment_ids array is required' }, 400, undefined, req.headers.get('Origin') || '')
+      }
+      // Verify all enrollments belong to student and have unpaid fines
+      const { data: enrollments } = await adminClient
+        .from('subject_enrollment')
+        .select('id, attendance_fee, attendance_fee_verified')
+        .in('id', enrollment_ids)
+        .eq('student_id', caller.id)
+
+      if (!enrollments || enrollments.length !== enrollment_ids.length) {
+        return jsonResponse({ error: 'Some enrollments not found' }, 404, undefined, req.headers.get('Origin') || '')
+      }
+      const alreadyPaid = enrollments.filter(e => e.attendance_fee_verified)
+      if (alreadyPaid.length > 0) {
+        return jsonResponse({ error: `${alreadyPaid.length} fine(s) already paid` }, 400, undefined, req.headers.get('Origin') || '')
+      }
+      enrollmentIdList = enrollment_ids
+
+    } else if (due_type === 'other_dues') {
+      if (!enrollment_id) {
+        return jsonResponse({ error: 'due_id (enrollment_id) is required' }, 400, undefined, req.headers.get('Origin') || '')
+      }
+      // Verify this other_due belongs to the student and is pending
+      const { data: due } = await adminClient
+        .from('other_dues')
+        .select('id, amount, status')
+        .eq('id', enrollment_id)
+        .eq('student_id', caller.id)
+        .single()
+
+      if (!due) {
+        return jsonResponse({ error: 'Due not found' }, 404, undefined, req.headers.get('Origin') || '')
+      }
+      if (due.status === 'paid') {
+        return jsonResponse({ error: 'Due already paid' }, 400, undefined, req.headers.get('Origin') || '')
+      }
+      enrollmentIdList = [enrollment_id]
+
     } else {
-      // For attendance fines: use the validated RPC
-      const { data: rpcOrderId, error: rpcError } = await adminClient.rpc('create_payment_order_atomic', {
-        p_student_id: user.id,
-        p_enrollment_id: primaryEnrollmentId || null,
-        p_amount: amount,
-        p_due_type: due_type || 'attendance_fine',
-        p_gateway_order_id: orderId,
-        p_tenant_id: profile.tenant_id,
-        p_gateway_type: 'hdfc',
-        p_payment_link: null,
-      })
-
-      if (rpcError) {
-        const msg = rpcError.message
-        if (msg.includes('already exists')) return jsonRes({ error: 'An unpaid order already exists' }, 409)
-        if (msg.includes('already been paid')) return jsonRes({ error: 'This fine has already been paid' }, 400)
-        log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'rpc_failed', error: msg })
-        return jsonRes({ error: 'Failed to create payment order. Please try again.' }, 500)
-      }
-      dbOrderId = rpcOrderId
-
-      // Store order_token for IDOR protection
-      if (dbOrderId) {
-        await adminClient
-          .from('payment_orders')
-          .update({ order_token: orderToken })
-          .eq('id', dbOrderId)
-      }
+      return jsonResponse({ error: 'Invalid due_type' }, 400, undefined, req.headers.get('Origin') || '')
     }
 
-    // For bulk payments, store all enrollment_ids in the payment order
-    if (enrollment_ids && enrollment_ids.length > 0 && dbOrderId) {
-      await adminClient
-        .from('payment_orders')
-        .update({ enrollment_ids: enrollment_ids })
-        .eq('id', dbOrderId)
+    // ── Generate unique order_id ──
+    const shortUuid = crypto.randomUUID().replace(/-/g, '').substring(0, 8)
+    const timestamp = Date.now()
+    const orderId = `NOC-${shortUuid}-${timestamp}`
+
+    // ── HDFC credentials from env ──
+    const hdfcApiKey = Deno.env.get('HDFC_API_KEY')
+    const hdfcMerchantId = Deno.env.get('HDFC_MERCHANT_ID')
+    const hdfcClientId = Deno.env.get('HDFC_PAYMENT_PAGE_CLIENT_ID')
+    const hdfcBaseUrl = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
+
+    if (!hdfcApiKey || !hdfcMerchantId || !hdfcClientId) {
+      log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'missing_env', error: 'HDFC env vars not set' })
+      return jsonResponse({ error: 'Payment service not configured' }, 500, undefined, req.headers.get('Origin') || '')
     }
 
-    // Step 6: Now call HDFC /orders endpoint (DB record already created)
-    // ── Build return URL (priority order) ──────────────────────────────
-    // 1. PAYMENT_RETURN_URL env var (explicit, most reliable — set per environment)
-    // 2. Referer header — includes the full path, so we can extract the SPA base (e.g. /nodue/)
-    // 3. Origin header — just the origin, must guess the SPA path prefix
-    // 4. First value from ALLOWED_ORIGIN env — last resort
-    const requestOrigin = req.headers.get('Origin') || ''
-    const refererFull  = req.headers.get('Referer') || ''
-    const allowedEnv   = Deno.env.get('ALLOWED_ORIGIN') || ''
-    // Never use the raw ALLOWED_ORIGIN string as a URL — it may be comma-separated.
-    const primaryAllowedOrigin = allowedEnv
-      ? allowedEnv.split(',')[0].trim()
-      : 'https://mitmysore.in'
-
-    let baseReturnUrl: string
-    if (PAYMENT_RETURN_URL) {
-      // Explicit env var wins — works for any deployment topology
-      baseReturnUrl = PAYMENT_RETURN_URL
-    } else {
-      try {
-        // Use Referer (full URL including path) to detect SPA sub-path like /nodue/
-        const ref = refererFull || requestOrigin
-        const refUrl = new URL(ref || `https://${primaryAllowedOrigin}`)
-        const segments = refUrl.pathname.split('/').filter(Boolean)
-        // Treat first path segment as SPA base ONLY if it looks like an app prefix
-        // (single short word, not 'dashboard', 'login' etc — specifically 'nodue')
-        const spaBase = segments.length > 0 && /^[a-z]{2,10}$/.test(segments[0]) && segments[0] !== 'payment'
-          ? `/${segments[0]}`
-          : ''
-        baseReturnUrl = `${refUrl.origin}${spaBase}/payment/callback`
-      } catch {
-        baseReturnUrl = `${requestOrigin || primaryAllowedOrigin}/payment/callback`
+    // ── Build return URL ──
+    // Priority: PAYMENT_RETURN_URL env > derive from Referer header
+    let returnUrl = Deno.env.get('PAYMENT_RETURN_URL') || ''
+    if (!returnUrl) {
+      const referer = req.headers.get('Referer') || req.headers.get('Origin') || ''
+      if (referer) {
+        const url = new URL(referer)
+        // Detect /nodue/ prefix from the referer
+        const basePath = url.pathname.includes('/nodue') ? '/nodue' : ''
+        returnUrl = `${url.origin}${basePath}/payment/callback`
+      } else {
+        returnUrl = 'https://mitmysore.in/nodue/payment/callback'
       }
     }
 
-    // Include order_id in return URL so callback page works even if localStorage is cleared
-    const returnUrl = `${baseReturnUrl}?order_id=${orderId}&order_token=${orderToken}`
+    // ── Customer ID: last 20 chars of UUID (HDFC limit) ──
+    const customerId = caller.id.replace(/-/g, '').substring(0, 20)
 
-    // Use last 20 chars of UUID (no hyphens) to avoid HDFC cached customer data from old attempts
-    const cleanId = user.id.replace(/-/g, '')
-    const customerIdForHdfc = cleanId.substring(cleanId.length - 20)
-    const authB64 = btoa(`${HDFC_API_KEY}:`)
-
-    const formParams = new URLSearchParams({
+    // ── Call HDFC Session API ──
+    // POST /session with Basic Auth
+    const sessionPayload = {
       order_id: orderId,
-      amount: Number(amount).toFixed(2),
-      customer_id: customerIdForHdfc,
-      customer_email: user.email || profile.email,
-      customer_phone: '9999999999',
-      payment_page_client_id: HDFC_PAYMENT_PAGE_CLIENT_ID,
+      amount: String(Number(amount).toFixed(2)),
+      customer_id: customerId,
+      customer_email: profile.email || caller.email || 'student@noc.in',
+      customer_phone: '9999999999', // placeholder — profile doesn't have phone
+      payment_page_client_id: hdfcClientId,
       action: 'paymentPage',
       return_url: returnUrl,
-      currency: 'INR',
-    })
-
-
-    const hdfcUrl = `${HDFC_BASE_URL}/orders`
-
-    const hdfcResponse = await fetch(hdfcUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${authB64}`,
-        'x-merchantid': HDFC_MERCHANT_ID,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formParams.toString(),
-    })
-
-    const responseText = await hdfcResponse.text()
-
-    if (!hdfcResponse.ok) {
-      // HDFC call failed — mark DB order as failed so it doesn't block new orders
-      if (dbOrderId) {
-        await adminClient
-          .from('payment_orders')
-          .update({ status: 'failed' })
-          .eq('id', dbOrderId)
-      }
-      let errorData: any = {}
-      try { errorData = JSON.parse(responseText) } catch {}
-      const msg = errorData.error_message || errorData.user_message || `Payment gateway error`
-      log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'hdfc_failed', error: msg })
-      return jsonRes({ error: 'Payment gateway error. Please try again.' }, 502)
     }
 
-    let hdfcData: any
-    try {
-      hdfcData = JSON.parse(responseText)
-    } catch {
-      return jsonRes({ error: 'Invalid response from payment gateway' }, 502)
+    log({
+      level: 'INFO', fn: 'create-hdfc-session', action: 'calling_hdfc',
+      userId: caller.id,
+      meta: { order_id: orderId, amount, due_type, return_url: returnUrl }
+    })
+
+    const hdfcResponse = await fetch(`${hdfcBaseUrl}/session`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${hdfcApiKey}`,
+        'Content-Type': 'application/json',
+        'x-merchantid': hdfcMerchantId,
+        'x-customerid': customerId,
+      },
+      body: JSON.stringify(sessionPayload),
+    })
+
+    const hdfcData = await hdfcResponse.json()
+
+    if (!hdfcResponse.ok || hdfcData.status === 'FAILURE' || hdfcData.status === 'ERROR') {
+      log({
+        level: 'ERROR', fn: 'create-hdfc-session', action: 'hdfc_error',
+        userId: caller.id,
+        error: JSON.stringify(hdfcData),
+      })
+      return jsonResponse({
+        error: 'Payment gateway error: ' + (hdfcData.error_message || hdfcData.status || 'Unknown error'),
+      }, 502, undefined, req.headers.get('Origin') || '')
     }
 
     // Extract payment link from response
-    const paymentLink = hdfcData?.payment_links?.web || hdfcData?.payment_link
+    const paymentLink = hdfcData.payment_links?.web || hdfcData.payment_links?.iframe || ''
 
-    // If no direct payment link, construct one from order
-    const finalPaymentLink = paymentLink ||
-      `${HDFC_BASE_URL}/pay/${HDFC_PAYMENT_PAGE_CLIENT_ID}/${orderId}`
-
-    // Step 7: Update DB record with payment link
-    if (dbOrderId) {
-      await adminClient
-        .from('payment_orders')
-        .update({ payment_link: finalPaymentLink })
-        .eq('id', dbOrderId)
+    if (!paymentLink) {
+      log({
+        level: 'ERROR', fn: 'create-hdfc-session', action: 'no_payment_link',
+        userId: caller.id,
+        meta: { hdfc_response: hdfcData },
+      })
+      return jsonResponse({ error: 'No payment link received from gateway' }, 502, undefined, req.headers.get('Origin') || '')
     }
 
-    log({ level: 'INFO', fn: 'create-hdfc-session', action: 'order_created', meta: { orderId } })
-    return jsonRes({
-      order_id: orderId,
-      order_token: orderToken,
-      payment_link: finalPaymentLink,
-      amount: amount,
-      hdfc_status: hdfcData.status,
+    // ── Insert payment_orders row ──
+    const { error: insertError } = await adminClient
+      .from('payment_orders')
+      .insert({
+        order_id: orderId,
+        student_id: caller.id,
+        amount: Number(amount),
+        due_type,
+        enrollment_ids: enrollmentIdList,
+        status: 'CREATED',
+        hdfc_status: hdfcData.status || 'CREATED',
+      })
+
+    if (insertError) {
+      log({
+        level: 'ERROR', fn: 'create-hdfc-session', action: 'db_insert_error',
+        userId: caller.id,
+        error: insertError.message,
+      })
+      // Don't fail the payment — the order was created in HDFC already
+    }
+
+    log({
+      level: 'INFO', fn: 'create-hdfc-session', action: 'session_created',
+      userId: caller.id, duration: elapsed(),
+      meta: { order_id: orderId, amount, due_type, hdfc_status: hdfcData.status }
     })
 
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'unhandled', error: message })
-    // S-21: Don't leak internal error details to client
-    return jsonRes({ error: 'An unexpected error occurred. Please try again.' }, 500)
+    return jsonResponse({
+      payment_link: paymentLink,
+      order_id: orderId,
+      order_token: hdfcData.id || null,
+      amount: Number(amount),
+    }, 200, undefined, req.headers.get('Origin') || '')
+
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal server error'
+    log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'failed', error: message })
+    return jsonResponse({ error: message }, 500, undefined, req.headers.get('Origin') || '')
   }
 })
