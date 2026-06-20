@@ -81,11 +81,11 @@ serve(async (req) => {
     // Step 3: Get student profile
     const { data: profile, error: profileErr } = await adminClient
       .from('profiles')
-      .select('id, role, tenant_id, full_name, email')
+      .select('id, role, tenant_id, full_name, email, phone')
       .eq('id', user.id)
       .single()
 
-    if (profileErr || !profile || profile.role !== 'student') {
+    if (profileErr || !profile || profile.role?.toLowerCase() !== 'student') {
       return jsonRes({ error: 'Only students can create payment orders' }, 403)
     }
 
@@ -220,8 +220,8 @@ serve(async (req) => {
       order_id: orderId,
       amount: Number(amount).toFixed(2),
       customer_id: customerIdForHdfc,
-      customer_email: user.email || profile.email || '',
-      customer_phone: '9999999999',
+      customer_email: user.email || profile.email || `student_${customerIdForHdfc}@noc.in`,
+      customer_phone: profile.phone || '9999999999',
       payment_page_client_id: HDFC_PAYMENT_PAGE_CLIENT_ID,
       action: 'paymentPage',
       return_url: returnUrl,
