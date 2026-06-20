@@ -86,7 +86,8 @@ serve(async (req) => {
       .single()
 
     if (profileErr || !profile) {
-      return jsonRes({ error: 'User profile not found' }, 403)
+      log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'profile-lookup-failed', userId: user.id, error: profileErr?.message, meta: { profileErr } })
+      return jsonRes({ error: `User profile not found (uid=${user.id.substring(0,8)}..., dbErr=${profileErr?.message || 'no row'})` }, 403)
     }
 
     // Step 4: Generate order ID + token
