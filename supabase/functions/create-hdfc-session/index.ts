@@ -85,8 +85,8 @@ serve(async (req) => {
       .eq('id', user.id)
       .single()
 
-    if (profileErr || !profile || profile.role?.toLowerCase() !== 'student') {
-      return jsonRes({ error: 'Only students can create payment orders' }, 403)
+    if (profileErr || !profile) {
+      return jsonRes({ error: 'User profile not found' }, 403)
     }
 
     // Step 4: Generate order ID + token
