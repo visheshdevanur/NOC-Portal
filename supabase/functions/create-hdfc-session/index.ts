@@ -182,9 +182,8 @@ serve(async (req) => {
       }
     }
 
-    // ── Customer ID: use roll_number (USN) for readability, fallback to UUID ──
-    // HDFC sandbox may restrict long hex customer IDs
-    const customerId = (profile.roll_number || caller.id.replace(/-/g, '')).substring(0, 20)
+    // ── Customer ID: first 20 chars of UUID without dashes ──
+    const customerId = caller.id.replace(/-/g, '').substring(0, 20)
 
     // ── Build description for HDFC dashboard visibility ──
     const dueDescription = due_type === 'attendance_fine'
