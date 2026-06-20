@@ -221,7 +221,7 @@ serve(async (req) => {
       order_id: orderId,
       amount: Number(amount).toFixed(2),
       customer_id: customerIdForHdfc,
-      customer_email: user.email || profile.email || `student_${customerIdForHdfc}@noc.in`,
+      customer_email: user.email || profile.email || `${(profile.full_name || 'student').replace(/\s+/g, '.').toLowerCase()}@gmail.com`,
       customer_phone: '9999999999',
       payment_page_client_id: HDFC_PAYMENT_PAGE_CLIENT_ID,
       action: 'paymentPage',
