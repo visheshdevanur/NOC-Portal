@@ -182,8 +182,15 @@ serve(async (req) => {
       }
     }
 
-    // ── Customer ID: last 20 chars of UUID (HDFC limit) ──
-    const customerId = caller.id.replace(/-/g, '').substring(0, 20)
+    // ── Customer ID: full UUID without dashes (32 chars, unique per student) ──
+    const customerId = caller.id.replace(/-/g, '')
+
+    // ── Build description for HDFC dashboard visibility ──
+    const dueDescription = due_type === 'attendance_fine'
+      ? 'Attendance Fine Payment'
+      : due_type === 'attendance_fine_bulk'
+        ? `Bulk Attendance Fines (${enrollmentIdList.length} subjects)`
+        : 'Other Dues Payment'
 
     // ── Call HDFC Session API ──
     // POST /session with Basic Auth
@@ -199,6 +206,7 @@ serve(async (req) => {
       payment_page_client_id: hdfcClientId,
       action: 'paymentPage',
       return_url: returnUrl,
+      description: `${dueDescription} - ${profile.full_name || 'Student'} (${profile.roll_number || 'N/A'})`,
     }
 
     log({

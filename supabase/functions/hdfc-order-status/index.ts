@@ -101,8 +101,8 @@ serve(async (req) => {
       return jsonResponse({ error: 'Payment service not configured' }, 500, undefined, req.headers.get('Origin') || '')
     }
 
-    // ── Customer ID: same derivation as session creation ──
-    const customerId = caller.id.replace(/-/g, '').substring(0, 20)
+    // ── Customer ID: full UUID without dashes (must match session creation) ──
+    const customerId = caller.id.replace(/-/g, '')
 
     // ── Call HDFC Order Status API ──
     // GET /orders/{order_id} with Basic Auth
