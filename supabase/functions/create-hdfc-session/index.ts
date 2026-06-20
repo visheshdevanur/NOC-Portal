@@ -81,7 +81,7 @@ serve(async (req) => {
     // Step 3: Get student profile
     const { data: profile, error: profileErr } = await adminClient
       .from('profiles')
-      .select('id, role, tenant_id, full_name, email, phone')
+      .select('id, role, tenant_id, full_name, email')
       .eq('id', user.id)
       .single()
 
@@ -222,7 +222,7 @@ serve(async (req) => {
       amount: Number(amount).toFixed(2),
       customer_id: customerIdForHdfc,
       customer_email: user.email || profile.email || `student_${customerIdForHdfc}@noc.in`,
-      customer_phone: profile.phone || '9999999999',
+      customer_phone: '9999999999',
       payment_page_client_id: HDFC_PAYMENT_PAGE_CLIENT_ID,
       action: 'paymentPage',
       return_url: returnUrl,
