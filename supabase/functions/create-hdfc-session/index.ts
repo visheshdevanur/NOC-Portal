@@ -214,7 +214,7 @@ serve(async (req) => {
     // Include order_id in return URL so callback page works even if localStorage is cleared
     const returnUrl = `${baseReturnUrl}?order_id=${orderId}&order_token=${orderToken}`
 
-    const customerIdForHdfc = user.id.replace(/-/g, '').substring(0, 20)
+    const customerIdForHdfc = user.id.replace(/-/g, '').substring(0, 18) + 'v2'
     const authB64 = btoa(`${HDFC_API_KEY}:`)
 
     const formParams = new URLSearchParams({
