@@ -170,17 +170,15 @@ serve(async (req) => {
     }
 
     // ── Build return URL ──
-    // Priority: PAYMENT_RETURN_URL env > derive from Referer header
+    // Priority: PAYMENT_RETURN_URL env > derive from Referer header > Vercel default
     let returnUrl = Deno.env.get('PAYMENT_RETURN_URL') || ''
     if (!returnUrl) {
       const referer = req.headers.get('Referer') || req.headers.get('Origin') || ''
       if (referer) {
         const url = new URL(referer)
-        // Detect /nodue/ prefix from the referer
-        const basePath = url.pathname.includes('/nodue') ? '/nodue' : ''
-        returnUrl = `${url.origin}${basePath}/payment/callback`
+        returnUrl = `${url.origin}/payment/callback`
       } else {
-        returnUrl = 'https://mitmysore.in/nodue/payment/callback'
+        returnUrl = 'https://noc-portal-self.vercel.app/payment/callback'
       }
     }
 
