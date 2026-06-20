@@ -88,13 +88,17 @@ export function checkRateLimit(
 export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
   const allowedEnv = Deno.env.get('ALLOWED_ORIGIN') || '*'
 
+  // Normalize: strip trailing slashes to prevent mismatch
+  const normalizeOrigin = (o: string) => o.replace(/\/+$/, '')
+  const normalizedRequest = requestOrigin ? normalizeOrigin(requestOrigin) : ''
+
   let resolvedOrigin: string
   if (allowedEnv === '*') {
     resolvedOrigin = '*'
   } else {
-    const allowedList = allowedEnv.split(',').map((o: string) => o.trim())
-    if (requestOrigin && allowedList.includes(requestOrigin)) {
-      resolvedOrigin = requestOrigin  // exact match — reflect back (required by spec)
+    const allowedList = allowedEnv.split(',').map((o: string) => normalizeOrigin(o.trim()))
+    if (normalizedRequest && allowedList.includes(normalizedRequest)) {
+      resolvedOrigin = normalizedRequest  // exact match — reflect back (required by spec)
     } else {
       resolvedOrigin = allowedList[0] // fallback to primary origin
     }
@@ -123,9 +127,12 @@ export function validateOrigin(req: Request): Response | null {
   // Webhooks and server-to-server calls have no Origin — allow them
   if (!requestOrigin) return null
 
-  const allowedList = allowedEnv.split(',').map((o: string) => o.trim())
+  // Normalize: strip trailing slashes to prevent mismatch
+  const normalizeOrigin = (o: string) => o.replace(/\/+$/, '')
+  const normalizedRequest = normalizeOrigin(requestOrigin)
+  const allowedList = allowedEnv.split(',').map((o: string) => normalizeOrigin(o.trim()))
 
-  if (allowedList.includes(requestOrigin)) return null  // origin is in the allowed list
+  if (allowedList.includes(normalizedRequest)) return null  // origin is in the allowed list
 
   // Origin not allowed — return 403 WITH CORS headers so browser can read the error
   return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
