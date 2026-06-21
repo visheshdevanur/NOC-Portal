@@ -63,7 +63,7 @@ serve(async (req) => {
     const { data: paymentOrder, error: orderError } = await adminClient
       .from('payment_orders')
       .select('*')
-      .eq('order_id', order_id)
+      .eq('gateway_order_id', order_id)
       .single()
 
     if (orderError || !paymentOrder) {
@@ -84,16 +84,16 @@ serve(async (req) => {
       })
       return jsonResponse({
         status: 'CHARGED',
-        order_id: paymentOrder.order_id,
+        order_id: paymentOrder.gateway_order_id,
         amount: paymentOrder.amount,
-        txn_id: paymentOrder.txn_id,
-        payment_method: paymentOrder.payment_method,
-        hdfc_response: paymentOrder.hdfc_response,
+        txn_id: paymentOrder.gateway_payment_id,
+        payment_method: paymentOrder.metadata?.payment_method,
+        hdfc_response: paymentOrder.metadata,
       }, 200, undefined, req.headers.get('Origin') || '')
     }
 
     // G3: If already FAILED, return cached response (replay prevention)
-    if (paymentOrder.status === 'FAILED' && paymentOrder.hdfc_response) {
+    if (paymentOrder.status === 'FAILED' && paymentOrder.metadata) {
       log({
         level: 'INFO', fn: 'hdfc-order-status', action: 'cached_failed_response',
         userId: caller.id, duration: elapsed(),
@@ -101,9 +101,9 @@ serve(async (req) => {
       })
       return jsonResponse({
         status: 'FAILED',
-        order_id: paymentOrder.order_id,
+        order_id: paymentOrder.gateway_order_id,
         amount: paymentOrder.amount,
-        hdfc_response: paymentOrder.hdfc_response,
+        hdfc_response: paymentOrder.metadata,
       }, 200, undefined, req.headers.get('Origin') || '')
     }
 
@@ -161,10 +161,8 @@ serve(async (req) => {
 
     // ── Update payment_orders with full response ──
     const updateData: Record<string, any> = {
-      hdfc_status: hdfcStatus,
-      hdfc_response: hdfcData,   // Store the FULL response JSON
-      txn_id: txnId,
-      payment_method: paymentMethod,
+      metadata: { ...paymentOrder.metadata, hdfc_status: hdfcStatus, hdfc_response: hdfcData, payment_method: paymentMethod },
+      gateway_payment_id: txnId,
       updated_at: new Date().toISOString(),
     }
 
@@ -182,7 +180,7 @@ serve(async (req) => {
       const { error: updateError } = await adminClient
         .from('payment_orders')
         .update(updateData)
-        .eq('order_id', order_id)
+        .eq('gateway_order_id', order_id)
 
       return jsonResponse({
         status: 'TAMPERED',
@@ -195,22 +193,22 @@ serve(async (req) => {
     if (txnId) {
       const { data: existingTxn } = await adminClient
         .from('payment_orders')
-        .select('order_id')
-        .eq('txn_id', txnId)
-        .neq('order_id', order_id)
+        .select('gateway_order_id')
+        .eq('gateway_payment_id', txnId)
+        .neq('gateway_order_id', order_id)
         .limit(1)
 
       if (existingTxn && existingTxn.length > 0) {
         log({
           level: 'WARN', fn: 'hdfc-order-status', action: 'duplicate_txn',
           userId: caller.id,
-          meta: { order_id, txn_id: txnId, existing_order: existingTxn[0].order_id }
+          meta: { order_id, txn_id: txnId, existing_order: existingTxn[0].gateway_order_id }
         })
         updateData.status = 'DUPLICATE'
         await adminClient
           .from('payment_orders')
           .update(updateData)
-          .eq('order_id', order_id)
+          .eq('gateway_order_id', order_id)
 
         return jsonResponse({
           status: 'DUPLICATE',
@@ -223,6 +221,8 @@ serve(async (req) => {
     // ── If CHARGED → mark enrollments as paid ──
     if (hdfcStatus === 'CHARGED' && paymentOrder.status !== 'CHARGED') {
       updateData.status = 'CHARGED'
+      updateData.paid_at = new Date().toISOString()
+      updateData.amount_paid = Number(hdfcData.amount) || paymentOrder.amount
 
       const { due_type, enrollment_ids } = paymentOrder
 
@@ -291,7 +291,7 @@ serve(async (req) => {
     const { error: updateError } = await adminClient
       .from('payment_orders')
       .update(updateData)
-      .eq('order_id', order_id)
+      .eq('gateway_order_id', order_id)
 
     if (updateError) {
       log({
@@ -309,12 +309,12 @@ serve(async (req) => {
     // ── Return full response to frontend ──
     return jsonResponse({
       status: updateData.status || paymentOrder.status,
-      order_id: paymentOrder.order_id,
+      order_id: paymentOrder.gateway_order_id,
       amount: paymentOrder.amount,
       txn_id: txnId,
       payment_method: paymentMethod,
       due_type: paymentOrder.due_type,
-      hdfc_response: hdfcData,  // Full HDFC response for detailed logging
+      hdfc_response: hdfcData,
     }, 200, undefined, req.headers.get('Origin') || '')
 
   } catch (err) {

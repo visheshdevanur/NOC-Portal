@@ -270,14 +270,16 @@ serve(async (req) => {
     const { error: insertError } = await adminClient
       .from('payment_orders')
       .insert({
-        order_id: orderId,
+        gateway_order_id: orderId,
         student_id: caller.id,
         amount: sanitizedAmount,
         due_type,
         enrollment_ids: enrollmentIdList,
-        status: 'CREATED',
-        hdfc_status: hdfcData.status || 'CREATED',
+        status: 'created',
+        gateway_type: 'hdfc_smartgateway',
+        payment_link: paymentLink,
         request_hash: requestHash || null,
+        metadata: { hdfc_status: hdfcData.status || 'CREATED' },
       })
 
     if (insertError) {
