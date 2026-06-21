@@ -219,6 +219,10 @@ serve(async (req) => {
       action: 'paymentPage',
       return_url: returnUrl,
       description: `${dueDescription} - ${profile.full_name || 'Student'} (${profile.roll_number || 'N/A'})`,
+      options: {
+        create_new_customer: true,
+        get_client_auth_token: true,
+      },
     }
 
     log({
@@ -233,7 +237,6 @@ serve(async (req) => {
         'Authorization': `Basic ${hdfcApiKey}`,
         'Content-Type': 'application/json',
         'x-merchantid': hdfcMerchantId,
-        'x-customerid': customerId,
       },
       body: JSON.stringify(sessionPayload),
     })
