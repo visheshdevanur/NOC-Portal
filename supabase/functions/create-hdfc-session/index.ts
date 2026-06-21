@@ -196,10 +196,8 @@ serve(async (req) => {
       }
     }
 
-    // ── Customer ID for HDFC ──
-    // Sandbox only shows payment options for pre-registered customers.
-    // Use a known working customer_id; our DB tracks students by student_id.
-    const customerId = '63ff80991172463fb95a'
+    // ── Customer ID: first 20 chars of UUID without dashes ──
+    const customerId = caller.id.replace(/-/g, '').substring(0, 20)
 
     // ── Build description for HDFC dashboard visibility ──
     const dueDescription = due_type === 'attendance_fine'

@@ -117,7 +117,7 @@ serve(async (req) => {
     }
 
     // ── Customer ID: must match session creation ──
-    const customerId = '63ff80991172463fb95a'
+    const customerId = caller.id.replace(/-/g, '').substring(0, 20)
 
     // ── Call HDFC Order Status API ──
     // GET /orders/{order_id} with Basic Auth
