@@ -54,6 +54,10 @@ export default function PaymentCallback() {
           sessionStorage.removeItem('hdfc_order_token');
           sessionStorage.removeItem('hdfc_payment_amount');
           sessionStorage.removeItem('hdfc_payment_description');
+        } else if (result.status === 'TAMPERED' || result.status === 'DUPLICATE') {
+          // I4: Do NOT show receipt for tampered/duplicate transactions
+          setStatus('failed');
+          setErrorMsg(result.error || 'Payment validation failed. Contact support.');
         } else if (result.status === 'FAILED') {
           setStatus('failed');
         } else {

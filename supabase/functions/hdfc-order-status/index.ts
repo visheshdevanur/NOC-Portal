@@ -92,6 +92,21 @@ serve(async (req) => {
       }, 200, undefined, req.headers.get('Origin') || '')
     }
 
+    // G3: If already FAILED, return cached response (replay prevention)
+    if (paymentOrder.status === 'FAILED' && paymentOrder.hdfc_response) {
+      log({
+        level: 'INFO', fn: 'hdfc-order-status', action: 'cached_failed_response',
+        userId: caller.id, duration: elapsed(),
+        meta: { order_id, status: 'FAILED' }
+      })
+      return jsonResponse({
+        status: 'FAILED',
+        order_id: paymentOrder.order_id,
+        amount: paymentOrder.amount,
+        hdfc_response: paymentOrder.hdfc_response,
+      }, 200, undefined, req.headers.get('Origin') || '')
+    }
+
     // ── HDFC credentials ──
     const hdfcApiKey = Deno.env.get('HDFC_API_KEY')
     const hdfcMerchantId = Deno.env.get('HDFC_MERCHANT_ID')
@@ -151,6 +166,58 @@ serve(async (req) => {
       txn_id: txnId,
       payment_method: paymentMethod,
       updated_at: new Date().toISOString(),
+    }
+
+    // ── E3/E4: Amount validation — prevent tampering ──
+    const responseAmount = Number(hdfcData.amount)
+    const storedAmount = Number(paymentOrder.amount)
+    if (responseAmount && storedAmount && Math.abs(responseAmount - storedAmount) > 0.01) {
+      log({
+        level: 'WARN', fn: 'hdfc-order-status', action: 'amount_tampered',
+        userId: caller.id,
+        meta: { order_id, stored_amount: storedAmount, response_amount: responseAmount }
+      })
+      updateData.status = 'TAMPERED'
+      // Don't process enrollments — amount mismatch detected
+      const { error: updateError } = await adminClient
+        .from('payment_orders')
+        .update(updateData)
+        .eq('order_id', order_id)
+
+      return jsonResponse({
+        status: 'TAMPERED',
+        error: 'Payment amount mismatch detected. Contact support.',
+        order_id,
+      }, 200, undefined, req.headers.get('Origin') || '')
+    }
+
+    // ── G1: Duplicate txn_id check ──
+    if (txnId) {
+      const { data: existingTxn } = await adminClient
+        .from('payment_orders')
+        .select('order_id')
+        .eq('txn_id', txnId)
+        .neq('order_id', order_id)
+        .limit(1)
+
+      if (existingTxn && existingTxn.length > 0) {
+        log({
+          level: 'WARN', fn: 'hdfc-order-status', action: 'duplicate_txn',
+          userId: caller.id,
+          meta: { order_id, txn_id: txnId, existing_order: existingTxn[0].order_id }
+        })
+        updateData.status = 'DUPLICATE'
+        await adminClient
+          .from('payment_orders')
+          .update(updateData)
+          .eq('order_id', order_id)
+
+        return jsonResponse({
+          status: 'DUPLICATE',
+          error: 'Duplicate transaction detected.',
+          order_id,
+        }, 200, undefined, req.headers.get('Origin') || '')
+      }
     }
 
     // ── If CHARGED → mark enrollments as paid ──

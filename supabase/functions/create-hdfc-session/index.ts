@@ -153,20 +153,34 @@ serve(async (req) => {
       return jsonResponse({ error: 'Invalid due_type' }, 400, undefined, req.headers.get('Origin') || '')
     }
 
-    // ── Generate unique order_id ──
+    // ── Generate unique order_id (B1: <21 chars, B2: alphanumeric only) ──
     const shortUuid = crypto.randomUUID().replace(/-/g, '').substring(0, 8)
-    const timestamp = Date.now()
-    const orderId = `NOC-${shortUuid}-${timestamp}`
+    const shortTs = Date.now().toString(36).toUpperCase() // base36 timestamp = 8 chars
+    const orderId = `NOC${shortUuid}${shortTs}`.substring(0, 20)
 
     // ── HDFC credentials from env ──
     const hdfcApiKey = Deno.env.get('HDFC_API_KEY')
     const hdfcMerchantId = Deno.env.get('HDFC_MERCHANT_ID')
     const hdfcClientId = Deno.env.get('HDFC_PAYMENT_PAGE_CLIENT_ID')
     const hdfcBaseUrl = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
+    const hdfcResponseKey = Deno.env.get('HDFC_RESPONSE_KEY') || ''
 
     if (!hdfcApiKey || !hdfcMerchantId || !hdfcClientId) {
       log({ level: 'ERROR', fn: 'create-hdfc-session', action: 'missing_env', error: 'HDFC env vars not set' })
       return jsonResponse({ error: 'Payment service not configured' }, 500, undefined, req.headers.get('Origin') || '')
+    }
+
+    // ── D2: Generate HMAC-SHA256 hash for request tamper prevention ──
+    const sanitizedAmount = Math.max(Number(amount), 1)
+    const hashInput = `${orderId}|${sanitizedAmount.toFixed(2)}`
+    let requestHash = ''
+    if (hdfcResponseKey) {
+      const encoder = new TextEncoder()
+      const keyData = encoder.encode(hdfcResponseKey)
+      const msgData = encoder.encode(hashInput)
+      const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+      const signature = await crypto.subtle.sign('HMAC', cryptoKey, msgData)
+      requestHash = Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('')
     }
 
     // ── Build return URL ──
@@ -194,8 +208,6 @@ serve(async (req) => {
 
     // ── Call HDFC Session API ──
     // POST /session with Basic Auth
-    // Ensure amount >= 1.00 for sandbox simulators
-    const sanitizedAmount = Math.max(Number(amount), 1)
     const sessionPayload = {
       order_id: orderId,
       amount: String(sanitizedAmount.toFixed(2)),
@@ -251,17 +263,18 @@ serve(async (req) => {
       return jsonResponse({ error: 'No payment link received from gateway' }, 502, undefined, req.headers.get('Origin') || '')
     }
 
-    // ── Insert payment_orders row ──
+    // ── Insert payment_orders row (D2: store request_hash for verification) ──
     const { error: insertError } = await adminClient
       .from('payment_orders')
       .insert({
         order_id: orderId,
         student_id: caller.id,
-        amount: Number(amount),
+        amount: sanitizedAmount,
         due_type,
         enrollment_ids: enrollmentIdList,
         status: 'CREATED',
         hdfc_status: hdfcData.status || 'CREATED',
+        request_hash: requestHash || null,
       })
 
     if (insertError) {
