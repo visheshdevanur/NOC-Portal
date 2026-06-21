@@ -170,16 +170,15 @@ serve(async (req) => {
     }
 
     // ── Build return URL ──
-    // HDFC sends POST to return_url, but Vercel can't serve static pages on POST (405).
-    // Point to /api/payment/callback — the serverless function converts POST → GET redirect.
+    // HDFC sends POST to return_url. Vercel Edge Middleware converts POST → GET.
     let returnUrl = Deno.env.get('PAYMENT_RETURN_URL') || ''
     if (!returnUrl) {
       const referer = req.headers.get('Referer') || req.headers.get('Origin') || ''
       if (referer) {
         const url = new URL(referer)
-        returnUrl = `${url.origin}/api/payment/callback`
+        returnUrl = `${url.origin}/payment/callback`
       } else {
-        returnUrl = 'https://noc-portal-self.vercel.app/api/payment/callback'
+        returnUrl = 'https://noc-portal-self.vercel.app/payment/callback'
       }
     }
 
