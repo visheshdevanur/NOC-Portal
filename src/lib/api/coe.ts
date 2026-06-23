@@ -72,6 +72,18 @@ export const saveIAAttendanceCOE = async (
   return true;
 };
 
+/** Check which IAs have saved attendance for given subject IDs
+ *  Returns: { [subject_id]: [1, 2, 3] } — array of IA numbers that have data */
+export const getIACompletionStatus = async (subjectIds: string[]): Promise<Record<string, number[]>> => {
+  if (subjectIds.length === 0) return {};
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'coe-ia-status', subject_ids: subjectIds },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data?.data || {};
+};
+
 /** Process global CSV via edge function — resolves USNs and subject codes server-side */
 export const processGlobalCSV = async (csvText: string, coeUserId: string) => {
   const lines = csvText.trim().split('\n').map(l => l.trim()).filter(Boolean);

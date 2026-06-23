@@ -7,6 +7,7 @@ import {
   getEnrolledStudents,
   getIAAttendance,
   saveIAAttendanceCOE,
+  getIACompletionStatus,
 } from '../../lib/api/coe';
 import {
   GraduationCap, Building2, BookOpen, ClipboardCheck,
@@ -44,6 +45,9 @@ export default function CoeDashboard() {
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
 
+  // IA completion tracking: { subject_id: [1, 2, 3] }
+  const [iaStatus, setIaStatus] = useState<Record<string, number[]>>({});
+
   // Loading states
   const [loading, setLoading] = useState(false);
 
@@ -59,12 +63,19 @@ export default function CoeDashboard() {
     })();
   }, []);
 
-  // Fetch subjects when dept + sem selected
+  // Fetch subjects when dept + sem selected, then fetch IA completion status
   const fetchSubjects = useCallback(async (deptId: string, semId: string) => {
     setLoading(true);
     try {
       const subs = await getSubjectsForDeptSem(deptId, semId);
       setSubjects(subs);
+      // Fetch IA completion status for all subjects
+      if (subs.length > 0) {
+        try {
+          const status = await getIACompletionStatus(subs.map((s: Subject) => s.id));
+          setIaStatus(status);
+        } catch (err) { console.error('Failed to fetch IA status:', err); }
+      }
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }, []);
@@ -111,6 +122,12 @@ export default function CoeDashboard() {
 
   const selectSubject = (sub: Subject) => {
     setSelectedSubject(sub);
+    // Refresh IA status for this subject if not already loaded
+    if (!iaStatus[sub.id]) {
+      getIACompletionStatus([sub.id]).then(status => {
+        setIaStatus(prev => ({ ...prev, ...status }));
+      }).catch(console.error);
+    }
     setStep('ia');
   };
 
@@ -150,6 +167,16 @@ export default function CoeDashboard() {
       }));
       await saveIAAttendanceCOE(records);
       setSaveMsg({ type: 'ok', text: `✅ IA${selectedIA} attendance saved for ${records.length} students` });
+      // Update IA completion status after saving
+      if (selectedSubject) {
+        setIaStatus(prev => {
+          const current = prev[selectedSubject.id] || [];
+          if (!current.includes(selectedIA)) {
+            return { ...prev, [selectedSubject.id]: [...current, selectedIA] };
+          }
+          return prev;
+        });
+      }
     } catch (err: any) {
       setSaveMsg({ type: 'err', text: err.message || 'Failed to save' });
     } finally {
@@ -281,19 +308,45 @@ export default function CoeDashboard() {
             <BookOpen className="w-5 h-5 text-violet-500" /> Select Subject
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {subjects.map(sub => (
-              <button
-                key={sub.id}
-                onClick={() => selectSubject(sub)}
-                className="group flex items-center justify-between p-4 bg-secondary/50 hover:bg-violet-500/10 border border-border hover:border-violet-500/30 rounded-xl transition-all text-left"
-              >
-                <div>
-                  <div className="font-semibold text-sm text-foreground">{sub.subject_name}</div>
-                  <code className="text-xs text-muted-foreground font-mono">{sub.subject_code}</code>
-                </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-violet-500 transition-colors" />
-              </button>
-            ))}
+            {subjects.map(sub => {
+              const completedIAs = iaStatus[sub.id] || [];
+              const allComplete = completedIAs.length >= 3 && [1, 2, 3].every(n => completedIAs.includes(n));
+              return (
+                <button
+                  key={sub.id}
+                  onClick={() => selectSubject(sub)}
+                  className={`group flex items-center justify-between p-4 border rounded-xl transition-all text-left ${
+                    allComplete
+                      ? 'bg-emerald-500/5 border-emerald-500/30 hover:bg-emerald-500/10'
+                      : 'bg-secondary/50 border-border hover:bg-violet-500/10 hover:border-violet-500/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                      allComplete ? 'bg-emerald-500' : 'bg-red-400'
+                    }`} />
+                    <div>
+                      <div className="font-semibold text-sm text-foreground">{sub.subject_name}</div>
+                      <div className="flex items-center gap-2">
+                        <code className="text-xs text-muted-foreground font-mono">{sub.subject_code}</code>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                          allComplete
+                            ? 'bg-emerald-500/15 text-emerald-600'
+                            : 'bg-red-500/10 text-red-500'
+                        }`}>
+                          {completedIAs.length}/3 IAs
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className={`w-4 h-4 transition-colors ${
+                    allComplete
+                      ? 'text-emerald-500'
+                      : 'text-muted-foreground group-hover:text-violet-500'
+                  }`} />
+                </button>
+              );
+            })}
             {subjects.length === 0 && (
               <p className="text-sm text-muted-foreground col-span-full py-8 text-center">No subjects found for this department and semester</p>
             )}
@@ -308,18 +361,38 @@ export default function CoeDashboard() {
             <ClipboardCheck className="w-5 h-5 text-emerald-500" /> Select Internal Assessment
           </h2>
           <div className="grid grid-cols-3 gap-4 max-w-md">
-            {[1, 2, 3].map(num => (
-              <button
-                key={num}
-                onClick={() => selectIA(num)}
-                className="group flex flex-col items-center gap-2 p-6 bg-secondary/50 hover:bg-emerald-500/10 border border-border hover:border-emerald-500/30 rounded-xl transition-all"
-              >
-                <div className="w-12 h-12 rounded-full bg-emerald-500/10 group-hover:bg-emerald-500/20 flex items-center justify-center transition-colors">
-                  <span className="text-lg font-bold text-emerald-600">IA{num}</span>
-                </div>
-                <span className="text-xs font-medium text-muted-foreground">Internal Assessment {num}</span>
-              </button>
-            ))}
+            {[1, 2, 3].map(num => {
+              const isSaved = selectedSubject && (iaStatus[selectedSubject.id] || []).includes(num);
+              return (
+                <button
+                  key={num}
+                  onClick={() => selectIA(num)}
+                  className={`group flex flex-col items-center gap-2 p-6 border rounded-xl transition-all ${
+                    isSaved
+                      ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/15'
+                      : 'bg-secondary/50 border-border hover:bg-red-500/5 hover:border-red-400/30'
+                  }`}
+                >
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
+                    isSaved
+                      ? 'bg-emerald-500/20'
+                      : 'bg-red-400/10 group-hover:bg-red-400/15'
+                  }`}>
+                    <span className={`text-lg font-bold ${
+                      isSaved ? 'text-emerald-600' : 'text-red-500'
+                    }`}>IA{num}</span>
+                  </div>
+                  <span className="text-xs font-medium text-muted-foreground">Internal Assessment {num}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    isSaved
+                      ? 'bg-emerald-500/15 text-emerald-600'
+                      : 'bg-red-500/10 text-red-500'
+                  }`}>
+                    {isSaved ? '✓ Saved' : '✗ Not Saved'}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

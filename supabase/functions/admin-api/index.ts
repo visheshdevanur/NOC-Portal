@@ -234,6 +234,31 @@ serve(async (req) => {
           return jsonResponse({ success: true, count: records.length })
         }
 
+        case 'coe-ia-status': {
+          // Returns which IAs have saved attendance for given subject_ids
+          // Used for green/red indicators on COE dashboard
+          const { subject_ids } = params
+          if (!subject_ids || !Array.isArray(subject_ids) || subject_ids.length === 0) {
+            return jsonResponse({ error: 'subject_ids array required' }, 400)
+          }
+          // Query distinct subject_id + ia_number combos that have records
+          const { data, error } = await coeClient
+            .from('ia_attendance')
+            .select('subject_id, ia_number')
+            .in('subject_id', subject_ids)
+          if (error) return jsonResponse({ error: error.message }, 500)
+
+          // Build a map: { subject_id: [ia_numbers_with_data] }
+          const statusMap: Record<string, number[]> = {}
+          for (const row of (data || [])) {
+            if (!statusMap[row.subject_id]) statusMap[row.subject_id] = []
+            if (!statusMap[row.subject_id].includes(row.ia_number)) {
+              statusMap[row.subject_id].push(row.ia_number)
+            }
+          }
+          return jsonResponse({ data: statusMap })
+        }
+
         case 'coe-process-csv': {
           // Global CSV: resolve USN → student_id, Subject Code → subject_id
           const { csv_rows, coe_user_id } = params
