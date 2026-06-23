@@ -59,7 +59,7 @@ serve(async (req) => {
     // ── Get caller profile ──
     const { data: profile, error: profileError } = await adminClient
       .from('profiles')
-      .select('id, email, full_name, role, roll_number')
+      .select('id, email, full_name, role, roll_number, tenant_id')
       .eq('id', caller.id)
       .single()
 
@@ -279,8 +279,9 @@ serve(async (req) => {
         due_type,
         enrollment_ids: enrollmentIdList,
         status: 'created',
-        gateway_type: 'hdfc_smartgateway',
+        gateway_type: 'hdfc',
         payment_link: paymentLink,
+        tenant_id: profile.tenant_id || null,
         request_hash: requestHash || null,
         metadata: { hdfc_status: hdfcData.status || 'CREATED' },
       })

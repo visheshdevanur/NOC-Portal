@@ -76,7 +76,7 @@ serve(async (req) => {
     }
 
     // If already CHARGED, return cached response without hitting HDFC again
-    if (paymentOrder.status === 'CHARGED' && paymentOrder.hdfc_response) {
+    if (paymentOrder.status === 'paid' && paymentOrder.metadata) {
       log({
         level: 'INFO', fn: 'hdfc-order-status', action: 'cached_response',
         userId: caller.id, duration: elapsed(),
@@ -93,7 +93,7 @@ serve(async (req) => {
     }
 
     // G3: If already FAILED, return cached response (replay prevention)
-    if (paymentOrder.status === 'FAILED' && paymentOrder.metadata) {
+    if (paymentOrder.status === 'failed' && paymentOrder.metadata) {
       log({
         level: 'INFO', fn: 'hdfc-order-status', action: 'cached_failed_response',
         userId: caller.id, duration: elapsed(),
@@ -178,7 +178,7 @@ serve(async (req) => {
         userId: caller.id,
         meta: { order_id, stored_amount: storedAmount, response_amount: responseAmount }
       })
-      updateData.status = 'TAMPERED'
+      updateData.status = 'failed'
       // Don't process enrollments — amount mismatch detected
       const { error: updateError } = await adminClient
         .from('payment_orders')
@@ -207,7 +207,7 @@ serve(async (req) => {
           userId: caller.id,
           meta: { order_id, txn_id: txnId, existing_order: existingTxn[0].gateway_order_id }
         })
-        updateData.status = 'DUPLICATE'
+        updateData.status = 'failed'
         await adminClient
           .from('payment_orders')
           .update(updateData)
@@ -222,8 +222,8 @@ serve(async (req) => {
     }
 
     // ── If CHARGED → mark enrollments as paid ──
-    if (hdfcStatus === 'CHARGED' && paymentOrder.status !== 'CHARGED') {
-      updateData.status = 'CHARGED'
+    if (hdfcStatus === 'CHARGED' && paymentOrder.status !== 'paid') {
+      updateData.status = 'paid'
       updateData.paid_at = new Date().toISOString()
       updateData.amount_paid = Number(hdfcData.amount) || paymentOrder.amount
 
@@ -287,7 +287,7 @@ serve(async (req) => {
       })
 
     } else if (['AUTHENTICATION_FAILED', 'AUTHORIZATION_FAILED', 'JUSPAY_DECLINED'].includes(hdfcStatus)) {
-      updateData.status = 'FAILED'
+      updateData.status = 'failed'
     }
 
     // Update payment_orders row
@@ -310,8 +310,12 @@ serve(async (req) => {
     })
 
     // ── Return full response to frontend ──
+    // Map internal DB status back to HDFC-style for frontend
+    const dbStatus = updateData.status || paymentOrder.status
+    const frontendStatus = dbStatus === 'paid' ? 'CHARGED' : dbStatus === 'failed' ? 'FAILED' : dbStatus
+
     return jsonResponse({
-      status: updateData.status || paymentOrder.status,
+      status: frontendStatus,
       order_id: paymentOrder.gateway_order_id,
       amount: paymentOrder.amount,
       txn_id: txnId,
