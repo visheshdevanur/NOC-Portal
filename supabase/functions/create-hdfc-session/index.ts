@@ -231,10 +231,13 @@ serve(async (req) => {
       meta: { order_id: orderId, amount, due_type, return_url: returnUrl }
     })
 
+    // Basic Auth: base64 encode "api_key:" (key + colon, no password)
+    const basicAuth = btoa(`${hdfcApiKey}:`)
+
     const hdfcResponse = await fetch(`${hdfcBaseUrl}/session`, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${hdfcApiKey}`,
+        'Authorization': `Basic ${basicAuth}`,
         'Content-Type': 'application/json',
         'x-merchantid': hdfcMerchantId,
       },
