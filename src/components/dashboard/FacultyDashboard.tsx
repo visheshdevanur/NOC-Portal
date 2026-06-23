@@ -82,12 +82,50 @@ export default function FacultyDashboard() {
   const { data: facultyData, isLoading: loading, refetch: refetchData } = useQuery({
     queryKey: ['facultyClearance', user?.id],
     queryFn: async () => {
-      const [data, ias, subjects] = await Promise.all([
+      // Step 1: Fetch students and subjects first
+      const [data, subjects] = await Promise.all([
         getFacultyPendingStudents(user!.id),
-        getTeacherIAAttendance(user!.id),
         getTeacherSubjectsList(user!.id),
       ]);
-      return { students: data as unknown as SubjectEnrollment[], ias: ias || [], subjects: subjects as TeacherSubject[] };
+      const students = data as unknown as SubjectEnrollment[];
+
+      // Step 2: Fetch IA data with actual subject IDs from enrollments
+      const subjectIds = [...new Set(students.map(s => s.subject_id).filter(Boolean))];
+      const ias = subjectIds.length > 0 ? (await getTeacherIAAttendance(user!.id, subjectIds) || []) : [];
+
+      // Step 3: Recalculate status/remarks for students that already have attendance_pct set
+      // This ensures COE-uploaded IA data is reflected immediately
+      const recalculated = students.map(s => {
+        // Only recalculate if teacher has already set attendance
+        if (s.attendance_pct == null || s.attendance_pct === undefined) return s;
+
+        const pct = s.attendance_pct;
+        const studentIAs = ias.filter((ia: any) => ia.subject_id === s.subject_id && ia.student_id === s.student_id && ia.is_present);
+        const iaPresentCount = studentIAs.length;
+        const attendanceOk = pct >= 85;
+        const iaOk = iaPresentCount >= 2;
+
+        let status: string;
+        let remarks: string;
+
+        if (attendanceOk && iaOk) {
+          status = 'completed'; remarks = '';
+        } else if (!attendanceOk && !iaOk) {
+          status = 'rejected'; remarks = `Low Attendance (<85%) & Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+        } else if (!attendanceOk) {
+          status = 'rejected'; remarks = `Low Attendance (<85%)`;
+        } else {
+          status = 'rejected'; remarks = `Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+        }
+
+        // Only update if status actually changed
+        if (status !== s.status || remarks !== (s.remarks || '')) {
+          return { ...s, status, remarks };
+        }
+        return s;
+      });
+
+      return { students: recalculated, ias, subjects: subjects as TeacherSubject[] };
     },
     enabled: !!user,
     staleTime: 30_000,
