@@ -20,9 +20,18 @@ export default function PaymentCallback() {
   const [retryCount, setRetryCount] = useState(0);
   const hasChecked = useRef(false);
 
-  const orderId = localStorage.getItem('hdfc_order_id') || sessionStorage.getItem('hdfc_order_id');
+  // Read order_id from URL query params (set by middleware from HDFC POST redirect),
+  // then fall back to localStorage/sessionStorage
+  const urlParams = new URLSearchParams(window.location.search);
+  const orderId = urlParams.get('order_id') || localStorage.getItem('hdfc_order_id') || sessionStorage.getItem('hdfc_order_id');
   const paymentAmount = localStorage.getItem('hdfc_payment_amount') || sessionStorage.getItem('hdfc_payment_amount');
   const paymentDescription = localStorage.getItem('hdfc_payment_description') || sessionStorage.getItem('hdfc_payment_description');
+
+  // If order_id came from URL, persist it to storage for retries
+  if (orderId && urlParams.get('order_id')) {
+    localStorage.setItem('hdfc_order_id', orderId);
+    sessionStorage.setItem('hdfc_order_id', orderId);
+  }
 
   useEffect(() => {
     if (!orderId) {
