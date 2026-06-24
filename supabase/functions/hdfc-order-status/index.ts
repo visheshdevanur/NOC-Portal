@@ -169,6 +169,39 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     }
 
+    // ── C3: HMAC re-verification on callback ──
+    // Re-compute HMAC(order_id|amount) and compare with stored request_hash
+    // This ensures the payment_orders record hasn't been tampered with in the DB
+    const hdfcResponseKey = Deno.env.get('HDFC_RESPONSE_KEY') || ''
+    if (hdfcResponseKey && paymentOrder.request_hash) {
+      const hashInput = `${order_id}|${Number(paymentOrder.amount).toFixed(2)}`
+      const encoder = new TextEncoder()
+      const keyData = encoder.encode(hdfcResponseKey)
+      const msgData = encoder.encode(hashInput)
+      const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+      const signature = await crypto.subtle.sign('HMAC', cryptoKey, msgData)
+      const recomputedHash = Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+      if (recomputedHash !== paymentOrder.request_hash) {
+        log({
+          level: 'WARN', fn: 'hdfc-order-status', action: 'hmac_mismatch',
+          userId: caller.id,
+          meta: { order_id, stored_hash: paymentOrder.request_hash, recomputed_hash: recomputedHash }
+        })
+        updateData.status = 'failed'
+        await adminClient
+          .from('payment_orders')
+          .update(updateData)
+          .eq('gateway_order_id', order_id)
+
+        return jsonResponse({
+          status: 'TAMPERED',
+          error: 'Order integrity check failed. Contact support.',
+          order_id,
+        }, 200, undefined, req.headers.get('Origin') || '')
+      }
+    }
+
     // ── E3/E4: Amount validation — prevent tampering ──
     const responseAmount = Number(hdfcData.amount)
     const storedAmount = Number(paymentOrder.amount)
