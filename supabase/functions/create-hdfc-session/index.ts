@@ -73,18 +73,17 @@ serve(async (req) => {
 
     // ── Parse request body ──
     const body = await req.json()
-    const { amount, enrollment_id, enrollment_ids, due_type } = body
-
-    if (!amount || amount <= 0) {
-      return jsonResponse({ error: 'Invalid amount' }, 400, undefined, req.headers.get('Origin') || '')
-    }
+    const { enrollment_id, enrollment_ids, due_type } = body
+    // NOTE: We intentionally do NOT use client-supplied 'amount' — 
+    // amount is computed server-side from DB records to prevent tampering
 
     if (!due_type) {
       return jsonResponse({ error: 'due_type is required' }, 400, undefined, req.headers.get('Origin') || '')
     }
 
-    // ── Validate enrollments / dues ──
+    // ── Validate enrollments / dues & COMPUTE amount server-side ──
     let enrollmentIdList: string[] = []
+    let serverComputedAmount = 0  // CRITICAL: Amount from DB, never from client
 
     if (due_type === 'attendance_fine') {
       if (!enrollment_id) {
@@ -108,6 +107,7 @@ serve(async (req) => {
         return jsonResponse({ error: 'Fine already paid' }, 400, undefined, req.headers.get('Origin') || '')
       }
       enrollmentIdList = [enrollment_id]
+      serverComputedAmount = Number(enrollment.attendance_fee)  // Amount from DB
 
     } else if (due_type === 'attendance_fine_bulk') {
       if (!enrollment_ids || !Array.isArray(enrollment_ids) || enrollment_ids.length === 0) {
@@ -128,6 +128,8 @@ serve(async (req) => {
         return jsonResponse({ error: `${alreadyPaid.length} fine(s) already paid` }, 400, undefined, req.headers.get('Origin') || '')
       }
       enrollmentIdList = enrollment_ids
+      // Sum all fines from DB — never trust client total
+      serverComputedAmount = enrollments.reduce((sum, e) => sum + Number(e.attendance_fee || 0), 0)
 
     } else if (due_type === 'other_dues') {
       if (!enrollment_id) {
@@ -148,9 +150,15 @@ serve(async (req) => {
         return jsonResponse({ error: 'Due already paid' }, 400, undefined, req.headers.get('Origin') || '')
       }
       enrollmentIdList = [enrollment_id]
+      serverComputedAmount = Number(due.amount)  // Amount from DB
 
     } else {
       return jsonResponse({ error: 'Invalid due_type' }, 400, undefined, req.headers.get('Origin') || '')
+    }
+
+    // Final validation: server-computed amount must be positive
+    if (serverComputedAmount <= 0) {
+      return jsonResponse({ error: 'Invalid computed amount' }, 400, undefined, req.headers.get('Origin') || '')
     }
 
     // ── Generate unique order_id (B1: <21 chars, B2: alphanumeric only) ──
@@ -171,7 +179,7 @@ serve(async (req) => {
     }
 
     // ── D2: Generate HMAC-SHA256 hash for request tamper prevention ──
-    const sanitizedAmount = Math.max(Number(amount), 1)
+    const sanitizedAmount = serverComputedAmount
     const hashInput = `${orderId}|${sanitizedAmount.toFixed(2)}`
     let requestHash = ''
     if (hdfcResponseKey) {
@@ -228,7 +236,7 @@ serve(async (req) => {
     log({
       level: 'INFO', fn: 'create-hdfc-session', action: 'calling_hdfc',
       userId: caller.id,
-      meta: { order_id: orderId, amount, due_type, return_url: returnUrl }
+      meta: { order_id: orderId, amount: sanitizedAmount, due_type, return_url: returnUrl }
     })
 
     // Basic Auth: base64 encode "api_key:" (key + colon, no password)
@@ -298,14 +306,14 @@ serve(async (req) => {
     log({
       level: 'INFO', fn: 'create-hdfc-session', action: 'session_created',
       userId: caller.id, duration: elapsed(),
-      meta: { order_id: orderId, amount, due_type, hdfc_status: hdfcData.status }
+      meta: { order_id: orderId, amount: sanitizedAmount, due_type, hdfc_status: hdfcData.status }
     })
 
     return jsonResponse({
       payment_link: paymentLink,
       order_id: orderId,
       order_token: hdfcData.id || null,
-      amount: Number(amount),
+      amount: sanitizedAmount,
     }, 200, undefined, req.headers.get('Origin') || '')
 
   } catch (err) {
