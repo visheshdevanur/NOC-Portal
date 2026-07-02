@@ -106,8 +106,7 @@ export default function HodDashboard() {
 
   // Fine Payments state
   const [searchFines, setSearchFines] = useState('');
-  const [finePaymentsSemFilter, setFinePaymentsSemFilter] = useState('all');
-  const [finePaymentsSectionFilter, setFinePaymentsSectionFilter] = useState('all');
+  const [expandedFinePaymentSems, setExpandedFinePaymentSems] = useState<Set<string>>(new Set());
 
   // College Dues state
   const [searchCollegeDues, setSearchCollegeDues] = useState('');
@@ -1145,116 +1144,144 @@ export default function HodDashboard() {
             </div>
           )}
 
-          <div className="flex flex-col md:flex-row gap-3 items-end md:items-center">
-            <div className="relative w-full md:max-w-xs">
-              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search by student, subject, or USN..."
-                className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
-                value={searchFines}
-                onChange={e => setSearchFines(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <select
-                value={finePaymentsSemFilter}
-                onChange={(e) => setFinePaymentsSemFilter(e.target.value)}
-                className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
-              >
-                <option value="all">All Semesters</option>
-                {Array.from(new Set(approvedFines.map((f: any) => f.profiles?.semesters?.name).filter(Boolean))).sort().map(name => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-              <select
-                value={finePaymentsSectionFilter}
-                onChange={(e) => setFinePaymentsSectionFilter(e.target.value)}
-                className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
-              >
-                <option value="all">All Sections</option>
-                {Array.from(new Set(approvedFines.map((f: any) => f.profiles?.section).filter(Boolean))).sort().map(sec => (
-                  <option key={sec} value={sec}>{sec}</option>
-                ))}
-              </select>
-            </div>
+          <div className="relative w-full md:max-w-sm">
+            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search by student, subject, or USN..."
+              className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
+              value={searchFines}
+              onChange={e => setSearchFines(e.target.value)}
+            />
           </div>
 
-          <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-            {loadingFines ? (
-              <div className="p-8 text-center text-muted-foreground animate-pulse">Loading fine payments...</div>
-            ) : (() => {
-              const filtered = approvedFines.filter((item: any) => {
-                const matchesSearch = !searchFines ||
-                  item.profiles?.full_name?.toLowerCase().includes(searchFines.toLowerCase()) ||
-                  item.subjects?.subject_name?.toLowerCase().includes(searchFines.toLowerCase()) ||
-                  item.subjects?.subject_code?.toLowerCase().includes(searchFines.toLowerCase()) ||
-                  item.profiles?.roll_number?.toLowerCase().includes(searchFines.toLowerCase());
-                const matchesSem = finePaymentsSemFilter === 'all' || item.profiles?.semesters?.name === finePaymentsSemFilter;
-                const matchesSection = finePaymentsSectionFilter === 'all' || item.profiles?.section === finePaymentsSectionFilter;
-                return matchesSearch && matchesSem && matchesSection;
-              });
-              return filtered.length === 0 ? (
-                <div className="p-12 text-center flex flex-col items-center">
+          {/* Hierarchical View: Semester → Section → Students */}
+          {loadingFines ? (
+            <div className="p-8 text-center text-muted-foreground animate-pulse bg-card rounded-3xl shadow-sm border border-border">Loading fine payments...</div>
+          ) : (() => {
+            const filtered = approvedFines.filter((item: any) => {
+              if (!searchFines) return true;
+              const q = searchFines.toLowerCase();
+              return item.profiles?.full_name?.toLowerCase().includes(q) ||
+                item.subjects?.subject_name?.toLowerCase().includes(q) ||
+                item.subjects?.subject_code?.toLowerCase().includes(q) ||
+                item.profiles?.roll_number?.toLowerCase().includes(q);
+            });
+
+            if (filtered.length === 0) {
+              return (
+                <div className="p-12 text-center flex flex-col items-center bg-card rounded-3xl shadow-sm border border-border">
                   <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-4">
                     <FileCheck className="w-10 h-10 text-emerald-500/50" />
                   </div>
                   <h3 className="text-xl font-bold text-foreground">No Fine Records</h3>
                   <p className="text-muted-foreground mt-2">No attendance fines recorded for this department.</p>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
-                        <th className="p-4 font-semibold">Student Name</th>
-                        <th className="p-4 font-semibold">Roll No</th>
-                        <th className="p-4 font-semibold">Subject</th>
-                        <th className="p-4 font-semibold text-center">Attendance %</th>
-                        <th className="p-4 font-semibold text-center">Fine (₹)</th>
-                        <th className="p-4 font-semibold text-center">Status</th>
-                        <th className="p-4 font-semibold">Transaction ID</th>
-                        <th className="p-4 font-semibold">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filtered.map(item => (
-                        <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
-                          <td className="p-4 font-medium text-foreground">{item.profiles?.full_name}</td>
-                          <td className="p-4 text-muted-foreground font-mono text-sm">{item.profiles?.roll_number || '\u2014'}</td>
-                          <td className="p-4">
-                            <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
-                            <div className="text-xs text-muted-foreground">{item.subjects?.subject_code}</div>
-                          </td>
-                          <td className="p-4 text-center">
-                            <span className="text-amber-600 dark:text-amber-400 font-bold">{item.attendance_pct}%</span>
-                          </td>
-                          <td className="p-4 text-center font-bold text-foreground">
-                            {item.attendance_fee ? `\u20b9${item.attendance_fee}` : '\u2014'}
-                          </td>
-                          <td className="p-4 text-center">
-                            {item.attendance_fee_verified ? (
-                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">Paid</span>
-                            ) : item.attendance_fee > 0 ? (
-                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">Pending</span>
-                            ) : (
-                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
-                            )}
-                          </td>
-                          <td className="p-4 text-xs font-mono text-muted-foreground">
-                            {item.gateway_payment_id || '\u2014'}
-                          </td>
-                          <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
-                            {item.payment_date ? new Date(item.payment_date).toLocaleDateString() : '\u2014'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               );
-            })()}
-          </div>
+            }
+
+            // Group by semester → section
+            const grouped: Record<string, Record<string, any[]>> = {};
+            for (const item of filtered) {
+              const sem = item.profiles?.semesters?.name || 'Unassigned Semester';
+              const sec = item.profiles?.section || 'Unassigned Section';
+              if (!grouped[sem]) grouped[sem] = {};
+              if (!grouped[sem][sec]) grouped[sem][sec] = [];
+              grouped[sem][sec].push(item);
+            }
+
+            return (
+              <div className="space-y-3">
+                {Object.entries(grouped)
+                  .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+                  .map(([sem, sections]) => {
+                    const totalInSem = Object.values(sections).reduce((acc, s) => acc + s.length, 0);
+                    const semKey = `fp_${sem}`;
+                    const isExpanded = expandedFinePaymentSems.has(semKey);
+                    return (
+                      <div key={semKey} className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
+                        <button
+                          onClick={() => {
+                            const next = new Set(expandedFinePaymentSems);
+                            if (next.has(semKey)) next.delete(semKey); else next.add(semKey);
+                            setExpandedFinePaymentSems(next);
+                          }}
+                          className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            {isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                            <div>
+                              <h3 className="text-lg font-bold text-foreground">{sem}</h3>
+                              <p className="text-sm text-muted-foreground">{totalInSem} student(s)</p>
+                            </div>
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="border-t border-border p-4 space-y-4">
+                            {Object.entries(sections)
+                              .sort(([a], [b]) => a.localeCompare(b))
+                              .map(([sec, items]) => (
+                                <div key={sec}>
+                                  <h4 className="font-bold text-foreground bg-secondary/50 px-4 py-2 rounded-t-xl">Section: {sec} <span className="text-xs font-medium text-muted-foreground ml-2">({items.length} students)</span></h4>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                      <thead>
+                                        <tr className="bg-background text-foreground text-sm border-b border-border">
+                                          <th className="p-3 font-semibold">Student Name</th>
+                                          <th className="p-3 font-semibold">Roll No</th>
+                                          <th className="p-3 font-semibold">Subject</th>
+                                          <th className="p-3 font-semibold text-center">Attendance %</th>
+                                          <th className="p-3 font-semibold text-center">Fine (₹)</th>
+                                          <th className="p-3 font-semibold text-center">Status</th>
+                                          <th className="p-3 font-semibold">Transaction ID</th>
+                                          <th className="p-3 font-semibold">Date</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-border">
+                                        {items.map((item: any) => (
+                                          <tr key={item.id} className="hover:bg-secondary/10 transition-colors bg-background">
+                                            <td className="p-3 font-medium text-foreground">{item.profiles?.full_name}</td>
+                                            <td className="p-3 text-muted-foreground font-mono text-sm">{item.profiles?.roll_number || '\u2014'}</td>
+                                            <td className="p-3">
+                                              <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
+                                              <div className="text-xs text-muted-foreground">{item.subjects?.subject_code}</div>
+                                            </td>
+                                            <td className="p-3 text-center">
+                                              <span className="text-amber-600 dark:text-amber-400 font-bold">{item.attendance_pct}%</span>
+                                            </td>
+                                            <td className="p-3 text-center font-bold text-foreground">
+                                              {item.attendance_fee ? `\u20b9${item.attendance_fee}` : '\u2014'}
+                                            </td>
+                                            <td className="p-3 text-center">
+                                              {item.attendance_fee_verified ? (
+                                                <span className="px-2 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">Paid</span>
+                                              ) : item.attendance_fee > 0 ? (
+                                                <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">Pending</span>
+                                              ) : (
+                                                <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
+                                              )}
+                                            </td>
+                                            <td className="p-3 text-xs font-mono text-muted-foreground">
+                                              {item.gateway_payment_id || '\u2014'}
+                                            </td>
+                                            <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
+                                              {item.payment_date ? new Date(item.payment_date).toLocaleDateString() : '\u2014'}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            );
+          })()}
         </div>
       )}
 

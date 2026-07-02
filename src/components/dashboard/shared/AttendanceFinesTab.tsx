@@ -28,9 +28,8 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   const [attendanceFines, setAttendanceFines] = useState<any[]>([]);
   const [loadingAttendances, setLoadingAttendances] = useState(false);
   const [searchAttendances, setSearchAttendances] = useState('');
-  const [finesSemFilter, setFinesSemFilter] = useState('all');
-  const [finesSectionFilter, setFinesSectionFilter] = useState('all');
-  const [finesBranchFilter, setFinesBranchFilter] = useState('all');
+  const [expandedFinesSems, setExpandedFinesSems] = useState<Set<string>>(new Set());
+  const [expandedFinesBranches, setExpandedFinesBranches] = useState<Set<string>>(new Set());
   
   const [showCatModal, setShowCatModal] = useState(false);
   const [catForm, setCatForm] = useState({ label: '', minPct: '', maxPct: '', amount: '' });
@@ -209,7 +208,7 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
         while (true) {
           const { data, error } = await supabase
             .from('subject_enrollment')
-            .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+            .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, roll_number, section, department_id, semester_id, semesters(name), departments!profiles_department_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
             .or('status.eq.rejected,attendance_fee.gt.0')
             .range(from, from + PAGE - 1);
           if (error) throw error;
@@ -817,175 +816,232 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
         </div>
       )}
 
-      {/* Action Buttons Row */}
+      {/* Search */}
       <div className="flex flex-col md:flex-row gap-4 justify-between">
-        <div className="relative w-full md:max-w-xs">
+        <div className="relative w-full md:max-w-sm">
           <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search by student or subject..."
+            placeholder="Search by student, subject, or USN..."
             className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 w-full"
             value={searchAttendances}
             onChange={e => setSearchAttendances(e.target.value)}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {isAdminGlobal && (
-            <select
-              value={finesBranchFilter}
-              onChange={(e) => setFinesBranchFilter(e.target.value)}
-              className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none"
-            >
-              <option value="all">All Branches</option>
-              {allDepartments.map(d => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          )}
-          <select
-            value={finesSemFilter}
-            onChange={(e) => setFinesSemFilter(e.target.value)}
-            className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none"
-          >
-            <option value="all">All Semesters</option>
-            {Array.from(new Set(attendanceFines.map(f => f.profiles?.semesters?.name).filter(Boolean))).sort().map(name => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-          <select
-            value={finesSectionFilter}
-            onChange={(e) => setFinesSectionFilter(e.target.value)}
-            className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none"
-          >
-            <option value="all">All Sections</option>
-            {Array.from(new Set(attendanceFines.map(f => f.profiles?.section).filter(Boolean))).sort().map(sec => (
-              <option key={sec} value={sec}>{sec}</option>
-            ))}
-          </select>
-        </div>
       </div>
-      
 
-      
-      {/* Students Table */}
-      <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-        {loadingAttendances ? (
-          <div className="p-8 text-center text-muted-foreground animate-pulse">Loading rejected attendances...</div>
-        ) : (() => {
-          const filtered = attendanceFines.filter(item => {
-            // Only show students below 85% attendance
-            if (item.attendance_pct !== null && item.attendance_pct !== undefined && item.attendance_pct >= 85) return false;
-            // Text search
-            const matchesSearch = !searchAttendances ||
-              item.profiles?.full_name?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
-              item.subjects?.subject_name?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
-              item.subjects?.subject_code?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
-              item.profiles?.roll_number?.toLowerCase().includes(searchAttendances.toLowerCase());
-            // Semester filter
-            const matchesSem = finesSemFilter === 'all' || item.profiles?.semesters?.name === finesSemFilter;
-            // Section filter
-            const matchesSection = finesSectionFilter === 'all' || item.profiles?.section === finesSectionFilter;
-            // Branch filter (admin only)
-            const matchesBranch = finesBranchFilter === 'all' || item.profiles?.department_id === finesBranchFilter;
-            return matchesSearch && matchesSem && matchesSection && matchesBranch;
-          });
-          return filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">No students are currently rejected due to low attendance.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-secondary/50 text-foreground text-sm border-b border-border">
-                    <th className="p-4 font-semibold">Student Name</th>
-                    <th className="p-4 font-semibold">USN</th>
-                    <th className="p-4 font-semibold">Section</th>
-                    <th className="p-4 font-semibold">Subject</th>
-                    <th className="p-4 font-semibold text-center">Attendance %</th>
-                    <th className="p-4 font-semibold text-center">Fine (₹)</th>
-                    <th className="p-4 font-semibold text-center">Status</th>
-                    {canModifyFines && <th className="p-4 font-semibold text-right">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {filtered.map(item => (
-                    <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
-                      <td className="p-4 font-medium text-foreground">{item.profiles?.full_name}</td>
-                      <td className="p-4 text-sm font-mono text-muted-foreground">{item.profiles?.roll_number || '—'}</td>
-                      <td className="p-4"><span className="px-2 py-1 bg-secondary rounded-md text-xs font-medium">{item.profiles?.section || 'None'}</span></td>
-                      <td className="p-4">
-                        <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
-                        <div className="text-xs text-muted-foreground">{item.subjects?.subject_code}</div>
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className="text-destructive font-bold">{item.attendance_pct}%</span>
-                      </td>
-                      <td className="p-4 text-center">
-                        {item.attendance_fee > 0 ? (
-                          <span className={`px-3 py-1 rounded-lg font-bold whitespace-nowrap ${item.attendance_fee_verified ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
-                            ₹{item.attendance_fee}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">Not set</span>
-                        )}
-                      </td>
-                      <td className="p-4 text-center">
-                        {item.attendance_fee_verified ? (
-                          <span className="px-2 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">Paid</span>
-                        ) : item.attendance_fee > 0 ? (
-                          <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">Pending</span>
-                        ) : (
-                          <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
-                        )}
-                      </td>
-                      {canModifyFines && (
-                      <td className="p-4 text-right">
-                        {reduceFineId === item.id ? (
-                          <div className="flex items-center gap-2 justify-end">
-                            <input
-                              type="number"
-                              min="0"
-                              placeholder="₹"
-                              className="w-24 p-2 border border-border rounded-xl text-sm bg-background focus:ring-2 focus:ring-amber-500 focus:outline-none font-bold"
-                              value={reduceFineAmount}
-                              onChange={e => setReduceFineAmount(e.target.value)}
-                              autoFocus
-                            />
-                            <button onClick={() => handleReduceFine(item.id)} disabled={reduceFineLoading} className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors">
-                              {reduceFineLoading ? '...' : 'Set'}
-                            </button>
-                            <button onClick={() => { setReduceFineId(null); setReduceFineAmount(''); }} className="px-2 py-2 bg-secondary hover:bg-secondary/80 rounded-xl transition-colors">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 justify-end">
-                            <button
-                              onClick={() => { setReduceFineId(item.id); setReduceFineAmount(String(item.attendance_fee || 0)); }}
-                              className="px-3 py-2 bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap"
-                            >
-                              Modify Fine
-                            </button>
-                            {item.attendance_fee > 0 && !item.attendance_fee_verified && (
-                              <button
-                                onClick={() => handleClearFine(item.id)}
-                                disabled={clearFineLoading === item.id}
-                                className="px-3 py-2 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap"
-                              >
-                                {clearFineLoading === item.id ? '...' : 'Clear Fine'}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
+      {/* Hierarchical View: Branch (admin) → Semester → Section → Students */}
+      {loadingAttendances ? (
+        <div className="p-8 text-center text-muted-foreground animate-pulse bg-card rounded-3xl shadow-sm border border-border">Loading attendance fines...</div>
+      ) : (() => {
+        // Filter: only <85%, search
+        const filtered = attendanceFines.filter(item => {
+          if (item.attendance_pct !== null && item.attendance_pct !== undefined && item.attendance_pct >= 85) return false;
+          if (!searchAttendances) return true;
+          const q = searchAttendances.toLowerCase();
+          return item.profiles?.full_name?.toLowerCase().includes(q) ||
+            item.subjects?.subject_name?.toLowerCase().includes(q) ||
+            item.subjects?.subject_code?.toLowerCase().includes(q) ||
+            item.profiles?.roll_number?.toLowerCase().includes(q);
+        });
+
+        if (filtered.length === 0) {
+          return <div className="p-8 text-center text-muted-foreground bg-card rounded-3xl shadow-sm border border-border">No students below 85% attendance found.</div>;
+        }
+
+        // Group: Branch (admin) → Semester → Section → items[]
+        type GroupedData = Record<string, Record<string, Record<string, any[]>>>;
+        const grouped: GroupedData = {};
+        for (const item of filtered) {
+          const branch = isAdminGlobal
+            ? (item.profiles?.departments?.name || item.profiles?.department_id || 'Unassigned Branch')
+            : '__single__';
+          const sem = item.profiles?.semesters?.name || 'Unassigned Semester';
+          const sec = item.profiles?.section || 'Unassigned Section';
+          if (!grouped[branch]) grouped[branch] = {};
+          if (!grouped[branch][sem]) grouped[branch][sem] = {};
+          if (!grouped[branch][sem][sec]) grouped[branch][sem][sec] = [];
+          grouped[branch][sem][sec].push(item);
+        }
+
+        const renderTable = (items: any[]) => (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-background text-foreground text-sm border-b border-border">
+                  <th className="p-3 font-semibold">Student Name</th>
+                  <th className="p-3 font-semibold">USN</th>
+                  <th className="p-3 font-semibold">Subject</th>
+                  <th className="p-3 font-semibold text-center">Attendance %</th>
+                  <th className="p-3 font-semibold text-center">Fine (₹)</th>
+                  <th className="p-3 font-semibold text-center">Status</th>
+                  {canModifyFines && <th className="p-3 font-semibold text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {items.map(item => (
+                  <tr key={item.id} className="hover:bg-secondary/10 transition-colors bg-background">
+                    <td className="p-3 font-medium text-foreground">{item.profiles?.full_name}</td>
+                    <td className="p-3 text-sm font-mono text-muted-foreground">{item.profiles?.roll_number || '—'}</td>
+                    <td className="p-3">
+                      <div className="text-sm font-medium">{item.subjects?.subject_name}</div>
+                      <div className="text-xs text-muted-foreground">{item.subjects?.subject_code}</div>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className="text-destructive font-bold">{item.attendance_pct}%</span>
+                    </td>
+                    <td className="p-3 text-center">
+                      {item.attendance_fee > 0 ? (
+                        <span className={`px-3 py-1 rounded-lg font-bold whitespace-nowrap ${item.attendance_fee_verified ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
+                          ₹{item.attendance_fee}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">Not set</span>
                       )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                    </td>
+                    <td className="p-3 text-center">
+                      {item.attendance_fee_verified ? (
+                        <span className="px-2 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">Paid</span>
+                      ) : item.attendance_fee > 0 ? (
+                        <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">Pending</span>
+                      ) : (
+                        <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
+                      )}
+                    </td>
+                    {canModifyFines && (
+                    <td className="p-3 text-right">
+                      {reduceFineId === item.id ? (
+                        <div className="flex items-center gap-2 justify-end">
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="₹"
+                            className="w-24 p-2 border border-border rounded-xl text-sm bg-background focus:ring-2 focus:ring-amber-500 focus:outline-none font-bold"
+                            value={reduceFineAmount}
+                            onChange={e => setReduceFineAmount(e.target.value)}
+                            autoFocus
+                          />
+                          <button onClick={() => handleReduceFine(item.id)} disabled={reduceFineLoading} className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors">
+                            {reduceFineLoading ? '...' : 'Set'}
+                          </button>
+                          <button onClick={() => { setReduceFineId(null); setReduceFineAmount(''); }} className="px-2 py-2 bg-secondary hover:bg-secondary/80 rounded-xl transition-colors">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 justify-end">
+                          <button
+                            onClick={() => { setReduceFineId(item.id); setReduceFineAmount(String(item.attendance_fee || 0)); }}
+                            className="px-3 py-2 bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap"
+                          >
+                            Modify Fine
+                          </button>
+                          {item.attendance_fee > 0 && !item.attendance_fee_verified && (
+                            <button
+                              onClick={() => handleClearFine(item.id)}
+                              disabled={clearFineLoading === item.id}
+                              className="px-3 py-2 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap"
+                            >
+                              {clearFineLoading === item.id ? '...' : 'Clear Fine'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+
+        const renderSemAccordion = (semData: Record<string, Record<string, any[]>>, keyPrefix: string = '') => (
+          <div className="space-y-3">
+            {Object.entries(semData)
+              .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+              .map(([sem, sections]) => {
+                const totalInSem = Object.values(sections).reduce((acc, s) => acc + s.length, 0);
+                const semKey = `${keyPrefix}${sem}`;
+                const isExpanded = expandedFinesSems.has(semKey);
+                return (
+                  <div key={semKey} className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
+                    <button
+                      onClick={() => {
+                        const next = new Set(expandedFinesSems);
+                        if (next.has(semKey)) next.delete(semKey); else next.add(semKey);
+                        setExpandedFinesSems(next);
+                      }}
+                      className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        {isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                        <div>
+                          <h3 className="text-lg font-bold text-foreground">{sem}</h3>
+                          <p className="text-sm text-muted-foreground">{totalInSem} student(s)</p>
+                        </div>
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t border-border p-4 space-y-4">
+                        {Object.entries(sections)
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([sec, items]) => (
+                            <div key={sec}>
+                              <h4 className="font-bold text-foreground bg-secondary/50 px-4 py-2 rounded-t-xl">Section: {sec} <span className="text-xs font-medium text-muted-foreground ml-2">({items.length} students)</span></h4>
+                              {renderTable(items)}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        );
+
+        // Admin: Branch → Semester → Section
+        if (isAdminGlobal) {
+          return (
+            <div className="space-y-3">
+              {Object.entries(grouped)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([branch, semData]) => {
+                  const totalInBranch = Object.values(semData).reduce((acc, secs) => acc + Object.values(secs).reduce((a, s) => a + s.length, 0), 0);
+                  const isExpanded = expandedFinesBranches.has(branch);
+                  return (
+                    <div key={branch} className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
+                      <button
+                        onClick={() => {
+                          const next = new Set(expandedFinesBranches);
+                          if (next.has(branch)) next.delete(branch); else next.add(branch);
+                          setExpandedFinesBranches(next);
+                        }}
+                        className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          {isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                          <div>
+                            <h3 className="text-lg font-bold text-foreground">{branch}</h3>
+                            <p className="text-sm text-muted-foreground">{totalInBranch} student(s)</p>
+                          </div>
+                        </div>
+                      </button>
+                      {isExpanded && (
+                        <div className="border-t border-border p-4">
+                          {renderSemAccordion(semData, `${branch}__`)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
             </div>
           );
-        })()}
-      </div>
+        }
+
+        // HOD/FYC: Semester → Section
+        return renderSemAccordion(grouped['__single__'] || {});
+      })()}
     </div>
   );
 }
