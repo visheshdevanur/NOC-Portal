@@ -12,30 +12,11 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
   const [studentDuesOverview, setStudentDuesOverview] = useState<any[]>([]);
   const [studentDuesLoading, setStudentDuesLoading] = useState(false);
   const [studentDuesSearch, setStudentDuesSearch] = useState('');
-  const [semestersList, setSemestersList] = useState<any[]>([]);
   const [expandedSems, setExpandedSems] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    fetchSemesters();
     fetchStudentDuesOverview();
   }, [departmentId, role]);
-
-  const fetchSemesters = async () => {
-    try {
-      let query = supabase.from('semesters').select('*').order('name');
-      if (departmentId) query = query.eq('department_id', departmentId);
-      const { data } = await query;
-      let filtered = data || [];
-      if (role === 'admin') {
-        // Admin sees all semesters
-      } else if (role === 'staff' || role === 'hod') {
-        filtered = filtered.filter(s => !isFirstYearSem(s.name));
-      } else if (role === 'clerk' || role === 'fyc') {
-        filtered = filtered.filter(s => isFirstYearSem(s.name));
-      }
-      setSemestersList(filtered);
-    } catch (err) { console.error(err); }
-  };
 
   const fetchStudentDuesOverview = async () => {
     setStudentDuesLoading(true);
