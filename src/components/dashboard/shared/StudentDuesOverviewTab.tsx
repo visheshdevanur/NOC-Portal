@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Eye, Search, FileDown } from 'lucide-react';
+import { Eye, Search, FileDown, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { isFirstYearSem } from '../../../lib/api';
 
@@ -12,9 +12,8 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
   const [studentDuesOverview, setStudentDuesOverview] = useState<any[]>([]);
   const [studentDuesLoading, setStudentDuesLoading] = useState(false);
   const [studentDuesSearch, setStudentDuesSearch] = useState('');
-  const [csvSemFilter, setCsvSemFilter] = useState('all');
-  const [csvSectionFilter, setCsvSectionFilter] = useState('all');
   const [semestersList, setSemestersList] = useState<any[]>([]);
+  const [expandedSems, setExpandedSems] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchSemesters();
@@ -131,22 +130,17 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
     }
   };
 
-  const uniqueSemesterNames = Array.from(new Set(semestersList.map(s => s.name))).sort();
-
-  const uniqueSections = Array.from(new Set(studentDuesOverview.map(s => s.section).filter(Boolean))).sort();
-
-  const filteredStudentDuesOverview = studentDuesOverview.filter(s =>
-    s.full_name?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
-    s.roll_number?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
-    s.section?.toLowerCase().includes(studentDuesSearch.toLowerCase())
-  ).filter(s => csvSemFilter === 'all' || s.semesters?.name === csvSemFilter
-  ).filter(s => csvSectionFilter === 'all' || s.section === csvSectionFilter);
+  const filteredStudentDuesOverview = studentDuesOverview.filter(s => {
+    if (!studentDuesSearch) return true;
+    const q = studentDuesSearch.toLowerCase();
+    return s.full_name?.toLowerCase().includes(q) ||
+      s.roll_number?.toLowerCase().includes(q) ||
+      s.section?.toLowerCase().includes(q);
+  });
 
   const downloadCSV = () => {
     const dataToExport = filteredStudentDuesOverview;
     if (!dataToExport || dataToExport.length === 0) return;
-    
-    const semName = csvSemFilter === 'all' ? 'all_semesters' : csvSemFilter.replace(/\s+/g, '_');
     
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Roll No,Student Name,Section,Semester,Library Dues,College Fee Status,Pending Attendance Fine,Paid Attendance Fine\n";
@@ -167,10 +161,65 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `student_dues_overview_${semName}.csv`);
+    link.setAttribute("download", `student_dues_overview.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Group by semester → section
+  const grouped: Record<string, Record<string, any[]>> = {};
+  for (const s of filteredStudentDuesOverview) {
+    const sem = s.semesters?.name || 'Unassigned Semester';
+    const sec = s.section || 'Unassigned Section';
+    if (!grouped[sem]) grouped[sem] = {};
+    if (!grouped[sem][sec]) grouped[sem][sec] = [];
+    grouped[sem][sec].push(s);
+  }
+
+  const renderStudentRow = (s: any, idx: number) => {
+    const libRecord = s.library;
+    const libStatus = !libRecord ? 'pending' : (libRecord.has_dues === false ? 'clear' : (libRecord.permitted ? 'permitted' : 'pending'));
+    const colRecord = s.college;
+    const colIsPermitted = colRecord?.permitted_until && new Date(colRecord.permitted_until) > new Date();
+    const colStatus = !colRecord ? 'pending' : (colRecord.status === 'completed' ? 'clear' : (colIsPermitted ? 'permitted' : 'pending'));
+    const attFineUnpaid = Number(s.attendance_fine_unpaid) || 0;
+    const attFinePaid = Number(s.attendance_fine_paid) || 0;
+
+    return (
+      <tr key={s.id} className="hover:bg-secondary/10 transition-colors bg-background">
+        <td className="p-3 text-sm text-muted-foreground">{idx + 1}</td>
+        <td className="p-3 font-medium text-foreground">{s.full_name}</td>
+        <td className="p-3 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
+        <td className="p-3 text-center">
+          {libStatus === 'pending' ? (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">Pending</span>
+          ) : libStatus === 'permitted' ? (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-violet-500/15 text-violet-600 dark:text-violet-400">Permitted</span>
+          ) : (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">Clear</span>
+          )}
+        </td>
+        <td className="p-3 text-center">
+          {colStatus === 'pending' ? (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">Pending</span>
+          ) : colStatus === 'permitted' ? (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-violet-500/15 text-violet-600 dark:text-violet-400">Permitted</span>
+          ) : (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">Clear</span>
+          )}
+        </td>
+        <td className="p-3 font-bold text-sm">
+          {attFineUnpaid > 0 ? (
+            <span className="text-amber-600 dark:text-amber-400">₹{attFineUnpaid} (Pending)</span>
+          ) : attFinePaid > 0 ? (
+            <span className="text-emerald-600 dark:text-emerald-400">₹{attFinePaid} (Paid)</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </td>
+      </tr>
+    );
   };
 
   return (
@@ -197,160 +246,115 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
           />
         </div>
         
-        <div className="flex gap-3 w-full md:w-auto">
-          <select
-            value={csvSemFilter}
-            onChange={(e) => setCsvSemFilter(e.target.value)}
-            className="px-4 py-2.5 bg-background border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none w-full md:w-48"
-          >
-            <option value="all">All Semesters</option>
-            {uniqueSemesterNames.map(name => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-          <select
-            value={csvSectionFilter}
-            onChange={(e) => setCsvSectionFilter(e.target.value)}
-            className="px-4 py-2.5 bg-background border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none w-full md:w-40"
-          >
-            <option value="all">All Sections</option>
-            {uniqueSections.map(sec => (
-              <option key={sec} value={sec}>{sec}</option>
-            ))}
-          </select>
-          <button
-            onClick={downloadCSV}
-            disabled={filteredStudentDuesOverview.length === 0}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-indigo-500/50 text-white rounded-xl text-sm font-bold transition-all whitespace-nowrap"
-          >
-            <FileDown className="w-4 h-4" />
-            Export CSV
-          </button>
-        </div>
+        <button
+          onClick={downloadCSV}
+          disabled={filteredStudentDuesOverview.length === 0}
+          className="flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-indigo-500/50 text-white rounded-xl text-sm font-bold transition-all whitespace-nowrap"
+        >
+          <FileDown className="w-4 h-4" />
+          Export CSV
+        </button>
       </div>
 
-      <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
-        {!studentDuesLoading && studentDuesOverview.length > 0 && (() => {
-          const libPending = studentDuesOverview.filter(s => !s.library || s.library.has_dues !== false).length;
-          const colPending = studentDuesOverview.filter(s => !s.college || s.college.status !== 'completed').length;
-          const totalStudents = studentDuesOverview.length;
-          return (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-6 border-b border-border bg-secondary/10">
-              <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                <p className="text-sm font-medium text-muted-foreground mb-1">Total Students</p>
-                <p className="text-2xl font-bold text-foreground">{totalStudents}</p>
-              </div>
-              <div className="bg-card border border-orange-500/20 rounded-xl p-4 shadow-sm">
-                <p className="text-sm font-medium text-orange-600 dark:text-orange-400 mb-1">Library Dues Pending</p>
-                <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{libPending}</p>
-              </div>
-              <div className="bg-card border border-red-500/20 rounded-xl p-4 shadow-sm">
-                <p className="text-sm font-medium text-red-600 dark:text-red-400 mb-1">College Fee Pending</p>
-                <p className="text-2xl font-bold text-red-600 dark:text-red-400">{colPending}</p>
-              </div>
+      {/* Summary Stats */}
+      {!studentDuesLoading && studentDuesOverview.length > 0 && (() => {
+        const libPending = studentDuesOverview.filter(s => !s.library || s.library.has_dues !== false).length;
+        const colPending = studentDuesOverview.filter(s => !s.college || s.college.status !== 'completed').length;
+        const totalStudents = studentDuesOverview.length;
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
+              <p className="text-sm font-medium text-muted-foreground mb-1">Total Students</p>
+              <p className="text-2xl font-bold text-foreground">{totalStudents}</p>
             </div>
-          );
-        })()}
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-secondary/40 text-foreground text-sm border-b border-border">
-                <th className="p-4 font-semibold">#</th>
-                <th className="p-4 font-semibold">Student Name</th>
-                <th className="p-4 font-semibold">Roll No</th>
-                <th className="p-4 font-semibold">Section</th>
-                <th className="p-4 font-semibold">Semester</th>
-                <th className="p-4 font-semibold text-center">Library Dues</th>
-                <th className="p-4 font-semibold text-center">College Fee Status</th>
-                <th className="p-4 font-semibold">Attendance Fines (₹)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {studentDuesLoading ? (
-                <tr><td colSpan={8} className="p-8 text-center text-muted-foreground animate-pulse">Loading student dues overview...</td></tr>
-              ) : filteredStudentDuesOverview.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-12 text-center">
-                    <div className="flex flex-col items-center">
-                      <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
-                        <Eye className="w-8 h-8 text-muted-foreground/50" />
-                      </div>
-                      <h3 className="text-lg font-bold text-foreground">No Students Found</h3>
-                      <p className="text-muted-foreground mt-2 text-sm">No students match your search criteria.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredStudentDuesOverview.map((s, idx) => {
-                  const libRecord = s.library;
-                  const libStatus = !libRecord ? 'pending' : (libRecord.has_dues === false ? 'clear' : (libRecord.permitted ? 'permitted' : 'pending'));
-                  // College fee: no record = pending, completed = clear, pending+permitted = permitted, pending = due
-                  const colRecord = s.college;
-                  const colIsPermitted = colRecord?.permitted_until && new Date(colRecord.permitted_until) > new Date();
-                  const colStatus = !colRecord ? 'pending' : (colRecord.status === 'completed' ? 'clear' : (colIsPermitted ? 'permitted' : 'pending'));
-                  const attFineUnpaid = Number(s.attendance_fine_unpaid) || 0;
-                  const attFinePaid = Number(s.attendance_fine_paid) || 0;
-
-                  return (
-                    <tr key={s.id} className="hover:bg-secondary/20 transition-colors">
-                      <td className="p-4 text-sm text-muted-foreground">{idx + 1}</td>
-                      <td className="p-4 font-medium text-foreground">{s.full_name}</td>
-                      <td className="p-4 text-muted-foreground font-mono text-sm">{s.roll_number || '—'}</td>
-                      <td className="p-4 text-muted-foreground">{s.section || '—'}</td>
-                      <td className="p-4 text-muted-foreground text-sm">{s.semesters?.name || '—'}</td>
-                      <td className="p-4 text-center">
-                        {libStatus === 'pending' ? (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">
-                            Pending
-                          </span>
-                        ) : libStatus === 'permitted' ? (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-violet-500/15 text-violet-600 dark:text-violet-400">
-                            Permitted
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                            Clear
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-4 text-center">
-                        {colStatus === 'pending' ? (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400">
-                            Pending
-                          </span>
-                        ) : colStatus === 'permitted' ? (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-violet-500/15 text-violet-600 dark:text-violet-400">
-                            Permitted
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                            Clear
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-4 font-bold text-sm">
-                        {attFineUnpaid > 0 ? (
-                          <span className="text-amber-600 dark:text-amber-400">₹{attFineUnpaid} (Pending)</span>
-                        ) : attFinePaid > 0 ? (
-                          <span className="text-emerald-600 dark:text-emerald-400">₹{attFinePaid} (Paid)</span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        {!studentDuesLoading && filteredStudentDuesOverview.length > 0 && (
-          <div className="px-4 py-3 bg-secondary/30 border-t border-border text-sm text-muted-foreground">
-            Showing {filteredStudentDuesOverview.length} of {studentDuesOverview.length} student{studentDuesOverview.length !== 1 ? 's' : ''}
+            <div className="bg-card border border-orange-500/20 rounded-xl p-4 shadow-sm">
+              <p className="text-sm font-medium text-orange-600 dark:text-orange-400 mb-1">Library Dues Pending</p>
+              <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{libPending}</p>
+            </div>
+            <div className="bg-card border border-red-500/20 rounded-xl p-4 shadow-sm">
+              <p className="text-sm font-medium text-red-600 dark:text-red-400 mb-1">College Fee Pending</p>
+              <p className="text-2xl font-bold text-red-600 dark:text-red-400">{colPending}</p>
+            </div>
           </div>
-        )}
-      </div>
+        );
+      })()}
+
+      {/* Hierarchical View: Semester → Section → Students */}
+      {studentDuesLoading ? (
+        <div className="p-8 text-center text-muted-foreground animate-pulse bg-card rounded-3xl shadow-sm border border-border">Loading student dues overview...</div>
+      ) : filteredStudentDuesOverview.length === 0 ? (
+        <div className="p-12 text-center flex flex-col items-center bg-card rounded-3xl shadow-sm border border-border">
+          <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
+            <Eye className="w-8 h-8 text-muted-foreground/50" />
+          </div>
+          <h3 className="text-lg font-bold text-foreground">No Students Found</h3>
+          <p className="text-muted-foreground mt-2 text-sm">No students match your search criteria.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {Object.entries(grouped)
+            .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+            .map(([sem, sections]) => {
+              const totalInSem = Object.values(sections).reduce((acc, s) => acc + s.length, 0);
+              const semKey = `dues_${sem}`;
+              const isExpanded = expandedSems.has(semKey);
+              return (
+                <div key={semKey} className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
+                  <button
+                    onClick={() => {
+                      const next = new Set(expandedSems);
+                      if (next.has(semKey)) next.delete(semKey); else next.add(semKey);
+                      setExpandedSems(next);
+                    }}
+                    className="w-full flex items-center justify-between p-5 text-left hover:bg-secondary/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      {isExpanded ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
+                      <div>
+                        <h3 className="text-lg font-bold text-foreground">{sem}</h3>
+                        <p className="text-sm text-muted-foreground">{totalInSem} students</p>
+                      </div>
+                    </div>
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-border p-4 space-y-4">
+                      {Object.entries(sections)
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([sec, items]) => (
+                          <div key={sec}>
+                            <h4 className="font-bold text-foreground bg-secondary/50 px-4 py-2 rounded-t-xl">Section: {sec} <span className="text-xs font-medium text-muted-foreground ml-2">({items.length} students)</span></h4>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="bg-background text-foreground text-sm border-b border-border">
+                                    <th className="p-3 font-semibold">#</th>
+                                    <th className="p-3 font-semibold">Student Name</th>
+                                    <th className="p-3 font-semibold">Roll No</th>
+                                    <th className="p-3 font-semibold text-center">Library Dues</th>
+                                    <th className="p-3 font-semibold text-center">College Fee Status</th>
+                                    <th className="p-3 font-semibold">Attendance Fines (₹)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border">
+                                  {items.map((s: any, idx: number) => renderStudentRow(s, idx))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+      )}
+
+      {!studentDuesLoading && filteredStudentDuesOverview.length > 0 && (
+        <div className="px-4 py-3 bg-card border border-border rounded-xl text-sm text-muted-foreground">
+          Showing {filteredStudentDuesOverview.length} of {studentDuesOverview.length} student{studentDuesOverview.length !== 1 ? 's' : ''}
+        </div>
+      )}
     </div>
   );
 }

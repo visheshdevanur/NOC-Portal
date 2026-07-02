@@ -147,16 +147,13 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           setCategories([]);
         }
       } else if (isFycGlobal) {
-        // FYC: read from is_first_year=false (admin's canonical source).
-        // Stale old categories (55-64, 65-74) only exist as is_first_year=true
-        // and are therefore not shown. Admin-created categories (Fourth/Third/…)
-        // exist in both values, so they show correctly here.
+        // FYC: fetch first-year categories (sem 1 & 2)
         if (allDepartments.length > 0) {
           const { data, error } = await supabase
             .from('attendance_fine_categories')
             .select('*')
             .eq('department_id', allDepartments[0].id)
-            .eq('is_first_year', false)
+            .eq('is_first_year', true)
             .order('id', { ascending: false }); // newest first → stale dupes skipped
           if (error) throw error;
           // Deduplicate by range — keeps newest record for each min/max pair

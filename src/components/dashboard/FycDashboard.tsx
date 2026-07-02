@@ -233,8 +233,8 @@ export default function FycDashboard() {
     try {
         const { data, error } = await supabase
           .from('subject_enrollment')
-          .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, section, department_id, roll_number, semesters(name), departments!profiles_department_id_fkey(name)), subjects(subject_name, subject_code)')
-          .eq('remarks', 'Approved by Staff after Fine');
+          .select('*, profiles!subject_enrollment_student_id_fkey!inner(full_name, section, department_id, roll_number, semester_id, semesters(name), departments!profiles_department_id_fkey(name)), subjects!subject_enrollment_subject_id_fkey(subject_name, subject_code)')
+          .gt('attendance_fee', 0);
       if (error) throw error;
       const filtered = (data || []).filter((s: any) => isFirstYearSem(s.profiles?.semesters?.name || ''));
       setApprovedFines(filtered || []);
@@ -720,7 +720,7 @@ export default function FycDashboard() {
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'approvals', label: 'Clearances', icon: <Activity className="w-4 h-4" /> },
-    { id: 'fineApprovals', label: 'Fine Approvals', icon: <FileCheck className="w-4 h-4" /> },
+    { id: 'fineApprovals', label: 'Fine Payments', icon: <FileCheck className="w-4 h-4" /> },
     { id: 'collegeDues', label: 'College Dues', icon: <Banknote className="w-4 h-4" /> },
     { id: 'studentdues', label: 'Student Dues Overview', icon: <Eye className="w-4 h-4" /> },
     { id: 'attendances', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4 text-destructive" /> },
@@ -1393,12 +1393,40 @@ export default function FycDashboard() {
           <div className="bg-card rounded-2xl p-5 shadow-sm border border-border">
             <h2 className="text-xl font-bold text-foreground flex items-center gap-2 mb-1">
               <FileCheck className="w-5 h-5 text-violet-500" />
-              Attendance Fine Approvals by Staff (1st Year)
+              Attendance Fine Payments (1st Year)
             </h2>
             <p className="text-muted-foreground text-sm">
-              First year students whose attendance fines were approved (overridden) by staff.
+              Track all 1st year student attendance fines — pending, paid, and verified.
             </p>
           </div>
+
+          {/* Summary Stats */}
+          {!loadingFines && approvedFines.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[{
+                label: 'Total Students',
+                value: approvedFines.length,
+                color: 'bg-blue-500/10 text-blue-600'
+              }, {
+                label: 'Total Fines',
+                value: `\u20b9${approvedFines.reduce((s: number, i: any) => s + (Number(i.attendance_fee) || 0), 0)}`,
+                color: 'bg-amber-500/10 text-amber-600'
+              }, {
+                label: 'Paid',
+                value: approvedFines.filter((i: any) => i.attendance_fee_verified).length,
+                color: 'bg-emerald-500/10 text-emerald-600'
+              }, {
+                label: 'Pending',
+                value: approvedFines.filter((i: any) => !i.attendance_fee_verified && i.attendance_fee > 0).length,
+                color: 'bg-red-500/10 text-red-600'
+              }].map((stat, idx) => (
+                <div key={idx} className={`${stat.color} rounded-2xl p-4 text-center`}>
+                  <p className="text-2xl font-bold">{stat.value}</p>
+                  <p className="text-xs font-medium mt-1">{stat.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="relative w-full md:max-w-sm">
             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -1488,8 +1516,10 @@ export default function FycDashboard() {
                                           <th className="p-3 font-semibold">Department</th>
                                           <th className="p-3 font-semibold">Subject</th>
                                           <th className="p-3 font-semibold text-center">Attendance %</th>
-                                          <th className="p-3 font-semibold text-center">Paid Fine (₹)</th>
-                                          <th className="p-3 font-semibold">Status</th>
+                                          <th className="p-3 font-semibold text-center">Fine (₹)</th>
+                                          <th className="p-3 font-semibold text-center">Status</th>
+                                          <th className="p-3 font-semibold">Transaction ID</th>
+                                          <th className="p-3 font-semibold">Date</th>
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-border">
@@ -1506,12 +1536,22 @@ export default function FycDashboard() {
                                               <span className="text-amber-600 dark:text-amber-400 font-bold">{item.attendance_pct}%</span>
                                             </td>
                                             <td className="p-3 text-center font-bold text-foreground">
-                                              {item.attendance_fee ? `₹${item.attendance_fee}` : '—'}
+                                              {item.attendance_fee ? `\u20b9${item.attendance_fee}` : '\u2014'}
                                             </td>
-                                            <td className="p-3">
-                                              <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-                                                Fine Approved
-                                              </span>
+                                            <td className="p-3 text-center">
+                                              {item.attendance_fee_verified ? (
+                                                <span className="px-2 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600">Paid</span>
+                                              ) : item.attendance_fee > 0 ? (
+                                                <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600">Pending</span>
+                                              ) : (
+                                                <span className="px-2 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">No Fine</span>
+                                              )}
+                                            </td>
+                                            <td className="p-3 text-xs font-mono text-muted-foreground">
+                                              {item.gateway_payment_id || '\u2014'}
+                                            </td>
+                                            <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
+                                              {item.payment_date ? new Date(item.payment_date).toLocaleDateString() : '\u2014'}
                                             </td>
                                           </tr>
                                         ))}
