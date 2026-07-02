@@ -106,6 +106,8 @@ export default function HodDashboard() {
 
   // Fine Payments state
   const [searchFines, setSearchFines] = useState('');
+  const [finePaymentsSemFilter, setFinePaymentsSemFilter] = useState('all');
+  const [finePaymentsSectionFilter, setFinePaymentsSectionFilter] = useState('all');
 
   // College Dues state
   const [searchCollegeDues, setSearchCollegeDues] = useState('');
@@ -1143,27 +1145,55 @@ export default function HodDashboard() {
             </div>
           )}
 
-          <div className="relative w-full md:max-w-xs">
-            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search by student, subject, or USN..."
-              className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
-              value={searchFines}
-              onChange={e => setSearchFines(e.target.value)}
-            />
+          <div className="flex flex-col md:flex-row gap-3 items-end md:items-center">
+            <div className="relative w-full md:max-w-xs">
+              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search by student, subject, or USN..."
+                className="pl-10 pr-4 py-3 bg-card border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full"
+                value={searchFines}
+                onChange={e => setSearchFines(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <select
+                value={finePaymentsSemFilter}
+                onChange={(e) => setFinePaymentsSemFilter(e.target.value)}
+                className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+              >
+                <option value="all">All Semesters</option>
+                {Array.from(new Set(approvedFines.map((f: any) => f.profiles?.semesters?.name).filter(Boolean))).sort().map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <select
+                value={finePaymentsSectionFilter}
+                onChange={(e) => setFinePaymentsSectionFilter(e.target.value)}
+                className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+              >
+                <option value="all">All Sections</option>
+                {Array.from(new Set(approvedFines.map((f: any) => f.profiles?.section).filter(Boolean))).sort().map(sec => (
+                  <option key={sec} value={sec}>{sec}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
             {loadingFines ? (
               <div className="p-8 text-center text-muted-foreground animate-pulse">Loading fine payments...</div>
             ) : (() => {
-              const filtered = approvedFines.filter(item =>
-                item.profiles?.full_name?.toLowerCase().includes(searchFines.toLowerCase()) ||
-                item.subjects?.subject_name?.toLowerCase().includes(searchFines.toLowerCase()) ||
-                item.subjects?.subject_code?.toLowerCase().includes(searchFines.toLowerCase()) ||
-                item.profiles?.roll_number?.toLowerCase().includes(searchFines.toLowerCase())
-              );
+              const filtered = approvedFines.filter((item: any) => {
+                const matchesSearch = !searchFines ||
+                  item.profiles?.full_name?.toLowerCase().includes(searchFines.toLowerCase()) ||
+                  item.subjects?.subject_name?.toLowerCase().includes(searchFines.toLowerCase()) ||
+                  item.subjects?.subject_code?.toLowerCase().includes(searchFines.toLowerCase()) ||
+                  item.profiles?.roll_number?.toLowerCase().includes(searchFines.toLowerCase());
+                const matchesSem = finePaymentsSemFilter === 'all' || item.profiles?.semesters?.name === finePaymentsSemFilter;
+                const matchesSection = finePaymentsSectionFilter === 'all' || item.profiles?.section === finePaymentsSectionFilter;
+                return matchesSearch && matchesSem && matchesSection;
+              });
               return filtered.length === 0 ? (
                 <div className="p-12 text-center flex flex-col items-center">
                   <div className="w-20 h-20 bg-secondary rounded-full flex items-center justify-center mb-4">

@@ -28,6 +28,9 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
   const [attendanceFines, setAttendanceFines] = useState<any[]>([]);
   const [loadingAttendances, setLoadingAttendances] = useState(false);
   const [searchAttendances, setSearchAttendances] = useState('');
+  const [finesSemFilter, setFinesSemFilter] = useState('all');
+  const [finesSectionFilter, setFinesSectionFilter] = useState('all');
+  const [finesBranchFilter, setFinesBranchFilter] = useState('all');
   
   const [showCatModal, setShowCatModal] = useState(false);
   const [catForm, setCatForm] = useState({ label: '', minPct: '', maxPct: '', amount: '' });
@@ -827,6 +830,38 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
           />
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {isAdminGlobal && (
+            <select
+              value={finesBranchFilter}
+              onChange={(e) => setFinesBranchFilter(e.target.value)}
+              className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none"
+            >
+              <option value="all">All Branches</option>
+              {allDepartments.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          )}
+          <select
+            value={finesSemFilter}
+            onChange={(e) => setFinesSemFilter(e.target.value)}
+            className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none"
+          >
+            <option value="all">All Semesters</option>
+            {Array.from(new Set(attendanceFines.map(f => f.profiles?.semesters?.name).filter(Boolean))).sort().map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          <select
+            value={finesSectionFilter}
+            onChange={(e) => setFinesSectionFilter(e.target.value)}
+            className="px-4 py-3 bg-card border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none"
+          >
+            <option value="all">All Sections</option>
+            {Array.from(new Set(attendanceFines.map(f => f.profiles?.section).filter(Boolean))).sort().map(sec => (
+              <option key={sec} value={sec}>{sec}</option>
+            ))}
+          </select>
         </div>
       </div>
       
@@ -837,11 +872,23 @@ export default function AttendanceFinesTab({ departmentId, role }: AttendanceFin
         {loadingAttendances ? (
           <div className="p-8 text-center text-muted-foreground animate-pulse">Loading rejected attendances...</div>
         ) : (() => {
-          const filtered = attendanceFines.filter(item =>
-            item.profiles?.full_name?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
-            item.subjects?.subject_name?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
-            item.subjects?.subject_code?.toLowerCase().includes(searchAttendances.toLowerCase())
-          );
+          const filtered = attendanceFines.filter(item => {
+            // Only show students below 85% attendance
+            if (item.attendance_pct !== null && item.attendance_pct !== undefined && item.attendance_pct >= 85) return false;
+            // Text search
+            const matchesSearch = !searchAttendances ||
+              item.profiles?.full_name?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
+              item.subjects?.subject_name?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
+              item.subjects?.subject_code?.toLowerCase().includes(searchAttendances.toLowerCase()) ||
+              item.profiles?.roll_number?.toLowerCase().includes(searchAttendances.toLowerCase());
+            // Semester filter
+            const matchesSem = finesSemFilter === 'all' || item.profiles?.semesters?.name === finesSemFilter;
+            // Section filter
+            const matchesSection = finesSectionFilter === 'all' || item.profiles?.section === finesSectionFilter;
+            // Branch filter (admin only)
+            const matchesBranch = finesBranchFilter === 'all' || item.profiles?.department_id === finesBranchFilter;
+            return matchesSearch && matchesSem && matchesSection && matchesBranch;
+          });
           return filtered.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">No students are currently rejected due to low attendance.</div>
           ) : (

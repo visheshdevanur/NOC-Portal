@@ -327,9 +327,15 @@ export const getStaffAttendanceFines = async (departmentId: string) => {
 export const overrideAttendanceFine = async (enrollmentId: string, feeAmount: number = 0) => {
   const newStatus = feeAmount === 0 ? 'completed' : 'rejected';
   const remarks = feeAmount === 0 ? 'Approved by Staff (Fine Waived)' : 'Fine Reduced by Staff';
+  // When re-fining (amount > 0), reset attendance_fee_verified to false
+  // so the new fine correctly appears as "Pending" in collection summary & student dues overview
+  const updatePayload: any = { status: newStatus, remarks, attendance_fee: feeAmount };
+  if (feeAmount > 0) {
+    updatePayload.attendance_fee_verified = false;
+  }
   const { data, error } = await supabase
     .from('subject_enrollment')
-    .update({ status: newStatus, remarks, attendance_fee: feeAmount })
+    .update(updatePayload)
     .eq('id', enrollmentId)
     .select('*, profiles!subject_enrollment_student_id_fkey(full_name)')
     .single();

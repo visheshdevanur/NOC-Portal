@@ -5,7 +5,7 @@ import { isFirstYearSem } from '../../../lib/api';
 
 interface StudentDuesOverviewTabProps {
   departmentId?: string;
-  role: 'hod' | 'fyc' | 'staff' | 'clerk';
+  role: 'hod' | 'fyc' | 'staff' | 'clerk' | 'admin';
 }
 
 export default function StudentDuesOverviewTab({ departmentId, role }: StudentDuesOverviewTabProps) {
@@ -13,6 +13,7 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
   const [studentDuesLoading, setStudentDuesLoading] = useState(false);
   const [studentDuesSearch, setStudentDuesSearch] = useState('');
   const [csvSemFilter, setCsvSemFilter] = useState('all');
+  const [csvSectionFilter, setCsvSectionFilter] = useState('all');
   const [semestersList, setSemestersList] = useState<any[]>([]);
 
   useEffect(() => {
@@ -26,7 +27,9 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
       if (departmentId) query = query.eq('department_id', departmentId);
       const { data } = await query;
       let filtered = data || [];
-      if (role === 'staff' || role === 'hod') {
+      if (role === 'admin') {
+        // Admin sees all semesters
+      } else if (role === 'staff' || role === 'hod') {
         filtered = filtered.filter(s => !isFirstYearSem(s.name));
       } else if (role === 'clerk' || role === 'fyc') {
         filtered = filtered.filter(s => isFirstYearSem(s.name));
@@ -41,6 +44,7 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
       // 1. Get semester IDs to filter server-side (avoids 1000-row limit)
       const { data: allSems } = await supabase.from('semesters').select('id, name');
       const relevantSemIds = (allSems || []).filter(s => {
+        if (role === 'admin') return true;
         if (role === 'staff' || role === 'hod') return !isFirstYearSem(s.name);
         if (role === 'clerk' || role === 'fyc') return isFirstYearSem(s.name);
         return true;
@@ -77,8 +81,14 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
         const results: any[] = [];
         for (let i = 0; i < ids.length; i += 500) {
           const batch = ids.slice(i, i + 500);
-          const { data } = await supabase.from(table).select(select).in('student_id', batch);
-          results.push(...(data || []));
+          // Paginate within each batch to avoid Supabase 1000-row default limit
+          let offset = 0;
+          while (true) {
+            const { data } = await supabase.from(table).select(select).in('student_id', batch).range(offset, offset + 999);
+            results.push(...(data || []));
+            if (!data || data.length < 1000) break;
+            offset += 1000;
+          }
         }
         return results;
       };
@@ -123,11 +133,14 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
 
   const uniqueSemesterNames = Array.from(new Set(semestersList.map(s => s.name))).sort();
 
+  const uniqueSections = Array.from(new Set(studentDuesOverview.map(s => s.section).filter(Boolean))).sort();
+
   const filteredStudentDuesOverview = studentDuesOverview.filter(s =>
     s.full_name?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
     s.roll_number?.toLowerCase().includes(studentDuesSearch.toLowerCase()) ||
     s.section?.toLowerCase().includes(studentDuesSearch.toLowerCase())
-  ).filter(s => csvSemFilter === 'all' || s.semesters?.name === csvSemFilter);
+  ).filter(s => csvSemFilter === 'all' || s.semesters?.name === csvSemFilter
+  ).filter(s => csvSectionFilter === 'all' || s.section === csvSectionFilter);
 
   const downloadCSV = () => {
     const dataToExport = filteredStudentDuesOverview;
@@ -193,6 +206,16 @@ export default function StudentDuesOverviewTab({ departmentId, role }: StudentDu
             <option value="all">All Semesters</option>
             {uniqueSemesterNames.map(name => (
               <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          <select
+            value={csvSectionFilter}
+            onChange={(e) => setCsvSectionFilter(e.target.value)}
+            className="px-4 py-2.5 bg-background border border-border rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none w-full md:w-40"
+          >
+            <option value="all">All Sections</option>
+            {uniqueSections.map(sec => (
+              <option key={sec} value={sec}>{sec}</option>
             ))}
           </select>
           <button
