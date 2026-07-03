@@ -12,6 +12,7 @@ type SubjectEnrollment = {
   teacher_id: string;
   status: string;
   attendance_pct: number | null;
+  assignment_status: string | null;
   remarks: string | null;
   created_at: string;
   updated_at: string;
