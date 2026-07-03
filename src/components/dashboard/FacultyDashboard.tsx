@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../lib/useAuth';
-import { getFacultyPendingStudents, markFacultySubjectStatus, batchMarkFacultyAttendance, getTeacherSubjectsList, getIAAttendanceForSubject, getTeacherIAAttendance, getAttendanceFreezeStatus } from '../../lib/api';
-import { Search, ClipboardList, BookOpen, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Building2, Layers, RefreshCw, Snowflake } from 'lucide-react';
+import { getFacultyPendingStudents, markFacultySubjectStatus, batchMarkFacultyAttendance, getTeacherSubjectsList, getIAAttendanceForSubject, getTeacherIAAttendance, getAttendanceFreezeStatus, updateAssignmentStatus } from '../../lib/api';
+import { Search, ClipboardList, BookOpen, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Building2, Layers, RefreshCw, Snowflake, Globe } from 'lucide-react';
 import { parseInstituteAttendanceSheet } from '../../lib/instituteAttendanceParser';
 
 type SubjectEnrollment = {
@@ -44,7 +44,7 @@ type IARecord = {
 export default function FacultyDashboard() {
   const { user, profile } = useAuth();
   // Tab state
-  const [activeTab, setActiveTab] = useState<'clearance' | 'manage-ia'>('clearance');
+  const [activeTab, setActiveTab] = useState<'clearance' | 'manage-ia' | 'assignments' | 'oe-attendance'>('clearance');
 
   // Attendance freeze state (set by admin in AttendanceFinesTab)
   const [attendanceFrozen, setAttendanceFrozen] = useState(false);
@@ -663,6 +663,30 @@ export default function FacultyDashboard() {
             <ClipboardList className="w-4 h-4" />
             Manage IAs
           </button>
+          <button
+            onClick={() => setActiveTab('assignments')}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
+              activeTab === 'assignments'
+                ? 'bg-primary text-primary-foreground shadow-md'
+                : 'bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+            }`}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            Assignments
+          </button>
+          {profile?.is_oe_faculty && (
+            <button
+              onClick={() => setActiveTab('oe-attendance')}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
+                activeTab === 'oe-attendance'
+                  ? 'bg-primary text-primary-foreground shadow-md'
+                  : 'bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+              }`}
+            >
+              <Globe className="w-4 h-4" />
+              OE Attendance
+            </button>
+          )}
         </div>
       </div>
 
@@ -1299,6 +1323,124 @@ export default function FacultyDashboard() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ======================== ASSIGNMENTS TAB ======================== */}
+      {activeTab === 'assignments' && (
+        <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+          <div className="p-6 border-b border-border">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-primary" />
+              Assignments
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">Toggle assignment status for your students. Pending status blocks student clearance.</p>
+          </div>
+          <div className="p-6">
+            {(() => {
+              // Group enrollments by semester → section
+              const grouped: Record<string, Record<string, any[]>> = {};
+              (facultyData?.students || []).forEach((e: any) => {
+                const sem = e.profiles?.semesters?.name || 'Unknown Semester';
+                const sec = e.profiles?.section || 'Unknown';
+                if (!grouped[sem]) grouped[sem] = {};
+                if (!grouped[sem][sec]) grouped[sem][sec] = [];
+                grouped[sem][sec].push(e);
+              });
+              if (Object.keys(grouped).length === 0) {
+                return <div className="text-center text-muted-foreground py-8">No students assigned.</div>;
+              }
+              return (
+                <div className="space-y-3">
+                  {Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b, undefined, {numeric:true})).map(([sem, sections]) => (
+                    <div key={sem} className="border border-border rounded-2xl overflow-hidden">
+                      <button
+                        onClick={() => {
+                          const el = document.getElementById(`assign-sem-${sem}`);
+                          if (el) el.classList.toggle('hidden');
+                        }}
+                        className="w-full flex items-center justify-between p-4 text-left hover:bg-secondary/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                          <h3 className="text-lg font-bold text-foreground">{sem}</h3>
+                        </div>
+                      </button>
+                      <div id={`assign-sem-${sem}`} className="hidden border-t border-border p-4 space-y-4">
+                        {Object.entries(sections).sort(([a],[b]) => a.localeCompare(b)).map(([sec, items]) => (
+                          <div key={sec}>
+                            <h4 className="font-bold text-foreground bg-secondary/50 px-4 py-2 rounded-t-xl">Section: {sec} <span className="text-xs text-muted-foreground ml-2">({items.length})</span></h4>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="bg-background text-sm border-b border-border">
+                                    <th className="p-3 font-semibold">#</th>
+                                    <th className="p-3 font-semibold">Student</th>
+                                    <th className="p-3 font-semibold">Roll No</th>
+                                    <th className="p-3 font-semibold">Subject</th>
+                                    <th className="p-3 font-semibold text-center">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border">
+                                  {items.map((e: any, idx: number) => (
+                                    <tr key={e.id} className="hover:bg-secondary/10">
+                                      <td className="p-3 text-sm text-muted-foreground">{idx+1}</td>
+                                      <td className="p-3 font-medium">{e.profiles?.full_name}</td>
+                                      <td className="p-3 text-sm font-mono text-muted-foreground">{e.profiles?.roll_number || '—'}</td>
+                                      <td className="p-3 text-sm text-muted-foreground">{e.subjects?.subject_code} — {e.subjects?.subject_name}</td>
+                                      <td className="p-3 text-center">
+                                        <button
+                                          onClick={async () => {
+                                            const newStatus = (e.assignment_status === 'pending') ? 'submitted' : 'pending';
+                                            try {
+                                              await updateAssignmentStatus(e.id, newStatus);
+                                              refetchData();
+                                            } catch (err) { console.error(err); }
+                                          }}
+                                          className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            e.assignment_status === 'pending'
+                                              ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500 hover:text-white'
+                                              : 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500 hover:text-white'
+                                          }`}
+                                        >
+                                          {e.assignment_status === 'pending' ? 'Pending' : 'Submitted'}
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ======================== OE ATTENDANCE TAB ======================== */}
+      {activeTab === 'oe-attendance' && profile?.is_oe_faculty && (
+        <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+          <div className="p-6 border-b border-border">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <Globe className="w-5 h-5 text-violet-500" />
+              OE Attendance
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">Upload and manage attendance for Open Elective students.</p>
+          </div>
+          <div className="p-6">
+            <div className="text-center py-12 text-muted-foreground">
+              <Globe className="w-12 h-12 mx-auto mb-4 opacity-30" />
+              <h3 className="text-lg font-bold text-foreground">OE Attendance Management</h3>
+              <p className="mt-2">Upload attendance via Excel sheet. Students with attendance below 85% will be auto-flagged for fines.</p>
+              <p className="mt-1 text-xs">OE subjects will appear here once created by the DEO.</p>
+            </div>
+          </div>
         </div>
       )}
     </div>

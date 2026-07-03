@@ -50,7 +50,7 @@ export const getSubjectsByDepartment = async (departmentId: string) => {
   return data;
 };
 
-export const createSubject = async (subject: { subject_name: string; subject_code: string; department_id: string; semester_id: string }) => {
+export const createSubject = async (subject: { subject_name: string; subject_code: string; department_id: string; semester_id: string; subject_type?: string }) => {
   // Check for duplicate subject_code in same department + semester
   const { data: existing } = await supabase
     .from('subjects')
@@ -62,13 +62,104 @@ export const createSubject = async (subject: { subject_name: string; subject_cod
   if (existing && existing.length > 0) {
     throw new Error(`Subject with code "${subject.subject_code.toUpperCase()}" already exists in this semester.`);
   }
-  const { data, error } = await supabase.from('subjects').insert(subject).select();
+  const { data, error } = await supabase.from('subjects').insert({
+    ...subject,
+    subject_type: subject.subject_type || 'theory',
+  }).select();
   if (error) throw error;
   return data;
 };
 
 export const deleteSubject = async (subjectId: string) => {
   const { error } = await supabase.from('subjects').delete().eq('id', subjectId);
+  if (error) throw error;
+};
+
+// ── Section-Teacher Assignment Management ──
+
+/** Get all section-teacher assignments for a department */
+export const getSectionTeacherAssignments = async (departmentId: string) => {
+  const { data, error } = await supabase
+    .from('section_teacher_assignments')
+    .select('*, profiles!section_teacher_assignments_teacher_id_fkey(full_name, email), subjects(subject_name, subject_code, semester_id, semesters(name))')
+    .eq('department_id', departmentId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+/** Remove a section-teacher assignment and its enrollment rows */
+export const removeSectionTeacherAssignment = async (assignmentId: string, subjectId: string, section: string, teacherId: string) => {
+  // Delete enrollment rows for this teacher+subject+section
+  const { error: enrollError } = await supabase
+    .from('subject_enrollment')
+    .delete()
+    .eq('subject_id', subjectId)
+    .eq('teacher_id', teacherId);
+  if (enrollError) throw enrollError;
+
+  // Delete the junction record
+  const { error } = await supabase
+    .from('section_teacher_assignments')
+    .delete()
+    .eq('id', assignmentId);
+  if (error) throw error;
+  logActivity('Removed Section Assignment', `Removed teacher from section ${section}`);
+};
+
+/** Get students assigned to a specific teacher+subject+section */
+export const getStudentsForAssignment = async (_subjectId: string, section: string, semesterId: string) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, roll_number, section, semester_id')
+    .eq('role', 'student')
+    .eq('section', section)
+    .eq('semester_id', semesterId)
+    .order('roll_number');
+  if (error) throw error;
+  return data || [];
+};
+
+/** Delete a student permanently (profile + auth) */
+export const deleteStudentPermanently = async (studentId: string) => {
+  // Delete all related data first
+  await supabase.from('subject_enrollment').delete().eq('student_id', studentId);
+  await supabase.from('clearance_requests').delete().eq('student_id', studentId);
+  await supabase.from('library_dues').delete().eq('student_id', studentId);
+  await supabase.from('student_dues').delete().eq('student_id', studentId);
+  // Delete profile
+  const { error } = await supabase.from('profiles').delete().eq('id', studentId);
+  if (error) throw error;
+  // Auth user deletion requires edge function (service_role)
+  const { error: fnError } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'delete-user', userId: studentId },
+  });
+  if (fnError) console.warn('Auth deletion may need manual cleanup:', fnError);
+  logActivity('Deleted Student', `Permanently deleted student ${studentId}`);
+};
+
+/** Toggle OE Faculty status */
+export const toggleOEFaculty = async (userId: string, isOE: boolean) => {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ is_oe_faculty: isOE })
+    .eq('id', userId);
+  if (error) throw error;
+  logActivity('OE Faculty Toggle', `Set is_oe_faculty=${isOE} for user ${userId}`);
+};
+
+/** Save section-teacher assignment to junction table */
+export const saveSectionTeacherAssignment = async (subjectId: string, section: string, teacherId: string, semesterId: string, departmentId: string, tenantId: string) => {
+  const { error } = await supabase
+    .from('section_teacher_assignments')
+    .upsert({
+      subject_id: subjectId,
+      section,
+      teacher_id: teacherId,
+      semester_id: semesterId,
+      department_id: departmentId,
+      tenant_id: tenantId,
+    }, { onConflict: 'subject_id,section,teacher_id' });
   if (error) throw error;
 };
 

@@ -32,6 +32,7 @@ type SubjectEnrollment = {
   attendance_pct: number | null;
   attendance_fee: number | null;
   attendance_fee_verified: boolean | null;
+  assignment_status: string | null;
   remarks: string | null;
   created_at: string;
   updated_at: string;
@@ -274,10 +275,14 @@ export default function StudentDashboard() {
   // A subject is "faculty cleared" when ANY of these is true:
   // 1. Faculty marked it 'completed' (attendance >= 85%) AND no outstanding fine
   // 2. The attendance fine has been paid (verified by HDFC/cash)
-  // A subject with status='pending' is NOT cleared (faculty hasn't reviewed it yet)
-  // A subject with an unpaid attendance fine is NOT cleared (even if status is 'completed')
+  // ALSO: assignment_status must be 'submitted' (not 'pending')
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(
-    e => (e.status === 'completed' || e.attendance_fee_verified === true) && ((e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true)
+    e => (e.status === 'completed' || e.attendance_fee_verified === true) && ((e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true) && (e.assignment_status !== 'pending')
+  ), [enrollments]);
+
+  // Subjects with pending assignment status
+  const pendingAssignments = useMemo(() => enrollments.filter(
+    e => e.assignment_status === 'pending'
   ), [enrollments]);
   const allLibraryCleared = useMemo(() => libraryDue ? !libraryDue.has_dues : true, [libraryDue]);
   const isLibraryPermitted = useMemo(() => libraryDue ? (libraryDue.has_dues && libraryDue.permitted) : false, [libraryDue]);
@@ -846,6 +851,31 @@ export default function StudentDashboard() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Pending Assignments Warning */}
+        {pendingAssignments.length > 0 && (
+          <div className="bg-card rounded-3xl p-8 shadow-sm border border-amber-500/30">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-xl bg-amber-500/15">
+                <BookOpen className="w-5 h-5 text-amber-500" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-foreground">Pending Assignments</h2>
+                <p className="text-sm text-muted-foreground">The following assignments are marked as pending by your faculty. This blocks your clearance.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {pendingAssignments.map((e: any) => (
+                <div key={e.id} className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
+                  <XCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span className="text-sm font-medium text-foreground">
+                    {e.subjects?.subject_name || 'Unknown Subject'} <span className="text-muted-foreground">({e.subjects?.subject_code})</span> — Assignment not submitted
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Faculty Clearances — hidden from student view; logic retained */}
         <div className="hidden">
           <div className="flex items-center justify-between mb-6">

@@ -4,14 +4,15 @@ import { useAuth } from '../../lib/useAuth';
 import {
   getUsersByDeptAndRoles,
   getSubjectsByDepartment, createSubject, deleteSubject, getDepartmentSections,
-  assignTeacherToSection, updateSubjectAPI, getDepartmentById, getSemestersByDepartment, updateUserAPI,
-  updateStudentPaidAmount, getAllDepartments, logActivity, normalizeSemName, humanizeError
+  updateSubjectAPI, getDepartmentById, getSemestersByDepartment, updateUserAPI,
+  updateStudentPaidAmount, getAllDepartments, logActivity, normalizeSemName, humanizeError,
+  deleteStudentPermanently, toggleOEFaculty,
 } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 
 import {
   X, Search, BookOpen, Users, UserPlus,
-  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download, Upload, ClipboardList
+  Plus, Trash2, Settings, GraduationCap, Link2, FileWarning, Activity, Eye, Download, Upload, ClipboardList, Globe
 } from 'lucide-react';
 import { logAndFormatError } from '../../lib/errorHandler';
 
@@ -80,7 +81,7 @@ export default function StaffDashboard() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loadingSubjects, setLoadingSubjects] = useState(false);
   const [showCreateSubject, setShowCreateSubject] = useState(false);
-  const [newSubject, setNewSubject] = useState({ subject_name: '', subject_code: '', semester_id: '' });
+  const [newSubject, setNewSubject] = useState({ subject_name: '', subject_code: '', semester_id: '', subject_type: 'theory' });
   const [subjectCreating, setSubjectCreating] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [subjectError, setSubjectError] = useState<string | null>(null);
@@ -728,10 +729,11 @@ export default function StaffDashboard() {
         subject_name: newSubject.subject_name,
         subject_code: newSubject.subject_code.toUpperCase(),
         department_id: profile!.department_id!,
-        semester_id: newSubject.semester_id
+        semester_id: newSubject.semester_id,
+        subject_type: newSubject.subject_type,
       });
       setSubjectSuccess(`Subject "${newSubject.subject_name}" created!`);
-      setNewSubject({ subject_name: '', subject_code: '', semester_id: '' });
+      setNewSubject({ subject_name: '', subject_code: '', semester_id: '', subject_type: 'theory' });
       setShowCreateSubject(false);
       fetchSubjects();
     } catch (err: any) {
@@ -880,29 +882,87 @@ export default function StaffDashboard() {
     } catch (err) { console.error(err); }
   };
 
+  // Section assign popup state
+  const [showAssignPopup, setShowAssignPopup] = useState(false);
+  const [assignPopupStudents, setAssignPopupStudents] = useState<any[]>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [loadingAssignPopup, setLoadingAssignPopup] = useState(false);
+  const [sectionAssignments, setSectionAssignments] = useState<any[]>([]);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
+
+  const fetchSectionAssignments = async () => {
+    if (!profile?.department_id) return;
+    setLoadingAssignments(true);
+    try {
+      const { getSectionTeacherAssignments } = await import('../../lib/api');
+      const data = await getSectionTeacherAssignments(profile.department_id);
+      setSectionAssignments(data);
+    } catch (err) { console.error(err); }
+    finally { setLoadingAssignments(false); }
+  };
+
+  useEffect(() => { if (profile?.department_id) fetchSectionAssignments(); }, [profile?.department_id]);
+
   const handleSectionAssign = async () => {
     if (!selectedSemesterForAssign || !selectedSection || !selectedSubject || !selectedTeacher) {
       setSectionError('Please select a semester, section, subject, and teacher.');
+      return;
+    }
+    // Open popup with student list
+    setLoadingAssignPopup(true);
+    setShowAssignPopup(true);
+    try {
+      const { getStudentsForAssignment } = await import('../../lib/api');
+      const students = await getStudentsForAssignment(selectedSubject, selectedSection, selectedSemesterForAssign);
+      setAssignPopupStudents(students);
+      setSelectedStudentIds(new Set(students.map((s: any) => s.id)));
+    } catch (err: any) {
+      setSectionError(err.message);
+      setShowAssignPopup(false);
+    }
+    setLoadingAssignPopup(false);
+  };
+
+  const confirmSectionAssign = async () => {
+    if (selectedStudentIds.size === 0) {
+      setSectionError('No students selected.');
       return;
     }
     setAssigning(true);
     setSectionError(null);
     setSectionSuccess(null);
     try {
+      const { assignTeacherToSection, saveSectionTeacherAssignment } = await import('../../lib/api');
       const result = await assignTeacherToSection(selectedSubject, selectedSection, selectedTeacher, selectedSemesterForAssign);
       const teacherName = deptTeachers.find(t => t.id === selectedTeacher)?.full_name || 'Teacher';
+      // Save to junction table
+      await saveSectionTeacherAssignment(selectedSubject, selectedSection, selectedTeacher, selectedSemesterForAssign, profile!.department_id!, profile!.tenant_id || '');
       if (!result || result.length === 0) {
-        setSectionError(`Cannot assign teacher: Section "${selectedSection}" currently has no students in the selected semester. Please assign students to this section first.`);
+        setSectionError(`Cannot assign teacher: Section "${selectedSection}" currently has no students in the selected semester.`);
       } else {
-        setSectionSuccess(`Section "${selectedSection}" assigned to ${teacherName} for the selected subject. ${result.length} student enrollments updated.`);
+        setSectionSuccess(`Section "${selectedSection}" assigned to ${teacherName}. ${result.length} student enrollments updated.`);
         setSelectedSection('');
         setSelectedSubject('');
         setSelectedTeacher('');
+        fetchSectionAssignments();
       }
+      setShowAssignPopup(false);
     } catch (err: any) {
       setSectionError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));
     } finally {
       setAssigning(false);
+    }
+  };
+
+  const handleRemoveAssignment = async (assignment: any) => {
+    const { removeSectionTeacherAssignment } = await import('../../lib/api');
+    if (!confirm(`Remove ${assignment.profiles?.full_name || 'teacher'} from section ${assignment.section}?`)) return;
+    try {
+      await removeSectionTeacherAssignment(assignment.id, assignment.subject_id, assignment.section, assignment.teacher_id);
+      setSectionSuccess('Assignment removed successfully.');
+      fetchSectionAssignments();
+    } catch (err: any) {
+      setSectionError(err.message);
     }
   };
 
@@ -1433,10 +1493,39 @@ export default function StaffDashboard() {
                         </td>
                         <td className="p-4 text-muted-foreground text-sm">{(u).semesters?.name || '—'}</td>
                         <td className="p-4 text-muted-foreground">{u.section || '—'}</td>
-                        <td className="p-4 text-right">
+                        <td className="p-4 text-right flex items-center justify-end gap-2">
+                          {(u.role === 'teacher' || u.role === 'faculty') && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await toggleOEFaculty(u.id, !(u as any).is_oe_faculty);
+                                  fetchUsers();
+                                } catch (err: any) { setUserError(err.message); }
+                              }}
+                              className={`p-2 rounded-xl transition-colors ${(u as any).is_oe_faculty ? 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500 hover:text-white' : 'bg-secondary text-muted-foreground hover:bg-violet-500/15 hover:text-violet-600'}`}
+                              title={(u as any).is_oe_faculty ? 'De-assign OE Faculty' : 'Assign as OE Faculty'}
+                            >
+                              <Globe className="w-4 h-4" />
+                            </button>
+                          )}
                           <button onClick={() => { setUserError(null); setEditingUser({...u}); }} className="p-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white transition-colors" title="Edit">
                             <Settings className="w-4 h-4" />
                           </button>
+                          {u.role === 'student' && (
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`Permanently delete student "${u.full_name}"? This cannot be undone.`)) return;
+                                try {
+                                  await deleteStudentPermanently(u.id);
+                                  fetchUsers();
+                                } catch (err: any) { setUserError(err.message); }
+                              }}
+                              className="p-2 rounded-xl bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white transition-colors"
+                              title="Delete Student"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1534,6 +1623,14 @@ export default function StaffDashboard() {
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1.5">Subject Name</label>
                     <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="e.g. Data Structures" value={newSubject.subject_name} onChange={e => setNewSubject({ ...newSubject, subject_name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Subject Type</label>
+                    <select className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={newSubject.subject_type} onChange={e => setNewSubject({ ...newSubject, subject_type: e.target.value })}>
+                      <option value="theory">Theory</option>
+                      <option value="lab">Lab</option>
+                      <option value="open_elective">Open Elective</option>
+                    </select>
                   </div>
                 </div>
                 <div className="flex gap-3 mt-8">
@@ -1870,6 +1967,109 @@ export default function StaffDashboard() {
             >
               {assigning ? 'Assigning...' : 'Assign Section to Teacher'}
             </button>
+          </div>
+
+          {/* Student Selection Popup */}
+          {showAssignPopup && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowAssignPopup(false)}>
+              <div className="bg-card rounded-2xl shadow-xl border border-border max-w-lg w-full max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="p-5 border-b border-border flex justify-between items-center">
+                  <h3 className="text-lg font-bold text-foreground">Select Students to Assign</h3>
+                  <button onClick={() => setShowAssignPopup(false)} className="p-1 hover:bg-secondary rounded-lg"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="p-5 overflow-y-auto max-h-[55vh]">
+                  {loadingAssignPopup ? (
+                    <div className="text-center text-muted-foreground animate-pulse py-8">Loading students...</div>
+                  ) : assignPopupStudents.length === 0 ? (
+                    <div className="text-center text-muted-foreground py-8">No students found in this section.</div>
+                  ) : (
+                    <>
+                      <label className="flex items-center gap-3 mb-4 p-3 bg-secondary/50 rounded-xl cursor-pointer hover:bg-secondary/70 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={selectedStudentIds.size === assignPopupStudents.length}
+                          onChange={e => {
+                            if (e.target.checked) setSelectedStudentIds(new Set(assignPopupStudents.map(s => s.id)));
+                            else setSelectedStudentIds(new Set());
+                          }}
+                          className="w-5 h-5 rounded accent-amber-500"
+                        />
+                        <span className="font-bold text-foreground">Select All ({assignPopupStudents.length} students)</span>
+                      </label>
+                      <div className="space-y-1">
+                        {assignPopupStudents.map(s => (
+                          <label key={s.id} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-secondary/30 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={selectedStudentIds.has(s.id)}
+                              onChange={e => {
+                                const next = new Set(selectedStudentIds);
+                                if (e.target.checked) next.add(s.id); else next.delete(s.id);
+                                setSelectedStudentIds(next);
+                              }}
+                              className="w-4 h-4 rounded accent-amber-500"
+                            />
+                            <div className="flex-1">
+                              <span className="font-medium text-foreground">{s.full_name}</span>
+                              <span className="ml-2 text-xs text-muted-foreground font-mono">{s.roll_number || '—'}</span>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="p-5 border-t border-border flex gap-3">
+                  <button onClick={() => setShowAssignPopup(false)} className="flex-1 py-3 rounded-xl border border-border font-medium hover:bg-secondary transition-all">Cancel</button>
+                  <button
+                    onClick={confirmSectionAssign}
+                    disabled={assigning || selectedStudentIds.size === 0}
+                    className="flex-1 py-3 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600 disabled:opacity-50 transition-all"
+                  >
+                    {assigning ? 'Assigning...' : `Assign ${selectedStudentIds.size} Students`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Existing Section-Teacher Assignments */}
+          <div className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
+            <div className="p-5 border-b border-border">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <ClipboardList className="w-5 h-5 text-amber-500" />
+                Section-Teacher Assignments
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">View and manage existing section-to-teacher assignments.</p>
+            </div>
+            {loadingAssignments ? (
+              <div className="p-6 text-center text-muted-foreground animate-pulse">Loading assignments...</div>
+            ) : sectionAssignments.length === 0 ? (
+              <div className="p-6 text-center text-muted-foreground">No section-teacher assignments found.</div>
+            ) : (
+              <div className="divide-y divide-border">
+                {sectionAssignments.map((a: any) => (
+                  <div key={a.id} className="p-4 flex items-center justify-between hover:bg-secondary/10 transition-colors">
+                    <div className="flex-1">
+                      <p className="font-medium text-foreground">
+                        {a.profiles?.full_name || 'Unknown Teacher'}
+                        <span className="ml-2 text-xs text-muted-foreground">({a.profiles?.email || ''})</span>
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {a.subjects?.subject_code} — {a.subjects?.subject_name} | Section: {a.section} | {a.subjects?.semesters?.name || 'Unknown Semester'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveAssignment(a)}
+                      className="p-2 rounded-xl bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white transition-colors"
+                      title="Remove Assignment"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

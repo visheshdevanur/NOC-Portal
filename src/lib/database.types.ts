@@ -569,6 +569,7 @@ export type Database = {
           email: string | null
           full_name: string
           id: string
+          is_oe_faculty: boolean | null
           role: Database["public"]["Enums"]["user_role"]
           roll_number: string | null
           section: string | null
@@ -586,6 +587,7 @@ export type Database = {
           email?: string | null
           full_name: string
           id: string
+          is_oe_faculty?: boolean | null
           role?: Database["public"]["Enums"]["user_role"]
           roll_number?: string | null
           section?: string | null
@@ -603,6 +605,7 @@ export type Database = {
           email?: string | null
           full_name?: string
           id?: string
+          is_oe_faculty?: boolean | null
           role?: Database["public"]["Enums"]["user_role"]
           roll_number?: string | null
           section?: string | null
@@ -724,6 +727,7 @@ export type Database = {
       }
       subject_enrollment: {
         Row: {
+          assignment_status: string | null
           attendance_fee: number | null
           attendance_fee_verified: boolean | null
           attendance_pct: number | null
@@ -817,6 +821,7 @@ export type Database = {
           semester_id: string
           subject_code: string
           subject_name: string
+          subject_type: string | null
           tenant_id: string | null
         }
         Insert: {
@@ -827,6 +832,7 @@ export type Database = {
           semester_id: string
           subject_code: string
           subject_name: string
+          subject_type?: string | null
           tenant_id?: string | null
         }
         Update: {
@@ -837,6 +843,7 @@ export type Database = {
           semester_id?: string
           subject_code?: string
           subject_name?: string
+          subject_type?: string | null
           tenant_id?: string | null
         }
         Relationships: [

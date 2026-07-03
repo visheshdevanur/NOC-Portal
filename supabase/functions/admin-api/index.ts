@@ -77,6 +77,35 @@ serve(async (req) => {
     const body = await req.json()
     const { action, ...params } = body
 
+    // ─── DELETE USER (called by staff/hod to permanently delete a student) ───
+    if (action === 'delete-user') {
+      const { userId } = params
+      if (!userId) return jsonResponse({ error: 'userId required' }, 400)
+
+      // Validate caller is authenticated
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) return jsonResponse({ error: 'Missing Authorization' }, 401)
+      const token = authHeader.replace('Bearer ', '')
+      const { data: { user: caller } } = await adminClient.auth.getUser(token)
+      if (!caller) return jsonResponse({ error: 'Invalid token' }, 401)
+
+      // Verify caller is staff/hod/admin
+      const { data: callerProfile } = await adminClient.from('profiles').select('role').eq('id', caller.id).single()
+      if (!callerProfile || !['staff', 'hod', 'admin'].includes(callerProfile.role)) {
+        return jsonResponse({ error: 'Forbidden' }, 403)
+      }
+
+      // Delete auth user
+      const { error: deleteErr } = await adminClient.auth.admin.deleteUser(userId)
+      if (deleteErr) {
+        log({ level: 'ERROR', fn: 'admin-api', action: 'delete-user', meta: { userId, error: deleteErr.message } })
+        return jsonResponse({ error: deleteErr.message }, 400)
+      }
+
+      log({ level: 'INFO', fn: 'admin-api', action: 'delete-user', userId: caller.id, meta: { deleted_user: userId } })
+      return jsonResponse({ success: true })
+    }
+
     // ─── APPROVE DELETION (called by tenant admin, NOT super admin) ───
     if (action === 'approve-deletion') {
       const { tenant_id } = params

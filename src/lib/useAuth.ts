@@ -119,7 +119,7 @@ export function useAuth() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, role, email, department_id, semester_id, roll_number, section, tenant_id, theme, is_platform_admin, avatar_url, batch, created_at, created_by, status')
+        .select('id, full_name, role, email, department_id, semester_id, roll_number, section, tenant_id, theme, is_platform_admin, avatar_url, batch, created_at, created_by, status, is_oe_faculty')
         .eq('id', userId)
         .single();
 

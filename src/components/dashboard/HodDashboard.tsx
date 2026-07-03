@@ -355,14 +355,23 @@ export default function HodDashboard() {
     setUserCreating(true);
     setUserError(null);
     try {
+      // Check if email changed — if so, update auth email via edge function
+      const originalUser = departmentUsers.find((u: any) => u.id === editingUser.id);
+      if (originalUser && editingUser.email && editingUser.email !== originalUser.email) {
+        const { error: fnError } = await supabase.functions.invoke('change-user-email', {
+          body: { userId: editingUser.id, newEmail: editingUser.email },
+        });
+        if (fnError) throw new Error(`Failed to change login ID: ${fnError.message}`);
+      }
+
       const { error } = await supabase.from('profiles').update({
         full_name: editingUser.full_name,
         roll_number: editingUser.roll_number,
         email: editingUser.email,
       }).eq('id', editingUser.id);
       if (error) throw error;
-      setUserSuccess(`"${editingUser.full_name}" updated.`);
-      logActivity('Updated User', `Updated user "${editingUser.full_name}"`);
+      setUserSuccess(`"${editingUser.full_name}" updated.${originalUser && editingUser.email !== originalUser.email ? ' Login ID changed — user must log in with the new email.' : ''}`);
+      logActivity('Updated User', `Updated user "${editingUser.full_name}"${originalUser && editingUser.email !== originalUser.email ? ` (email changed to ${editingUser.email})` : ''}`);
       setEditingUser(null);
       fetchUsers();
     } catch (err: any) {

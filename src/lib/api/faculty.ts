@@ -301,3 +301,76 @@ export const getTeacherIAAttendance = async (_teacherId: string, subjectIds?: st
 
   return allRecords;
 };
+
+// ── Assignment Status Management ──
+
+/** Toggle assignment_status for a subject_enrollment row */
+export const updateAssignmentStatus = async (enrollmentId: string, status: 'submitted' | 'pending') => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('subject_enrollment')
+    .update({ assignment_status: status })
+    .eq('id', enrollmentId)
+    .select('*, profiles!subject_enrollment_student_id_fkey(full_name), subjects(subject_name)')
+    .single();
+  if (error) throw error;
+
+  // Sync across all teachers for same student+subject (shared assignment)
+  if (data) {
+    await supabase
+      .from('subject_enrollment')
+      .update({ assignment_status: status })
+      .eq('student_id', data.student_id)
+      .eq('subject_id', data.subject_id)
+      .neq('id', enrollmentId);
+  }
+
+  logActivity('Assignment Status', `Set ${data?.profiles?.full_name || 'student'} to ${status} for ${data?.subjects?.subject_name || 'subject'}`);
+  return data;
+};
+
+// ── OE Attendance ──
+
+/** Upload OE attendance data (bulk) */
+export const uploadOEAttendance = async (records: { student_id: string; subject_id: string; attendance_pct: number }[], _facultyId: string) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const results: any[] = [];
+  for (const r of records) {
+    const { data, error } = await supabase
+      .from('subject_enrollment')
+      .update({ attendance_pct: r.attendance_pct })
+      .eq('student_id', r.student_id)
+      .eq('subject_id', r.subject_id)
+      .select()
+      .maybeSingle();
+    if (error) console.warn('OE attendance update error:', error);
+    if (data) results.push(data);
+  }
+
+  // Log OE activity
+  const { data: profile } = await supabase.from('profiles').select('full_name, tenant_id').eq('id', user.id).single();
+  await supabase.from('oe_logs').insert({
+    action: 'attendance_upload',
+    actor_id: user.id,
+    actor_name: profile?.full_name || 'Unknown',
+    details: `Uploaded attendance for ${results.length} students`,
+    tenant_id: profile?.tenant_id,
+  });
+
+  logActivity('OE Attendance Upload', `Uploaded attendance for ${results.length} OE students`);
+  return results;
+};
+
+/** Get OE subjects for a faculty */
+export const getOESubjects = async () => {
+  const { data, error } = await supabase
+    .from('subjects')
+    .select('*, semesters(name), departments!subjects_department_id_fkey(name)')
+    .eq('subject_type', 'open_elective');
+  if (error) throw error;
+  return data || [];
+};

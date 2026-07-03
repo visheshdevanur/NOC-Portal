@@ -11,8 +11,9 @@ import { logAndFormatError } from '../../lib/errorHandler';
 import { logActivity } from '../../lib/api';
 import AttendanceFinesTab from './shared/AttendanceFinesTab';
 import OtherDuesTab from './shared/OtherDuesTab';
+import OEDashboard from './shared/OEDashboard';
 
-type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'logs' | 'academic' | 'attendanceFines' | 'otherDues';
+type TabType = 'overview' | 'departments' | 'hods' | 'subjects' | 'allusers' | 'logs' | 'academic' | 'attendanceFines' | 'otherDues' | 'oe-dashboard';
 
 type Department = {
   id: string;
@@ -1032,6 +1033,7 @@ export default function AdminDashboard() {
     { id: 'subjects', label: 'Subjects / Semester', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'attendanceFines', label: 'Attendance Fines', icon: <FileWarning className="w-4 h-4" /> },
     { id: 'otherDues', label: 'Other Dues', icon: <Banknote className="w-4 h-4 text-amber-500" /> },
+    { id: 'oe-dashboard', label: 'OE Dashboard', icon: <GraduationCap className="w-4 h-4 text-violet-500" /> },
     { id: 'allusers', label: 'All Users', icon: <Eye className="w-4 h-4" /> },
 
     { id: 'logs', label: 'Activity Logs', icon: <Activity className="w-4 h-4" /> },
@@ -1904,6 +1906,11 @@ export default function AdminDashboard() {
       {/* ========= OTHER DUES TAB (read-only for admin) ========= */}
       {activeTab === 'otherDues' && (
         <OtherDuesTab role="admin" />
+      )}
+
+      {/* OE Dashboard Tab */}
+      {activeTab === 'oe-dashboard' && (
+        <OEDashboard />
       )}
 
       {/* Logs Tab */}
