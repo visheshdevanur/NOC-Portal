@@ -702,7 +702,6 @@ export default function StaffDashboard() {
     setLoadingSubjects(true);
     try {
       const data = await getSubjectsByDepartment(profile.department_id);
-      // Staff only sees higher semester subjects (not 1st/2nd)
       const filtered = (data as Subject[]).filter(s => {
         const semName = (s).semesters?.name;
         if (!semName) return true;
@@ -717,22 +716,33 @@ export default function StaffDashboard() {
     setSubjectCreating(true);
     setSubjectError(null);
     setSubjectSuccess(null);
-
     if (!newSubject.subject_name || !newSubject.subject_code || !newSubject.semester_id) {
       setSubjectError('Subject name, code, and semester are required.');
       setSubjectCreating(false);
       return;
     }
-
     try {
-      await createSubject({
+      const created = await createSubject({
         subject_name: newSubject.subject_name,
         subject_code: newSubject.subject_code.toUpperCase(),
         department_id: profile!.department_id!,
         semester_id: newSubject.semester_id,
         subject_type: newSubject.subject_type,
       });
-      setSubjectSuccess(`Subject "${newSubject.subject_name}" created!`);
+      let enrollCount = 0;
+      if (newSubject.subject_type === 'open_elective' && created && created[0]?.id) {
+        const subjectId = created[0].id;
+        const { data: semStudents } = await supabase.from('profiles').select('id').eq('role', 'student').eq('department_id', profile!.department_id!).eq('semester_id', newSubject.semester_id);
+        if (semStudents && semStudents.length > 0) {
+          const enrollments = semStudents.map(s => ({ student_id: s.id, subject_id: subjectId, status: 'pending', assignment_status: 'pending' }));
+          for (let i = 0; i < enrollments.length; i += 100) {
+            await supabase.from('subject_enrollment').upsert(enrollments.slice(i, i + 100), { onConflict: 'student_id,subject_id' });
+          }
+          enrollCount = semStudents.length;
+        }
+      }
+      const oeMsg = enrollCount > 0 ? ` ${enrollCount} students auto-enrolled.` : '';
+      setSubjectSuccess(`Subject "${newSubject.subject_name}" created!${oeMsg}`);
       setNewSubject({ subject_name: '', subject_code: '', semester_id: '', subject_type: 'theory' });
       setShowCreateSubject(false);
       fetchSubjects();
@@ -747,7 +757,6 @@ export default function StaffDashboard() {
     if (!editingSubject) return;
     setSubjectCreating(true);
     setSubjectError(null);
-
     try {
       await updateSubjectAPI(editingSubject.id, {
         subject_name: editingSubject.subject_name,
@@ -932,20 +941,17 @@ export default function StaffDashboard() {
     setSectionError(null);
     setSectionSuccess(null);
     try {
-      const { assignTeacherToSection, saveSectionTeacherAssignment } = await import('../../lib/api');
-      const result = await assignTeacherToSection(selectedSubject, selectedSection, selectedTeacher, selectedSemesterForAssign);
+      const { assignTeacherToSelectedStudents, saveSectionTeacherAssignment } = await import('../../lib/api');
+      const studentIdsArray = Array.from(selectedStudentIds);
+      const result = await assignTeacherToSelectedStudents(selectedSubject, selectedSection, selectedTeacher, studentIdsArray);
       const teacherName = deptTeachers.find(t => t.id === selectedTeacher)?.full_name || 'Teacher';
       // Save to junction table
       await saveSectionTeacherAssignment(selectedSubject, selectedSection, selectedTeacher, selectedSemesterForAssign, profile!.department_id!, profile!.tenant_id || '');
-      if (!result || result.length === 0) {
-        setSectionError(`Cannot assign teacher: Section "${selectedSection}" currently has no students in the selected semester.`);
-      } else {
-        setSectionSuccess(`Section "${selectedSection}" assigned to ${teacherName}. ${result.length} student enrollments updated.`);
-        setSelectedSection('');
-        setSelectedSubject('');
-        setSelectedTeacher('');
-        fetchSectionAssignments();
-      }
+      setSectionSuccess(`Section "${selectedSection}" assigned to ${teacherName}. ${result.length} selected student enrollments created.`);
+      setSelectedSection('');
+      setSelectedSubject('');
+      setSelectedTeacher('');
+      fetchSectionAssignments();
       setShowAssignPopup(false);
     } catch (err: any) {
       setSectionError(await logAndFormatError(err, { dashboard_name: 'StaffDashboard' }));

@@ -104,19 +104,21 @@ export default function FacultyDashboard() {
         const iaPresentCount = studentIAs.length;
         const attendanceOk = pct >= 85;
         const iaOk = iaPresentCount >= 2;
+        const assignmentOk = s.assignment_status !== 'pending';
 
         let status: string;
-        let remarks: string;
+        const issues: string[] = [];
 
-        if (attendanceOk && iaOk) {
-          status = 'completed'; remarks = '';
-        } else if (!attendanceOk && !iaOk) {
-          status = 'rejected'; remarks = `Low Attendance (<85%) & Insufficient IA Attendance (${iaPresentCount}/2 required)`;
-        } else if (!attendanceOk) {
-          status = 'rejected'; remarks = `Low Attendance (<85%)`;
+        if (!attendanceOk) issues.push(`Low Attendance (${pct}% < 85%)`);
+        if (!iaOk) issues.push(`Insufficient IA Attendance (${iaPresentCount}/2 required)`);
+        if (!assignmentOk) issues.push('Assignment not submitted');
+
+        if (issues.length === 0) {
+          status = 'completed';
         } else {
-          status = 'rejected'; remarks = `Insufficient IA Attendance (${iaPresentCount}/2 required)`;
+          status = 'rejected';
         }
+        const remarks = issues.join(' | ');
 
         // Only update if status actually changed
         if (status !== s.status || remarks !== (s.remarks || '')) {
@@ -1338,78 +1340,92 @@ export default function FacultyDashboard() {
           </div>
           <div className="p-6">
             {(() => {
-              // Group enrollments by semester → section
-              const grouped: Record<string, Record<string, any[]>> = {};
+              // Group: Dept → Sem → Sec → Subject → Students
+              type Grouped = Record<string, Record<string, Record<string, Record<string, { subjectCode: string; students: any[] }>>>>;
+              const grouped: Grouped = {};
               (facultyData?.students || []).forEach((e: any) => {
+                const dept = e.profiles?.departments?.name || e.subjects?.departments?.name || 'Unknown Dept';
                 const sem = e.profiles?.semesters?.name || 'Unknown Semester';
                 const sec = e.profiles?.section || 'Unknown';
-                if (!grouped[sem]) grouped[sem] = {};
-                if (!grouped[sem][sec]) grouped[sem][sec] = [];
-                grouped[sem][sec].push(e);
+                const subName = e.subjects?.subject_name || 'Unknown Subject';
+                const subCode = e.subjects?.subject_code || '';
+                if (!grouped[dept]) grouped[dept] = {};
+                if (!grouped[dept][sem]) grouped[dept][sem] = {};
+                if (!grouped[dept][sem][sec]) grouped[dept][sem][sec] = {};
+                if (!grouped[dept][sem][sec][subName]) grouped[dept][sem][sec][subName] = { subjectCode: subCode, students: [] };
+                grouped[dept][sem][sec][subName].students.push(e);
               });
               if (Object.keys(grouped).length === 0) {
                 return <div className="text-center text-muted-foreground py-8">No students assigned.</div>;
               }
               return (
                 <div className="space-y-3">
-                  {Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b, undefined, {numeric:true})).map(([sem, sections]) => (
-                    <div key={sem} className="border border-border rounded-2xl overflow-hidden">
-                      <button
-                        onClick={() => {
-                          const el = document.getElementById(`assign-sem-${sem}`);
-                          if (el) el.classList.toggle('hidden');
-                        }}
-                        className="w-full flex items-center justify-between p-4 text-left hover:bg-secondary/30 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                          <h3 className="text-lg font-bold text-foreground">{sem}</h3>
-                        </div>
+                  {Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b)).map(([dept, sems]) => (
+                    <div key={dept} className="border border-border rounded-2xl overflow-hidden">
+                      <button onClick={() => { const el = document.getElementById(`assign-dept-${dept}`); if (el) el.classList.toggle('hidden'); }} className="w-full flex items-center gap-3 p-4 text-left hover:bg-secondary/20 transition-colors bg-secondary/5">
+                        <ChevronRight className="w-5 h-5 text-primary" />
+                        <Building2 className="w-5 h-5 text-primary" />
+                        <h3 className="text-lg font-bold text-foreground">{dept}</h3>
                       </button>
-                      <div id={`assign-sem-${sem}`} className="hidden border-t border-border p-4 space-y-4">
-                        {Object.entries(sections).sort(([a],[b]) => a.localeCompare(b)).map(([sec, items]) => (
-                          <div key={sec}>
-                            <h4 className="font-bold text-foreground bg-secondary/50 px-4 py-2 rounded-t-xl">Section: {sec} <span className="text-xs text-muted-foreground ml-2">({items.length})</span></h4>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left border-collapse">
-                                <thead>
-                                  <tr className="bg-background text-sm border-b border-border">
-                                    <th className="p-3 font-semibold">#</th>
-                                    <th className="p-3 font-semibold">Student</th>
-                                    <th className="p-3 font-semibold">Roll No</th>
-                                    <th className="p-3 font-semibold">Subject</th>
-                                    <th className="p-3 font-semibold text-center">Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-border">
-                                  {items.map((e: any, idx: number) => (
-                                    <tr key={e.id} className="hover:bg-secondary/10">
-                                      <td className="p-3 text-sm text-muted-foreground">{idx+1}</td>
-                                      <td className="p-3 font-medium">{e.profiles?.full_name}</td>
-                                      <td className="p-3 text-sm font-mono text-muted-foreground">{e.profiles?.roll_number || '—'}</td>
-                                      <td className="p-3 text-sm text-muted-foreground">{e.subjects?.subject_code} — {e.subjects?.subject_name}</td>
-                                      <td className="p-3 text-center">
-                                        <button
-                                          onClick={async () => {
-                                            const newStatus = (e.assignment_status === 'pending') ? 'submitted' : 'pending';
-                                            try {
-                                              await updateAssignmentStatus(e.id, newStatus);
-                                              refetchData();
-                                            } catch (err) { console.error(err); }
-                                          }}
-                                          className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
-                                            e.assignment_status === 'pending'
-                                              ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500 hover:text-white'
-                                              : 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500 hover:text-white'
-                                          }`}
-                                        >
-                                          {e.assignment_status === 'pending' ? 'Pending' : 'Submitted'}
-                                        </button>
-                                      </td>
-                                    </tr>
+                      <div id={`assign-dept-${dept}`} className="hidden border-t border-border">
+                        {Object.entries(sems).sort(([a],[b]) => a.localeCompare(b, undefined, {numeric:true})).map(([sem, sections]) => (
+                          <div key={sem} className="border-b border-border last:border-0">
+                            <button onClick={() => { const el = document.getElementById(`assign-sem-${dept}-${sem}`); if (el) el.classList.toggle('hidden'); }} className="w-full flex items-center gap-3 p-3 pl-8 text-left hover:bg-secondary/10 transition-colors">
+                              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                              <Layers className="w-4 h-4 text-amber-500" />
+                              <span className="font-bold text-foreground">{sem}</span>
+                            </button>
+                            <div id={`assign-sem-${dept}-${sem}`} className="hidden">
+                              {Object.entries(sections).sort(([a],[b]) => a.localeCompare(b)).map(([sec, subjects]) => (
+                                <div key={sec}>
+                                  <div className="px-12 py-2 bg-secondary/30 text-sm font-bold text-foreground border-t border-border">
+                                    Section: {sec}
+                                  </div>
+                                  {Object.entries(subjects).sort(([a],[b]) => a.localeCompare(b)).map(([subName, subData]) => (
+                                    <div key={subName} className="border-t border-border/50">
+                                      <div className="px-14 py-2 bg-secondary/10 text-sm font-medium text-foreground flex items-center gap-2">
+                                        <BookOpen className="w-3.5 h-3.5 text-primary" />
+                                        {subData.subjectCode} — {subName}
+                                        <span className="text-xs text-muted-foreground ml-auto">({subData.students.length})</span>
+                                      </div>
+                                      <table className="w-full text-left">
+                                        <thead>
+                                          <tr className="bg-background text-xs border-b border-border">
+                                            <th className="p-2 pl-16 font-semibold">#</th>
+                                            <th className="p-2 font-semibold">Student</th>
+                                            <th className="p-2 font-semibold">Roll No</th>
+                                            <th className="p-2 font-semibold text-center">Status</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-border/50">
+                                          {subData.students.map((e: any, idx: number) => (
+                                            <tr key={e.id} className="hover:bg-secondary/10">
+                                              <td className="p-2 pl-16 text-xs text-muted-foreground">{idx+1}</td>
+                                              <td className="p-2 text-sm font-medium">{e.profiles?.full_name}</td>
+                                              <td className="p-2 text-xs font-mono text-muted-foreground">{e.profiles?.roll_number || '—'}</td>
+                                              <td className="p-2 text-center">
+                                                <button
+                                                  onClick={async () => {
+                                                    const newStatus = (e.assignment_status === 'pending') ? 'submitted' : 'pending';
+                                                    try { await updateAssignmentStatus(e.id, newStatus); refetchData(); } catch (err) { console.error(err); }
+                                                  }}
+                                                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                                    e.assignment_status === 'pending'
+                                                      ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500 hover:text-white'
+                                                      : 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500 hover:text-white'
+                                                  }`}
+                                                >
+                                                  {e.assignment_status === 'pending' ? 'Pending' : 'Submitted'}
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
                                   ))}
-                                </tbody>
-                              </table>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         ))}

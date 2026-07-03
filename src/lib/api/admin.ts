@@ -314,6 +314,47 @@ export const removeImportedTeacher = async (departmentId: string, teacherId: str
   if (error) throw error;
 };
 
+/** Assign teacher to ONLY selected students (not entire section) */
+export const assignTeacherToSelectedStudents = async (subjectId: string, section: string, teacherId: string, studentIds: string[]) => {
+  if (studentIds.length === 0) throw new Error('No students selected');
+  
+  const results: any[] = [];
+  for (const studentId of studentIds) {
+    // Check if enrollment already exists
+    const { data: existing } = await supabase
+      .from('subject_enrollment')
+      .select('id')
+      .eq('student_id', studentId)
+      .eq('subject_id', subjectId)
+      .eq('teacher_id', teacherId)
+      .maybeSingle();
+    
+    if (existing) {
+      results.push(existing);
+      continue;
+    }
+
+    const { data, error } = await supabase
+      .from('subject_enrollment')
+      .upsert({
+        student_id: studentId,
+        subject_id: subjectId,
+        teacher_id: teacherId,
+        status: 'pending',
+        assignment_status: 'pending',
+      }, { onConflict: 'student_id,subject_id,teacher_id' })
+      .select()
+      .single();
+    if (error) console.warn('Enrollment error for student', studentId, error);
+    if (data) results.push(data);
+  }
+
+  const { data: tProfile } = await supabase.from('profiles').select('full_name').eq('id', teacherId).single();
+  const { data: sInfo } = await supabase.from('subjects').select('subject_name').eq('id', subjectId).single();
+  logActivity('Assigned Teacher', `Assigned ${tProfile?.full_name || 'teacher'} to ${results.length} selected students in section ${section} for ${sInfo?.subject_name || 'subject'}`);
+  return results;
+};
+
 export const assignTeacherToSection = async (subjectId: string, section: string, teacherId: string, semesterId: string) => {
   const { data, error } = await supabase.rpc('assign_teacher_to_section_rpc', { p_subject_id: subjectId, p_section: section, p_teacher_id: teacherId, p_semester_id: semesterId });
   if (error) throw error;
