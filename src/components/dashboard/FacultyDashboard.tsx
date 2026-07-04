@@ -57,6 +57,12 @@ export default function FacultyDashboard() {
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [csvUploadMsg, setCsvUploadMsg] = useState<string | null>(null);
+
+  // === Assignments Tab State ===
+  const [asnDept, setAsnDept] = useState<string | null>(null);
+  const [asnSem, setAsnSem] = useState<string | null>(null);
+  const [asnSec, setAsnSec] = useState<string | null>(null);
+  const [asnSubject, setAsnSubject] = useState<string | null>(null);
   const clearanceCsvRef = useRef<HTMLInputElement>(null);
 
   // Fetch freeze status on mount (when profile is available)
@@ -1339,100 +1345,215 @@ export default function FacultyDashboard() {
             </h2>
             <p className="text-sm text-muted-foreground mt-1">Toggle assignment status for your students. Pending status blocks student clearance.</p>
           </div>
-          <div className="p-6">
+
+          {/* Breadcrumb */}
+          <div className="flex items-center gap-1 text-sm text-muted-foreground px-6 py-3 border-b border-border bg-secondary/5 flex-wrap">
+            <button onClick={() => { setAsnDept(null); setAsnSem(null); setAsnSec(null); setAsnSubject(null); }}
+              className={`hover:text-primary transition-colors flex items-center ${!asnDept ? 'text-primary font-bold' : ''}`}>
+              All Departments
+            </button>
+            {asnDept && (<>
+              <ChevronRight className="w-4 h-4 mx-1" />
+              <button onClick={() => { setAsnSem(null); setAsnSec(null); setAsnSubject(null); }}
+                className={`hover:text-primary transition-colors ${asnDept && !asnSem ? 'text-primary font-bold' : ''}`}>{asnDept}</button>
+            </>)}
+            {asnSem && (<>
+              <ChevronRight className="w-4 h-4 mx-1" />
+              <button onClick={() => { setAsnSec(null); setAsnSubject(null); }}
+                className={`hover:text-primary transition-colors ${asnSem && !asnSec ? 'text-primary font-bold' : ''}`}>Sem {asnSem}</button>
+            </>)}
+            {asnSec && (<>
+              <ChevronRight className="w-4 h-4 mx-1" />
+              <button onClick={() => { setAsnSubject(null); }}
+                className={`hover:text-primary transition-colors ${asnSec && !asnSubject ? 'text-primary font-bold' : ''}`}>Section {asnSec}</button>
+            </>)}
+            {asnSubject && (<>
+              <ChevronRight className="w-4 h-4 mx-1" />
+              <span className="text-primary font-bold">{asnSubject}</span>
+            </>)}
+          </div>
+
+          <div className="p-0">
             {(() => {
-              // Group: Dept → Sem → Sec → Subject → Students
-              type Grouped = Record<string, Record<string, Record<string, Record<string, { subjectCode: string; students: any[] }>>>>;
-              const grouped: Grouped = {};
-              (facultyData?.students || []).forEach((e: any) => {
-                const dept = e.profiles?.departments?.name || e.subjects?.departments?.name || 'Unknown Dept';
-                const sem = e.profiles?.semesters?.name || 'Unknown Semester';
-                const sec = e.profiles?.section || 'Unknown';
-                const subName = e.subjects?.subject_name || 'Unknown Subject';
-                const subCode = e.subjects?.subject_code || '';
-                if (!grouped[dept]) grouped[dept] = {};
-                if (!grouped[dept][sem]) grouped[dept][sem] = {};
-                if (!grouped[dept][sem][sec]) grouped[dept][sem][sec] = {};
-                if (!grouped[dept][sem][sec][subName]) grouped[dept][sem][sec][subName] = { subjectCode: subCode, students: [] };
-                grouped[dept][sem][sec][subName].students.push(e);
-              });
-              if (Object.keys(grouped).length === 0) {
-                return <div className="text-center text-muted-foreground py-8">No students assigned.</div>;
+              const allEnrollments = facultyData?.students || [];
+              if (allEnrollments.length === 0) return <div className="text-center text-muted-foreground py-8">No students assigned.</div>;
+
+              // LEVEL 1: Department cards
+              if (!asnDept) {
+                const depts = Array.from(new Set(allEnrollments.map((e: any) => e.profiles?.departments?.name || e.subjects?.departments?.name || 'Unknown'))).sort();
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+                    {depts.map(dept => {
+                      const deptItems = allEnrollments.filter((e: any) => (e.profiles?.departments?.name || e.subjects?.departments?.name || 'Unknown') === dept);
+                      const submitted = deptItems.filter((e: any) => e.assignment_status !== 'pending').length;
+                      return (
+                        <button key={dept} onClick={() => setAsnDept(dept)}
+                          className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-6 text-left transition-all hover:shadow-md group">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center">
+                              <Building2 className="w-5 h-5 text-indigo-500" />
+                            </div>
+                            <h3 className="font-bold text-foreground text-lg group-hover:text-primary transition-colors">{dept}</h3>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-muted-foreground">{deptItems.length} enrollments</span>
+                            <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">{submitted} submitted</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-muted-foreground mt-3 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
               }
-              return (
-                <div className="space-y-3">
-                  {Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b)).map(([dept, sems]) => (
-                    <div key={dept} className="border border-border rounded-2xl overflow-hidden">
-                      <button onClick={() => { const el = document.getElementById(`assign-dept-${dept}`); if (el) el.classList.toggle('hidden'); }} className="w-full flex items-center gap-3 p-4 text-left hover:bg-secondary/20 transition-colors bg-secondary/5">
-                        <ChevronRight className="w-5 h-5 text-primary" />
-                        <Building2 className="w-5 h-5 text-primary" />
-                        <h3 className="text-lg font-bold text-foreground">{dept}</h3>
-                      </button>
-                      <div id={`assign-dept-${dept}`} className="hidden border-t border-border">
-                        {Object.entries(sems).sort(([a],[b]) => a.localeCompare(b, undefined, {numeric:true})).map(([sem, sections]) => (
-                          <div key={sem} className="border-b border-border last:border-0">
-                            <button onClick={() => { const el = document.getElementById(`assign-sem-${dept}-${sem}`); if (el) el.classList.toggle('hidden'); }} className="w-full flex items-center gap-3 p-3 pl-8 text-left hover:bg-secondary/10 transition-colors">
-                              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+
+              const deptItems = allEnrollments.filter((e: any) => (e.profiles?.departments?.name || e.subjects?.departments?.name || 'Unknown') === asnDept);
+
+              // LEVEL 2: Semester cards
+              if (!asnSem) {
+                const sems = Array.from(new Set(deptItems.map((e: any) => e.profiles?.semesters?.name || 'Unknown'))).sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
+                    {sems.map(sem => {
+                      const semItems = deptItems.filter((e: any) => (e.profiles?.semesters?.name || 'Unknown') === sem);
+                      const submitted = semItems.filter((e: any) => e.assignment_status !== 'pending').length;
+                      return (
+                        <button key={sem} onClick={() => setAsnSem(sem)}
+                          className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-9 h-9 bg-amber-500/10 rounded-xl flex items-center justify-center">
                               <Layers className="w-4 h-4 text-amber-500" />
-                              <span className="font-bold text-foreground">{sem}</span>
-                            </button>
-                            <div id={`assign-sem-${dept}-${sem}`} className="hidden">
-                              {Object.entries(sections).sort(([a],[b]) => a.localeCompare(b)).map(([sec, subjects]) => (
-                                <div key={sec}>
-                                  <div className="px-12 py-2 bg-secondary/30 text-sm font-bold text-foreground border-t border-border">
-                                    Section: {sec}
-                                  </div>
-                                  {Object.entries(subjects).sort(([a],[b]) => a.localeCompare(b)).map(([subName, subData]) => (
-                                    <div key={subName} className="border-t border-border/50">
-                                      <div className="px-14 py-2 bg-secondary/10 text-sm font-medium text-foreground flex items-center gap-2">
-                                        <BookOpen className="w-3.5 h-3.5 text-primary" />
-                                        {subData.subjectCode} — {subName}
-                                        <span className="text-xs text-muted-foreground ml-auto">({subData.students.length})</span>
-                                      </div>
-                                      <table className="w-full text-left">
-                                        <thead>
-                                          <tr className="bg-background text-xs border-b border-border">
-                                            <th className="p-2 pl-16 font-semibold">#</th>
-                                            <th className="p-2 font-semibold">Student</th>
-                                            <th className="p-2 font-semibold">Roll No</th>
-                                            <th className="p-2 font-semibold text-center">Status</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-border/50">
-                                          {subData.students.map((e: any, idx: number) => (
-                                            <tr key={e.id} className="hover:bg-secondary/10">
-                                              <td className="p-2 pl-16 text-xs text-muted-foreground">{idx+1}</td>
-                                              <td className="p-2 text-sm font-medium">{e.profiles?.full_name}</td>
-                                              <td className="p-2 text-xs font-mono text-muted-foreground">{e.profiles?.roll_number || '—'}</td>
-                                              <td className="p-2 text-center">
-                                                <button
-                                                  onClick={async () => {
-                                                    const newStatus = (e.assignment_status === 'pending') ? 'submitted' : 'pending';
-                                                    try { await updateAssignmentStatus(e.id, newStatus); refetchData(); } catch (err) { console.error(err); }
-                                                  }}
-                                                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
-                                                    e.assignment_status === 'pending'
-                                                      ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500 hover:text-white'
-                                                      : 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500 hover:text-white'
-                                                  }`}
-                                                >
-                                                  {e.assignment_status === 'pending' ? 'Pending' : 'Submitted'}
-                                                </button>
-                                              </td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  ))}
-                                </div>
-                              ))}
+                            </div>
+                            <h3 className="font-bold text-foreground group-hover:text-primary transition-colors">Sem {sem}</h3>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">{semItems.length} enrollments</span>
+                            <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">{submitted}/{semItems.length}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              const semItems = deptItems.filter((e: any) => (e.profiles?.semesters?.name || 'Unknown') === asnSem);
+
+              // LEVEL 3: Section cards
+              if (!asnSec) {
+                const secs = Array.from(new Set(semItems.map((e: any) => e.profiles?.section || 'Unknown'))).sort();
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
+                    {secs.map(sec => {
+                      const secItems = semItems.filter((e: any) => (e.profiles?.section || 'Unknown') === sec);
+                      const submitted = secItems.filter((e: any) => e.assignment_status !== 'pending').length;
+                      return (
+                        <button key={sec} onClick={() => setAsnSec(sec)}
+                          className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
+                              <Users className="w-4 h-4 text-primary" />
+                            </div>
+                            <h3 className="font-bold text-foreground group-hover:text-primary transition-colors">Section {sec}</h3>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">{secItems.length} enrollments</span>
+                            <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">{submitted}/{secItems.length}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              const secItems = semItems.filter((e: any) => (e.profiles?.section || 'Unknown') === asnSec);
+
+              // LEVEL 4: Subject cards
+              if (!asnSubject) {
+                const subjectMap: Record<string, any[]> = {};
+                secItems.forEach((e: any) => {
+                  const key = `${e.subjects?.subject_code || ''} — ${e.subjects?.subject_name || 'Unknown'}`;
+                  if (!subjectMap[key]) subjectMap[key] = [];
+                  subjectMap[key].push(e);
+                });
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-6">
+                    {Object.entries(subjectMap).sort(([a],[b]) => a.localeCompare(b)).map(([subKey, subItems]) => {
+                      const submitted = subItems.filter((e: any) => e.assignment_status !== 'pending').length;
+                      const pending = subItems.length - submitted;
+                      return (
+                        <button key={subKey} onClick={() => setAsnSubject(subKey)}
+                          className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                              <BookOpen className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-foreground group-hover:text-primary transition-colors text-sm">{subKey}</h3>
+                              <p className="text-xs text-muted-foreground">{subItems.length} students</p>
                             </div>
                           </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {submitted > 0 && <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">{submitted} Submitted</span>}
+                            {pending > 0 && <span className="text-xs font-medium bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full">{pending} Pending</span>}
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-muted-foreground mt-3 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              // LEVEL 5: Students table for selected subject
+              const subjectStudents = secItems.filter((e: any) => `${e.subjects?.subject_code || ''} — ${e.subjects?.subject_name || 'Unknown'}` === asnSubject);
+              if (subjectStudents.length === 0) return <div className="p-8 text-center text-muted-foreground">No students found.</div>;
+              const submitted = subjectStudents.filter((e: any) => e.assignment_status !== 'pending').length;
+              const pending = subjectStudents.length - submitted;
+              return (
+                <div>
+                  <div className="flex items-center gap-3 px-6 py-3 border-b border-border">
+                    <span className="text-xs font-medium bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">{submitted} Submitted</span>
+                    <span className="text-xs font-medium bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full">{pending} Pending</span>
+                    <span className="text-xs text-muted-foreground ml-auto">{subjectStudents.length} total</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-secondary/30 text-sm border-b border-border">
+                          <th className="p-3 font-semibold">#</th>
+                          <th className="p-3 font-semibold">Student</th>
+                          <th className="p-3 font-semibold">Roll No</th>
+                          <th className="p-3 font-semibold text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {subjectStudents.map((e: any, idx: number) => (
+                          <tr key={e.id} className="hover:bg-secondary/10">
+                            <td className="p-3 text-sm text-muted-foreground">{idx+1}</td>
+                            <td className="p-3 font-medium">{e.profiles?.full_name}</td>
+                            <td className="p-3 text-sm font-mono text-muted-foreground">{e.profiles?.roll_number || '—'}</td>
+                            <td className="p-3 text-center">
+                              <button
+                                onClick={async () => {
+                                  const newStatus = (e.assignment_status === 'pending') ? 'submitted' : 'pending';
+                                  try { await updateAssignmentStatus(e.id, newStatus); refetchData(); } catch (err) { console.error(err); }
+                                }}
+                                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                  e.assignment_status === 'pending'
+                                    ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500 hover:text-white'
+                                    : 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500 hover:text-white'
+                                }`}
+                              >
+                                {e.assignment_status === 'pending' ? 'Pending' : 'Submitted'}
+                              </button>
+                            </td>
+                          </tr>
                         ))}
-                      </div>
-                    </div>
-                  ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               );
             })()}
@@ -1440,7 +1561,7 @@ export default function FacultyDashboard() {
         </div>
       )}
 
-      {/* ======================== OE ATTENDANCE TAB ======================== */}
+            {/* ======================== OE ATTENDANCE TAB ======================== */}
       {activeTab === 'oe-attendance' && profile?.is_oe_faculty && (
         <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
           <div className="p-6 border-b border-border">
