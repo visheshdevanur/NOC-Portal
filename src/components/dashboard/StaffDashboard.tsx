@@ -736,7 +736,7 @@ export default function StaffDashboard() {
         if (semStudents && semStudents.length > 0) {
           const enrollments = semStudents.map(s => ({ student_id: s.id, subject_id: subjectId, status: 'pending', assignment_status: 'pending' }));
           for (let i = 0; i < enrollments.length; i += 100) {
-            await supabase.from('subject_enrollment').upsert(enrollments.slice(i, i + 100), { onConflict: 'student_id,subject_id' });
+            await supabase.from('subject_enrollment').insert(enrollments.slice(i, i + 100));
           }
           enrollCount = semStudents.length;
         }

@@ -320,29 +320,35 @@ export const assignTeacherToSelectedStudents = async (subjectId: string, section
   
   const results: any[] = [];
   for (const studentId of studentIds) {
-    // Check if enrollment already exists
+    // Check if enrollment already exists for this student+subject
     const { data: existing } = await supabase
       .from('subject_enrollment')
       .select('id')
       .eq('student_id', studentId)
       .eq('subject_id', subjectId)
-      .eq('teacher_id', teacherId)
       .maybeSingle();
     
     if (existing) {
-      results.push(existing);
+      // Update teacher_id on existing enrollment
+      const { data: updated } = await supabase
+        .from('subject_enrollment')
+        .update({ teacher_id: teacherId })
+        .eq('id', existing.id)
+        .select()
+        .single();
+      if (updated) results.push(updated);
       continue;
     }
 
     const { data, error } = await supabase
       .from('subject_enrollment')
-      .upsert({
+      .insert({
         student_id: studentId,
         subject_id: subjectId,
         teacher_id: teacherId,
         status: 'pending',
         assignment_status: 'pending',
-      }, { onConflict: 'student_id,subject_id,teacher_id' })
+      })
       .select()
       .single();
     if (error) console.warn('Enrollment error for student', studentId, error);
