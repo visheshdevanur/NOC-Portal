@@ -683,7 +683,7 @@ export default function FacultyDashboard() {
             <CheckCircle2 className="w-4 h-4" />
             Assignments
           </button>
-          {profile?.is_oe_faculty && (
+          {(profile?.is_oe_faculty || profile?.role === 'oe') && (
             <button
               onClick={() => setActiveTab('oe-attendance')}
               className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
@@ -1562,7 +1562,7 @@ export default function FacultyDashboard() {
       )}
 
             {/* ======================== OE ATTENDANCE TAB ======================== */}
-      {activeTab === 'oe-attendance' && profile?.is_oe_faculty && (
+      {activeTab === 'oe-attendance' && (profile?.is_oe_faculty || profile?.role === 'oe') && (
         <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
           <div className="p-6 border-b border-border">
             <h2 className="text-xl font-bold text-foreground flex items-center gap-2">

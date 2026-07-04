@@ -82,6 +82,7 @@ const DashboardRouter = () => {
       case 'fyc': return <FycDashboard />;
       case 'librarian': return <LibraryDashboard />;
       case 'coe': return <CoeDashboard />;
+      case 'oe': return <FacultyDashboard />;
       default: return <div>Access Denied. Unknown role: {profile.role}</div>;
     }
   };

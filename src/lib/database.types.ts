@@ -1009,6 +1009,7 @@ export type Database = {
         | "fyc"
         | "clerk"
         | "coe"
+        | "oe"
     }
     CompositeTypes: {
       [_ in never]: never
