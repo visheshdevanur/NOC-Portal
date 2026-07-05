@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../lib/useAuth';
-import { Search, ChevronRight, ChevronDown, Globe, Users, Activity, X, CheckCircle2, Upload, AlertTriangle } from 'lucide-react';
+import { Search, ChevronRight, Globe, Users, Activity, X, CheckCircle2, Upload, AlertTriangle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 type OEStudent = {
@@ -54,17 +54,15 @@ export default function OEDashboard({ teacherId }: Props) {
   const [fineCategories, setFineCategories] = useState<FineCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
-  const [expandedSems, setExpandedSems] = useState<Set<string>>(new Set());
-  const [expandedSecs, setExpandedSecs] = useState<Set<string>>(new Set());
+  // Drill-down navigation (same pattern as Faculty Dashboard)
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [selectedSem, setSelectedSem] = useState<string | null>(null);
+  const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPct, setEditPct] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Filters
-  const [filterBranch, setFilterBranch] = useState<string>('all');
-  const [filterSem, setFilterSem] = useState<string>('all');
-  const [filterSection, setFilterSection] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
   // Upload state
@@ -324,57 +322,29 @@ export default function OEDashboard({ teacherId }: Props) {
     return `${days}d ago`;
   };
 
-  // Extract unique values for filters
+  // Extract unique values for current drill-down level
   const allBranches = useMemo(() => Array.from(new Set(oeStudents.map(s => s.profiles?.departments?.name || 'Unknown'))).sort(), [oeStudents]);
-  const allSems = useMemo(() => Array.from(new Set(oeStudents.map(s => s.profiles?.semesters?.name || 'Unknown'))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [oeStudents]);
-  const allSections = useMemo(() => Array.from(new Set(oeStudents.map(s => s.profiles?.section || 'Unknown'))).sort(), [oeStudents]);
 
-  // Group: Branch → Semester → Section → Students
-  const grouped = useMemo(() => {
-    const filtered = oeStudents.filter(s => {
+  // Students filtered by current drill-down level
+  const studentsInBranch = selectedBranch ? oeStudents.filter(s => (s.profiles?.departments?.name || 'Unknown') === selectedBranch) : [];
+  const allSems = useMemo(() => Array.from(new Set(studentsInBranch.map(s => s.profiles?.semesters?.name || 'Unknown'))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [studentsInBranch]);
+  const studentsInSem = selectedSem ? studentsInBranch.filter(s => (s.profiles?.semesters?.name || 'Unknown') === selectedSem) : [];
+  const allSections = useMemo(() => Array.from(new Set(studentsInSem.map(s => s.profiles?.section || 'Unknown'))).sort(), [studentsInSem]);
+  const studentsInSection = selectedSection ? studentsInSem.filter(s => (s.profiles?.section || 'Unknown') === selectedSection) : [];
+
+  // Apply search and status filter at the final student level
+  const filteredStudents = useMemo(() => {
+    return studentsInSection.filter(s => {
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         if (!(s.profiles?.full_name?.toLowerCase().includes(term) || s.profiles?.roll_number?.toLowerCase().includes(term) || s.subjects?.subject_name?.toLowerCase().includes(term))) return false;
       }
-      if (filterBranch !== 'all' && (s.profiles?.departments?.name || 'Unknown') !== filterBranch) return false;
-      if (filterSem !== 'all' && (s.profiles?.semesters?.name || 'Unknown') !== filterSem) return false;
-      if (filterSection !== 'all' && (s.profiles?.section || 'Unknown') !== filterSection) return false;
       if (filterStatus === 'submitted' && s.assignment_status !== 'submitted') return false;
       if (filterStatus === 'pending' && s.assignment_status !== 'pending') return false;
       if (filterStatus === 'not_uploaded' && s.attendance_pct !== null) return false;
       return true;
     });
-
-    const result: Record<string, Record<string, Record<string, OEStudent[]>>> = {};
-    filtered.forEach(s => {
-      const branch = s.profiles?.departments?.name || 'Unknown Branch';
-      const sem = s.profiles?.semesters?.name || 'Unknown Semester';
-      const sec = s.profiles?.section || 'Unknown';
-      if (!result[branch]) result[branch] = {};
-      if (!result[branch][sem]) result[branch][sem] = {};
-      if (!result[branch][sem][sec]) result[branch][sem][sec] = [];
-      result[branch][sem][sec].push(s);
-    });
-    return result;
-  }, [oeStudents, searchTerm, filterBranch, filterSem, filterSection, filterStatus]);
-
-  const toggleBranch = (b: string) => {
-    const next = new Set(expandedBranches);
-    next.has(b) ? next.delete(b) : next.add(b);
-    setExpandedBranches(next);
-  };
-
-  const toggleSem = (key: string) => {
-    const next = new Set(expandedSems);
-    next.has(key) ? next.delete(key) : next.add(key);
-    setExpandedSems(next);
-  };
-
-  const toggleSec = (key: string) => {
-    const next = new Set(expandedSecs);
-    next.has(key) ? next.delete(key) : next.add(key);
-    setExpandedSecs(next);
-  };
+  }, [studentsInSection, searchTerm, filterStatus]);
 
   /** Count helpers for badges */
   const countPending = (students: OEStudent[]) => students.filter(s => s.assignment_status === 'pending' || !s.assignment_status).length;
@@ -412,195 +382,256 @@ export default function OEDashboard({ teacherId }: Props) {
       {/* Students Tab */}
       {activeSubTab === 'students' && (
         <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-          {/* Search + Filters + Upload */}
-          <div className="p-5 border-b border-border space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative flex-1 min-w-[200px] max-w-sm">
-                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input type="text" placeholder="Search students, subjects..." className="pl-10 pr-4 py-3 bg-background border border-border rounded-xl w-full focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-              </div>
-              {/* Upload button */}
-              <label className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-xl transition-colors border cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : 'bg-primary/10 text-primary hover:bg-primary/20 border-primary/30'}`}>
-                <Upload className="w-4 h-4" />
-                {uploading ? 'Uploading...' : 'Upload Excel'}
-                <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleAttendanceUpload} disabled={uploading} />
-              </label>
-              {uploadMsg && (
-                <span className={`text-xs font-medium ${uploadMsg.startsWith('❌') ? 'text-destructive' : 'text-emerald-600'}`}>
-                  {uploadMsg}
-                </span>
-              )}
-            </div>
-            {/* Filter row */}
-            <div className="flex flex-wrap gap-3">
-              <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)} className="px-3 py-2 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500">
-                <option value="all">All Branches</option>
-                {allBranches.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-              <select value={filterSem} onChange={e => setFilterSem(e.target.value)} className="px-3 py-2 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500">
-                <option value="all">All Semesters</option>
-                {allSems.map(s => <option key={s} value={s}>Sem {s}</option>)}
-              </select>
-              <select value={filterSection} onChange={e => setFilterSection(e.target.value)} className="px-3 py-2 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500">
-                <option value="all">All Sections</option>
-                {allSections.map(s => <option key={s} value={s}>Section {s}</option>)}
-              </select>
-              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-3 py-2 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500">
-                <option value="all">All Status</option>
-                <option value="submitted">Submitted</option>
-                <option value="pending">Pending</option>
-                <option value="not_uploaded">Not Uploaded</option>
-              </select>
-            </div>
-          </div>
 
           {loading ? (
             <div className="p-8 text-center text-muted-foreground animate-pulse">Loading OE students...</div>
-          ) : Object.keys(grouped).length === 0 ? (
+          ) : oeStudents.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <Globe className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No Open Elective subjects yet.</p>
               <p className="text-xs mt-1">These will appear here once a DEO creates one.</p>
             </div>
           ) : (
-            <div className="divide-y divide-border">
-              {Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b)).map(([branch, sems]) => {
-                const branchTotal = Object.values(sems).reduce((t, secs) => t + Object.values(secs).reduce((t2, arr) => t2 + arr.length, 0), 0);
-                const branchPending = Object.values(sems).reduce((t, secs) => t + Object.values(secs).reduce((t2, arr) => t2 + countPending(arr), 0), 0);
-                return (
-                  <div key={branch}>
-                    <button onClick={() => toggleBranch(branch)} className="w-full flex items-center gap-3 p-5 text-left hover:bg-secondary/20 transition-colors">
-                      {expandedBranches.has(branch) ? <ChevronDown className="w-5 h-5 text-violet-500" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
-                      <h3 className="text-lg font-bold text-foreground">{branch}</h3>
-                      <span className="text-xs text-muted-foreground ml-auto flex items-center gap-2">
-                        {branchTotal} students
-                        {branchPending > 0 && <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 font-bold">{branchPending} pending</span>}
-                      </span>
+            <div className="flex flex-col">
+              {/* Breadcrumb Navigation */}
+              <div className="flex bg-secondary/10 p-3 items-center text-sm font-medium text-muted-foreground overflow-x-auto whitespace-nowrap border-b border-border">
+                <button
+                  onClick={() => { setSelectedBranch(null); setSelectedSem(null); setSelectedSection(null); }}
+                  className={`hover:text-violet-500 transition-colors flex items-center ${!selectedBranch ? 'text-violet-500 font-bold' : ''}`}
+                >
+                  All Departments
+                </button>
+                {selectedBranch && (
+                  <>
+                    <ChevronRight className="w-4 h-4 mx-2" />
+                    <button
+                      onClick={() => { setSelectedSem(null); setSelectedSection(null); }}
+                      className={`hover:text-violet-500 transition-colors ${selectedBranch && !selectedSem ? 'text-violet-500 font-bold' : ''}`}
+                    >
+                      {selectedBranch}
                     </button>
-                    {expandedBranches.has(branch) && (
-                      <div className="pl-6 pb-4 space-y-2">
-                        {Object.entries(sems).sort(([a],[b]) => a.localeCompare(b, undefined, {numeric: true})).map(([sem, sections]) => {
-                          const semKey = `${branch}-${sem}`;
-                          const semTotal = Object.values(sections).reduce((t, arr) => t + arr.length, 0);
-                          const semPending = Object.values(sections).reduce((t, arr) => t + countPending(arr), 0);
-                          return (
-                            <div key={semKey} className="border border-border rounded-xl overflow-hidden ml-4">
-                              <button onClick={() => toggleSem(semKey)} className="w-full flex items-center gap-3 p-4 text-left hover:bg-secondary/10 transition-colors">
-                                {expandedSems.has(semKey) ? <ChevronDown className="w-4 h-4 text-violet-500" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-                                <span className="font-bold text-foreground">Sem {sem}</span>
-                                <span className="text-xs text-muted-foreground ml-auto flex items-center gap-2">
-                                  {semTotal} students
-                                  {semPending > 0 && <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 font-bold">{semPending} pending</span>}
-                                </span>
-                              </button>
-                              {expandedSems.has(semKey) && (
-                                <div className="border-t border-border">
-                                  {Object.entries(sections).sort(([a],[b]) => a.localeCompare(b)).map(([sec, students]) => {
-                                    const secKey = `${semKey}-${sec}`;
-                                    const secPending = countPending(students);
-                                    return (
-                                      <div key={sec}>
-                                        <button onClick={() => toggleSec(secKey)} className="w-full flex items-center gap-2 px-5 py-2.5 bg-secondary/30 text-sm font-bold text-foreground hover:bg-secondary/50 transition-colors">
-                                          {expandedSecs.has(secKey) ? <ChevronDown className="w-3.5 h-3.5 text-violet-500" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
-                                          Section {sec} ({students.length})
-                                          {secPending > 0 && <span className="ml-auto px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 font-bold text-xs">{secPending} pending</span>}
-                                        </button>
-                                        {expandedSecs.has(secKey) && (
-                                          <div className="overflow-x-auto">
-                                            <table className="w-full text-left">
-                                              <thead>
-                                                <tr className="bg-background text-xs border-b border-border">
-                                                  <th className="p-3 font-semibold">#</th>
-                                                  <th className="p-3 font-semibold">USN</th>
-                                                  <th className="p-3 font-semibold">Student</th>
-                                                  <th className="p-3 font-semibold">OE Subject</th>
-                                                  <th className="p-3 font-semibold text-center">Attendance %</th>
-                                                  <th className="p-3 font-semibold text-center">Status</th>
-                                                  <th className="p-3 font-semibold text-center">Fine</th>
-                                                  <th className="p-3 font-semibold">Last Updated By</th>
-                                                </tr>
-                                              </thead>
-                                              <tbody className="divide-y divide-border">
-                                                {students.map((s, idx) => (
-                                                  <tr key={s.id} className="hover:bg-secondary/10">
-                                                    <td className="p-3 text-sm text-muted-foreground">{idx+1}</td>
-                                                    <td className="p-3 text-xs font-mono text-muted-foreground">{s.profiles?.roll_number || '—'}</td>
-                                                    <td className="p-3 font-medium text-sm">{s.profiles?.full_name}</td>
-                                                    <td className="p-3 text-xs text-muted-foreground">{s.subjects?.subject_code} — {s.subjects?.subject_name}</td>
-                                                    {/* Attendance — editable */}
-                                                    <td className="p-3 text-center">
-                                                      {editingId === s.id ? (
-                                                        <div className="flex items-center gap-1 justify-center">
-                                                          <input type="number" min="0" max="100" step="0.1" value={editPct} onChange={e => setEditPct(e.target.value)}
-                                                            onKeyDown={e => { if (e.key === 'Enter') handleSaveAttendance(s.id); if (e.key === 'Escape') setEditingId(null); }}
-                                                            className="w-16 px-2 py-1 text-sm bg-background border border-border rounded-lg text-center" autoFocus />
-                                                          <button onClick={() => handleSaveAttendance(s.id)} disabled={saving} className="p-1 rounded bg-emerald-500 text-white hover:bg-emerald-600"><CheckCircle2 className="w-3.5 h-3.5" /></button>
-                                                          <button onClick={() => setEditingId(null)} className="p-1 rounded bg-secondary hover:bg-secondary/80"><X className="w-3.5 h-3.5" /></button>
-                                                        </div>
-                                                      ) : (
-                                                        <button onClick={() => { setEditingId(s.id); setEditPct(String(s.attendance_pct ?? '')); }}
-                                                          className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                                                            s.attendance_pct === null ? 'bg-secondary text-muted-foreground' :
-                                                            (s.attendance_pct ?? 0) < 85 ? 'bg-red-500/15 text-red-600 hover:bg-red-500/30' :
-                                                            'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/30'
-                                                          }`}>
-                                                          {s.attendance_pct === null ? '—' : `${s.attendance_pct}%`}
-                                                        </button>
-                                                      )}
-                                                    </td>
-                                                    {/* Assignment Status — toggle */}
-                                                    <td className="p-3 text-center">
-                                                      {s.attendance_pct === null ? (
-                                                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">Not uploaded</span>
-                                                      ) : (
-                                                        <button onClick={() => handleToggleAssignment(s.id)}
-                                                          className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                                                            s.assignment_status === 'pending' || !s.assignment_status
-                                                              ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500 hover:text-white'
-                                                              : 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500 hover:text-white'
-                                                          }`}>
-                                                          {s.assignment_status === 'pending' || !s.assignment_status ? 'Pending' : 'Submitted'}
-                                                        </button>
-                                                      )}
-                                                    </td>
-                                                    {/* Fine */}
-                                                    <td className="p-3 text-center">
-                                                      {s.attendance_fee && s.attendance_fee > 0 ? (
-                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s.attendance_fee_verified ? 'bg-emerald-500/10 text-emerald-600 line-through' : 'bg-red-500/10 text-red-600'}`}>
-                                                          <AlertTriangle className="w-3 h-3 inline mr-0.5" />₹{s.attendance_fee}
-                                                        </span>
-                                                      ) : (
-                                                        <span className="text-xs text-muted-foreground">—</span>
-                                                      )}
-                                                    </td>
-                                                    {/* Last updated by */}
-                                                    <td className="p-3 text-xs text-muted-foreground">
-                                                      {s.last_updated_by_name ? (
-                                                        <div>
-                                                          <span className="font-medium text-foreground">{s.last_updated_by_name}</span>
-                                                          {s.updated_at && <span className="ml-1 opacity-70">{timeAgo(s.updated_at)}</span>}
-                                                        </div>
-                                                      ) : '—'}
-                                                    </td>
-                                                  </tr>
-                                                ))}
-                                              </tbody>
-                                            </table>
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                  </>
+                )}
+                {selectedSem && (
+                  <>
+                    <ChevronRight className="w-4 h-4 mx-2" />
+                    <button
+                      onClick={() => { setSelectedSection(null); }}
+                      className={`hover:text-violet-500 transition-colors ${selectedSem && !selectedSection ? 'text-violet-500 font-bold' : ''}`}
+                    >
+                      Sem {selectedSem}
+                    </button>
+                  </>
+                )}
+                {selectedSection && (
+                  <>
+                    <ChevronRight className="w-4 h-4 mx-2" />
+                    <span className="text-violet-500 font-bold">Section {selectedSection}</span>
+                  </>
+                )}
+              </div>
+
+              {/* Upload bar — only when section is selected */}
+              {selectedSection && (
+                <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-border bg-secondary/5">
+                  <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input type="text" placeholder="Search students..." className="pl-10 pr-4 py-2.5 bg-background border border-border rounded-xl w-full focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                   </div>
-                );
-              })}
+                  <label className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-xl transition-colors border cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : 'bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 border-violet-500/30'}`}>
+                    <Upload className="w-4 h-4" />
+                    {uploading ? 'Uploading...' : 'Upload Excel'}
+                    <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleAttendanceUpload} disabled={uploading} />
+                  </label>
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-3 py-2 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500">
+                    <option value="all">All Status</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="pending">Pending</option>
+                    <option value="not_uploaded">Not Uploaded</option>
+                  </select>
+                  {uploadMsg && (
+                    <span className={`text-xs font-medium ${uploadMsg.startsWith('❌') ? 'text-destructive' : 'text-emerald-600'}`}>
+                      {uploadMsg}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* LEVEL 1: Department Cards */}
+              {!selectedBranch && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+                  {allBranches.map(branch => {
+                    const branchStudents = oeStudents.filter(s => (s.profiles?.departments?.name || 'Unknown') === branch);
+                    const pending = countPending(branchStudents);
+                    return (
+                      <button
+                        key={branch}
+                        onClick={() => setSelectedBranch(branch)}
+                        className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-6 text-left transition-all hover:shadow-md group"
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-10 h-10 bg-violet-500/10 rounded-xl flex items-center justify-center">
+                            <Globe className="w-5 h-5 text-violet-500" />
+                          </div>
+                          <h3 className="font-bold text-foreground text-lg group-hover:text-violet-500 transition-colors">{branch}</h3>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-muted-foreground">{branchStudents.length} students</span>
+                          {pending > 0 && <span className="text-xs font-medium bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full">{pending} pending</span>}
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-muted-foreground mt-3 group-hover:text-violet-500 group-hover:translate-x-1 transition-all" />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* LEVEL 2: Semester Cards */}
+              {selectedBranch && !selectedSem && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
+                  {allSems.length === 0 ? (
+                    <div className="col-span-full p-8 text-center text-muted-foreground">No semesters in this department.</div>
+                  ) : allSems.map(sem => {
+                    const semStudents = studentsInBranch.filter(s => (s.profiles?.semesters?.name || 'Unknown') === sem);
+                    const pending = countPending(semStudents);
+                    return (
+                      <button
+                        key={sem}
+                        onClick={() => setSelectedSem(sem)}
+                        className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group"
+                      >
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-9 h-9 bg-amber-500/10 rounded-xl flex items-center justify-center">
+                            <Users className="w-4 h-4 text-amber-500" />
+                          </div>
+                          <h3 className="font-bold text-foreground group-hover:text-violet-500 transition-colors">Sem {sem}</h3>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">{semStudents.length} students</span>
+                          {pending > 0 && <span className="text-xs font-medium bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full">{pending} pending</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* LEVEL 3: Section Cards */}
+              {selectedSem && !selectedSection && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
+                  {allSections.length === 0 ? (
+                    <div className="col-span-full p-8 text-center text-muted-foreground">No sections in this semester.</div>
+                  ) : allSections.map(sec => {
+                    const secStudents = studentsInSem.filter(s => (s.profiles?.section || 'Unknown') === sec);
+                    const pending = countPending(secStudents);
+                    return (
+                      <button
+                        key={sec}
+                        onClick={() => setSelectedSection(sec)}
+                        className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-5 text-left transition-all hover:shadow-md group"
+                      >
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-9 h-9 bg-emerald-500/10 rounded-xl flex items-center justify-center">
+                            <Users className="w-4 h-4 text-emerald-500" />
+                          </div>
+                          <h3 className="font-bold text-foreground group-hover:text-violet-500 transition-colors">Section {sec}</h3>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">{secStudents.length} students</span>
+                          {pending > 0 && <span className="text-xs font-medium bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full">{pending} pending</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* LEVEL 4: Student Table */}
+              {selectedSection && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-background text-xs border-b border-border">
+                        <th className="p-3 font-semibold">#</th>
+                        <th className="p-3 font-semibold">USN</th>
+                        <th className="p-3 font-semibold">Student</th>
+                        <th className="p-3 font-semibold">OE Subject</th>
+                        <th className="p-3 font-semibold text-center">Attendance %</th>
+                        <th className="p-3 font-semibold text-center">Status</th>
+                        <th className="p-3 font-semibold text-center">Fine</th>
+                        <th className="p-3 font-semibold">Last Updated By</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filteredStudents.length === 0 ? (
+                        <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">No students found.</td></tr>
+                      ) : filteredStudents.map((s, idx) => (
+                        <tr key={s.id} className="hover:bg-secondary/10">
+                          <td className="p-3 text-sm text-muted-foreground">{idx+1}</td>
+                          <td className="p-3 text-xs font-mono text-muted-foreground">{s.profiles?.roll_number || '—'}</td>
+                          <td className="p-3 font-medium text-sm">{s.profiles?.full_name}</td>
+                          <td className="p-3 text-xs text-muted-foreground">{s.subjects?.subject_code} — {s.subjects?.subject_name}</td>
+                          {/* Attendance — editable */}
+                          <td className="p-3 text-center">
+                            {editingId === s.id ? (
+                              <div className="flex items-center gap-1 justify-center">
+                                <input type="number" min="0" max="100" step="0.1" value={editPct} onChange={e => setEditPct(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') handleSaveAttendance(s.id); if (e.key === 'Escape') setEditingId(null); }}
+                                  className="w-16 px-2 py-1 text-sm bg-background border border-border rounded-lg text-center" autoFocus />
+                                <button onClick={() => handleSaveAttendance(s.id)} disabled={saving} className="p-1 rounded bg-emerald-500 text-white hover:bg-emerald-600"><CheckCircle2 className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => setEditingId(null)} className="p-1 rounded bg-secondary hover:bg-secondary/80"><X className="w-3.5 h-3.5" /></button>
+                              </div>
+                            ) : (
+                              <button onClick={() => { setEditingId(s.id); setEditPct(String(s.attendance_pct ?? '')); }}
+                                className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                                  s.attendance_pct === null ? 'bg-secondary text-muted-foreground' :
+                                  (s.attendance_pct ?? 0) < 85 ? 'bg-red-500/15 text-red-600 hover:bg-red-500/30' :
+                                  'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/30'
+                                }`}>
+                                {s.attendance_pct === null ? '—' : `${s.attendance_pct}%`}
+                              </button>
+                            )}
+                          </td>
+                          {/* Assignment Status — toggle */}
+                          <td className="p-3 text-center">
+                            {s.attendance_pct === null ? (
+                              <span className="px-3 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">Not uploaded</span>
+                            ) : (
+                              <button onClick={() => handleToggleAssignment(s.id)}
+                                className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                                  s.assignment_status === 'pending' || !s.assignment_status
+                                    ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500 hover:text-white'
+                                    : 'bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500 hover:text-white'
+                                }`}>
+                                {s.assignment_status === 'pending' || !s.assignment_status ? 'Pending' : 'Submitted'}
+                              </button>
+                            )}
+                          </td>
+                          {/* Fine */}
+                          <td className="p-3 text-center">
+                            {s.attendance_fee && s.attendance_fee > 0 ? (
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s.attendance_fee_verified ? 'bg-emerald-500/10 text-emerald-600 line-through' : 'bg-red-500/10 text-red-600'}`}>
+                                <AlertTriangle className="w-3 h-3 inline mr-0.5" />₹{s.attendance_fee}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          {/* Last updated by */}
+                          <td className="p-3 text-xs text-muted-foreground">
+                            {s.last_updated_by_name ? (
+                              <div>
+                                <span className="font-medium text-foreground">{s.last_updated_by_name}</span>
+                                {s.updated_at && <span className="ml-1 opacity-70">{timeAgo(s.updated_at)}</span>}
+                              </div>
+                            ) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>
