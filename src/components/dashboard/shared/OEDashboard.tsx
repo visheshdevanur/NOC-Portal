@@ -208,7 +208,6 @@ export default function OEDashboard({ teacherId }: Props) {
       const workbook = XLSX.read(data, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       // The institute template has multi-row headers (dept name, semester info, etc.)
-      // We need to find the actual header row that contains 'USN' and 'Overall'
       const allRows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '', header: 1 }) as any[];
       
       // Find the header row index (row containing 'USN')
@@ -252,22 +251,37 @@ export default function OEDashboard({ teacherId }: Props) {
         return;
       }
       
-      // Data rows start after header
+      // Collect all USNs from the Excel first
       const dataRows = allRows.slice(headerRowIdx + 1);
-      
+      const usnList: { usn: string; pct: number }[] = [];
+      for (const row of dataRows) {
+        if (!Array.isArray(row)) continue;
+        const usn = String(row[usnColIdx] || '').trim();
+        if (!usn || usn.toLowerCase() === 'usn') continue;
+        const pct = parseFloat(String(row[attendanceColIdx] || '').replace('%', '').trim());
+        usnList.push({ usn, pct });
+      }
+
+      if (usnList.length === 0) {
+        setUploadMsg('❌ No student data found in the file.');
+        setUploading(false);
+        return;
+      }
+
+      // Query ALL OE enrollment rows (not just this teacher's) to find matches by USN
+      const { data: allOEEnrollments } = await supabase
+        .from('subject_enrollment')
+        .select('id, student_id, subject_id, attendance_pct, profiles!subject_enrollment_student_id_fkey(roll_number, department_id), subjects!inner(subject_type, department_id)')
+        .eq('subjects.subject_type', 'open_elective');
+
+      const enrollments = (allOEEnrollments || []) as any[];
+
       let updated = 0, skipped = 0, fined = 0;
 
-      for (const row of dataRows) {
-        if (!Array.isArray(row)) { skipped++; continue; }
-        const usn = String(row[usnColIdx] || '').trim();
-        if (!usn || usn.toLowerCase() === 'usn') { skipped++; continue; }
-
-        // Read attendance percentage directly
-        const attendanceVal = parseFloat(String(row[attendanceColIdx] || '').replace('%', '').trim());
-
-        // Find matching student enrollment
-        const match = oeStudents.find(s =>
-          s.profiles?.roll_number?.toLowerCase() === usn.toLowerCase()
+      for (const { usn, pct } of usnList) {
+        // Match by USN across ALL OE enrollments
+        const match = enrollments.find((en: any) =>
+          en.profiles?.roll_number?.toLowerCase() === usn.toLowerCase()
         );
         if (!match) { skipped++; continue; }
 
@@ -276,10 +290,15 @@ export default function OEDashboard({ teacherId }: Props) {
           updated_at: new Date().toISOString(),
         };
 
-        if (!isNaN(attendanceVal) && attendanceVal >= 0 && attendanceVal <= 100) {
-          updateData.attendance_pct = attendanceVal;
+        // Claim this student for this teacher (so they appear in faculty's OE view)
+        if (teacherId) {
+          updateData.teacher_id = teacherId;
+        }
+
+        if (!isNaN(pct) && pct >= 0 && pct <= 100) {
+          updateData.attendance_pct = pct;
           const deptId = match.profiles?.department_id || match.subjects?.department_id || null;
-          const fineAmount = getFineAmount(attendanceVal, deptId);
+          const fineAmount = getFineAmount(pct, deptId);
           if (fineAmount > 0) {
             updateData.attendance_fee = fineAmount;
             fined++;
