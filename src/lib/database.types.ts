@@ -733,6 +733,7 @@ export type Database = {
           attendance_pct: number | null
           id: string
           is_faculty_cleared: boolean | null
+          last_updated_by_name: string | null
           payment_date: string | null
           gateway_order_id: string | null
           gateway_payment_id: string | null
@@ -751,6 +752,7 @@ export type Database = {
           attendance_pct?: number | null
           id?: string
           is_faculty_cleared?: boolean | null
+          last_updated_by_name?: string | null
           payment_date?: string | null
           gateway_order_id?: string | null
           gateway_payment_id?: string | null
@@ -769,6 +771,7 @@ export type Database = {
           attendance_pct?: number | null
           id?: string
           is_faculty_cleared?: boolean | null
+          last_updated_by_name?: string | null
           payment_date?: string | null
           gateway_order_id?: string | null
           gateway_payment_id?: string | null

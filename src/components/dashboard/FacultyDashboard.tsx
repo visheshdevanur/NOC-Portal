@@ -4,6 +4,7 @@ import { useAuth } from '../../lib/useAuth';
 import { getFacultyPendingStudents, markFacultySubjectStatus, batchMarkFacultyAttendance, getTeacherSubjectsList, getIAAttendanceForSubject, getTeacherIAAttendance, getAttendanceFreezeStatus, updateAssignmentStatus } from '../../lib/api';
 import { Search, ClipboardList, BookOpen, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, Users, Download, Upload, FileSpreadsheet, Building2, Layers, RefreshCw, Snowflake, Globe } from 'lucide-react';
 import { parseInstituteAttendanceSheet } from '../../lib/instituteAttendanceParser';
+import OEDashboard from './shared/OEDashboard';
 
 type SubjectEnrollment = {
   id: string;
@@ -1563,23 +1564,7 @@ export default function FacultyDashboard() {
 
             {/* ======================== OE ATTENDANCE TAB ======================== */}
       {activeTab === 'oe-attendance' && (profile?.is_oe_faculty || profile?.role === 'oe') && (
-        <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-          <div className="p-6 border-b border-border">
-            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-              <Globe className="w-5 h-5 text-violet-500" />
-              OE Attendance
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">Upload and manage attendance for Open Elective students.</p>
-          </div>
-          <div className="p-6">
-            <div className="text-center py-12 text-muted-foreground">
-              <Globe className="w-12 h-12 mx-auto mb-4 opacity-30" />
-              <h3 className="text-lg font-bold text-foreground">OE Attendance Management</h3>
-              <p className="mt-2">Upload attendance via Excel sheet. Students with attendance below 85% will be auto-flagged for fines.</p>
-              <p className="mt-1 text-xs">OE subjects will appear here once created by the DEO.</p>
-            </div>
-          </div>
-        </div>
+        <OEDashboard teacherId={user?.id} />
       )}
     </div>
   );
