@@ -219,18 +219,25 @@ export default function OEDashboard({ teacherId }: Props) {
         return;
       }
 
-      // Find USN/roll column and attendance column
+      // Find USN column
       const usnCol = Object.keys(rows[0]).find(k => {
         const lk = k.toLowerCase().trim();
         return lk.includes('usn') || lk.includes('roll') || lk.includes('reg') || lk === 'usn';
       });
+
+      // Find attendance percentage column (Overall, Attendance %, etc.)
       const attendanceCol = Object.keys(rows[0]).find(k => {
         const lk = k.toLowerCase().trim();
-        return lk.includes('attend') || lk.includes('percentage') || lk.includes('pct') || lk.includes('%');
+        return lk.includes('overall') || lk.includes('attend') || lk.includes('percentage') || lk.includes('pct') || lk.includes('%');
       });
 
       if (!usnCol) {
         setUploadMsg('❌ No USN/Roll Number column found. Expected: "USN", "Roll Number", etc.');
+        setUploading(false);
+        return;
+      }
+      if (!attendanceCol) {
+        setUploadMsg('❌ No attendance percentage column found. Expected: "Overall", "Attendance %", etc.');
         setUploading(false);
         return;
       }
@@ -241,7 +248,8 @@ export default function OEDashboard({ teacherId }: Props) {
         const usn = String(row[usnCol]).trim();
         if (!usn) { skipped++; continue; }
 
-        const attendanceVal = attendanceCol ? parseFloat(String(row[attendanceCol]).replace('%', '').trim()) : NaN;
+        // Read attendance percentage directly from the column
+        const attendanceVal = parseFloat(String(row[attendanceCol]).replace('%', '').trim());
 
         // Find matching student enrollment
         const match = oeStudents.find(s =>
