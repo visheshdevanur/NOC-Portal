@@ -77,8 +77,7 @@ export default function OEDashboard({ teacherId }: Props) {
       let query = supabase
         .from('subject_enrollment')
         .select('id, student_id, subject_id, teacher_id, attendance_pct, assignment_status, attendance_fee, attendance_fee_verified, updated_at, last_updated_by_name, profiles!subject_enrollment_student_id_fkey(full_name, roll_number, section, semester_id, department_id, departments!profiles_department_id_fkey(name), semesters(name)), subjects(subject_name, subject_code, subject_type, department_id)')
-        .eq('subjects.subject_type', 'open_elective')
-        .order('created_at', { ascending: false });
+        .eq('subjects.subject_type', 'open_elective');
 
       if (teacherId) {
         query = query.eq('teacher_id', teacherId);
@@ -211,45 +210,63 @@ export default function OEDashboard({ teacherId }: Props) {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-
-      if (rows.length === 0) {
-        setUploadMsg('❌ Empty file');
+      // The institute template has multi-row headers (dept name, semester info, etc.)
+      // We need to find the actual header row that contains 'USN' and 'Overall'
+      const allRows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '', header: 1 }) as any[];
+      
+      // Find the header row index (row containing 'USN')
+      let headerRowIdx = -1;
+      let usnColIdx = -1;
+      let attendanceColIdx = -1;
+      
+      for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+        const row = allRows[i];
+        if (!Array.isArray(row)) continue;
+        for (let j = 0; j < row.length; j++) {
+          const cell = String(row[j]).toLowerCase().trim();
+          if (cell === 'usn' || cell.includes('usn')) {
+            headerRowIdx = i;
+            usnColIdx = j;
+            break;
+          }
+        }
+        if (headerRowIdx >= 0) break;
+      }
+      
+      if (headerRowIdx < 0 || usnColIdx < 0) {
+        setUploadMsg('❌ No USN column found in the Excel. Expected a column header "USN".');
         setUploading(false);
         return;
       }
-
-      // Find USN column
-      const usnCol = Object.keys(rows[0]).find(k => {
-        const lk = k.toLowerCase().trim();
-        return lk.includes('usn') || lk.includes('roll') || lk.includes('reg') || lk === 'usn';
-      });
-
-      // Find attendance percentage column (Overall, Attendance %, etc.)
-      const attendanceCol = Object.keys(rows[0]).find(k => {
-        const lk = k.toLowerCase().trim();
-        return lk.includes('overall') || lk.includes('attend') || lk.includes('percentage') || lk.includes('pct') || lk.includes('%');
-      });
-
-      if (!usnCol) {
-        setUploadMsg('❌ No USN/Roll Number column found. Expected: "USN", "Roll Number", etc.');
+      
+      // Find the attendance column (Overall) in the header row
+      const headerRow = allRows[headerRowIdx] as any[];
+      for (let j = 0; j < headerRow.length; j++) {
+        const cell = String(headerRow[j]).toLowerCase().trim();
+        if (cell.includes('overall') || cell.includes('attendance') || cell.includes('percentage') || cell.includes('pct')) {
+          attendanceColIdx = j;
+          break;
+        }
+      }
+      
+      if (attendanceColIdx < 0) {
+        setUploadMsg('❌ No attendance percentage column found. Expected: "Overall", "Attendance %".');
         setUploading(false);
         return;
       }
-      if (!attendanceCol) {
-        setUploadMsg('❌ No attendance percentage column found. Expected: "Overall", "Attendance %", etc.');
-        setUploading(false);
-        return;
-      }
-
+      
+      // Data rows start after header
+      const dataRows = allRows.slice(headerRowIdx + 1);
+      
       let updated = 0, skipped = 0, fined = 0;
 
-      for (const row of rows) {
-        const usn = String(row[usnCol]).trim();
-        if (!usn) { skipped++; continue; }
+      for (const row of dataRows) {
+        if (!Array.isArray(row)) { skipped++; continue; }
+        const usn = String(row[usnColIdx] || '').trim();
+        if (!usn || usn.toLowerCase() === 'usn') { skipped++; continue; }
 
-        // Read attendance percentage directly from the column
-        const attendanceVal = parseFloat(String(row[attendanceCol]).replace('%', '').trim());
+        // Read attendance percentage directly
+        const attendanceVal = parseFloat(String(row[attendanceColIdx] || '').replace('%', '').trim());
 
         // Find matching student enrollment
         const match = oeStudents.find(s =>
