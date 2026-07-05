@@ -156,7 +156,7 @@ const Layout = () => {
                     {profile?.full_name || 'Loading user...'}
                   </span>
                   <span className="text-xs text-primary font-medium capitalize leading-tight">
-                    {profile?.role}
+                    {profile?.role === 'oe' ? 'OE Coordinator' : profile?.role}
                   </span>
                 </div>
               </div>
@@ -238,7 +238,7 @@ const Layout = () => {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-foreground truncate">{profile?.full_name || 'Loading...'}</p>
-                      <p className="text-xs text-primary font-medium capitalize">{profile?.role}</p>
+                      <p className="text-xs text-primary font-medium capitalize">{profile?.role === 'oe' ? 'OE Coordinator' : profile?.role}</p>
                     </div>
                   </div>
                   
