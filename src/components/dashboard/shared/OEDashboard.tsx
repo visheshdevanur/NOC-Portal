@@ -74,9 +74,10 @@ export default function OEDashboard({ teacherId }: Props) {
   const fetchOEData = async () => {
     setLoading(true);
     try {
+      // Try with last_updated_by_name first, fall back without it
       let query = supabase
         .from('subject_enrollment')
-        .select('id, student_id, subject_id, teacher_id, attendance_pct, assignment_status, attendance_fee, attendance_fee_verified, updated_at, last_updated_by_name, profiles!subject_enrollment_student_id_fkey(full_name, roll_number, section, semester_id, department_id, departments!profiles_department_id_fkey(name), semesters(name)), subjects!inner(subject_name, subject_code, subject_type, department_id)')
+        .select('id, student_id, subject_id, teacher_id, attendance_pct, assignment_status, attendance_fee, attendance_fee_verified, updated_at, profiles!subject_enrollment_student_id_fkey(full_name, roll_number, section, semester_id, department_id, departments!profiles_department_id_fkey(name), semesters(name)), subjects!inner(subject_name, subject_code, subject_type, department_id)')
         .eq('subjects.subject_type', 'open_elective');
 
       if (teacherId) {
