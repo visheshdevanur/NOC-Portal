@@ -121,10 +121,12 @@ export default function OEDashboard({ teacherId }: Props) {
   };
 
   const fetchFineCategories = async () => {
+    // Faculty role has no RLS on attendance_fine_categories — skip to avoid 500
+    if (teacherId) return;
     try {
-      const { data } = await supabase.from('attendance_fine_categories').select('*');
-      setFineCategories(data || []);
-    } catch (err) { console.error('Fine categories error:', err); }
+      const { data, error } = await supabase.from('attendance_fine_categories').select('*');
+      if (!error) setFineCategories(data || []);
+    } catch (err) { /* silently ignore */ }
   };
 
   useEffect(() => { fetchOEData(); fetchLogs(); fetchFineCategories(); }, [teacherId]);
@@ -320,11 +322,18 @@ export default function OEDashboard({ teacherId }: Props) {
         return;
       }
 
-      const { data: oeEnrollments } = await supabase
+      const { data: oeEnrollments, error: enrollErr } = await supabase
         .from('subject_enrollment')
         .select('id, student_id, subject_id')
         .in('subject_id', oeSubjectIds)
         .in('student_id', studentIds);
+
+      if (enrollErr) {
+        console.error('Enrollment query error:', enrollErr);
+        setUploadMsg(`❌ DB error: ${enrollErr.message}`);
+        setUploading(false);
+        return;
+      }
 
       const enrollMap = new Map<string, any>();
       (oeEnrollments || []).forEach((e: any) => {
@@ -334,7 +343,7 @@ export default function OEDashboard({ teacherId }: Props) {
       let updated = 0, skipped = 0, fined = 0;
 
       for (const { usn, pct } of usnList) {
-        const prof = profileMap.get(usn.toUpperCase());
+        const prof = profileMap.get(usn.trim().toUpperCase());
         if (!prof) { skipped++; continue; }
         const enroll = enrollMap.get(prof.id);
         if (!enroll) { skipped++; continue; }
@@ -359,7 +368,8 @@ export default function OEDashboard({ teacherId }: Props) {
           }
         }
 
-        await supabase.from('subject_enrollment').update(updateData).eq('id', enroll.id);
+        const { error: updateErr } = await supabase.from('subject_enrollment').update(updateData).eq('id', enroll.id);
+        if (updateErr) { console.error('Update failed for', usn, updateErr); skipped++; continue; }
         updated++;
       }
 
