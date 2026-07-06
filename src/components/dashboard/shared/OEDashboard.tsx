@@ -346,36 +346,43 @@ export default function OEDashboard({ teacherId }: Props) {
         enrollMap.set(e.student_id, e);
       });
 
-      let updated = 0, skipped = 0, fined = 0, created = 0;
+      // Bulk-create missing enrollments via SECURITY DEFINER RPC
+      const toInsert: any[] = [];
+      for (const { usn } of usnList) {
+        const prof = profileMap.get(usn.trim().toUpperCase());
+        if (!prof) continue;
+        if (enrollMap.has(prof.id)) continue;
+        toInsert.push({
+          student_id: prof.id,
+          subject_id: oeSubjectIds[0],
+          teacher_id: teacherId || null,
+          tenant_id: profile?.tenant_id || null,
+        });
+      }
+
+      let created = 0;
+      if (toInsert.length > 0) {
+        const { data: rpcResult, error: rpcErr } = await supabase.rpc('oe_bulk_enroll', { p_rows: toInsert });
+        if (rpcErr) { console.error('Bulk enroll error:', rpcErr); }
+        else { created = rpcResult?.inserted || toInsert.length; }
+
+        // Re-fetch enrollments to get the new IDs
+        const { data: refreshed } = await supabase
+          .from('subject_enrollment')
+          .select('id, student_id, subject_id')
+          .in('subject_id', oeSubjectIds)
+          .in('student_id', toInsert.map(r => r.student_id));
+        (refreshed || []).forEach((e: any) => enrollMap.set(e.student_id, e));
+      }
+
+      let updated = 0, skipped = 0, fined = 0;
 
       for (const { usn, pct } of usnList) {
         const prof = profileMap.get(usn.trim().toUpperCase());
         if (!prof) { skipped++; continue; }
 
-        let enroll = enrollMap.get(prof.id);
-
-        // If no OE enrollment exists for this student, CREATE one
-        if (!enroll) {
-          // Pick the first OE subject (or match by department if possible)
-          const targetSubjectId = oeSubjectIds[0];
-          const insertData: any = {
-            student_id: prof.id,
-            subject_id: targetSubjectId,
-            status: 'pending',
-            assignment_status: 'pending',
-            teacher_id: teacherId || null,
-            tenant_id: profile?.tenant_id || null,
-          };
-          const { data: inserted, error: insertErr } = await supabase
-            .from('subject_enrollment')
-            .insert(insertData)
-            .select('id, student_id, subject_id')
-            .single();
-          if (insertErr) { console.error('Insert failed for', usn, insertErr); skipped++; continue; }
-          enroll = inserted;
-          enrollMap.set(prof.id, enroll);
-          created++;
-        }
+        const enroll = enrollMap.get(prof.id);
+        if (!enroll) { skipped++; continue; }
 
         const updateData: any = {
           last_updated_by_name: profile?.full_name || null,
