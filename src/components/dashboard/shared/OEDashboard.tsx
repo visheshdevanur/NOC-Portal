@@ -288,16 +288,16 @@ export default function OEDashboard({ teacherId }: Props) {
         return;
       }
 
-      // Step 1: Get USN → student_id mapping from profiles (no RLS issues)
-      const usnValues = usnList.map(u => u.usn.trim().toUpperCase());
-      const { data: matchedProfiles } = await supabase
+      // Step 1: Get ALL student profiles for case-insensitive USN matching
+      const { data: allStudentProfiles } = await supabase
         .from('profiles')
         .select('id, roll_number, department_id')
         .eq('role', 'student')
-        .in('roll_number', usnValues);
+        .not('roll_number', 'is', null);
 
+      // Build case-insensitive USN → profile map
       const profileMap = new Map<string, any>();
-      (matchedProfiles || []).forEach((p: any) => {
+      (allStudentProfiles || []).forEach((p: any) => {
         if (p.roll_number) profileMap.set(p.roll_number.trim().toUpperCase(), p);
       });
 
@@ -314,19 +314,25 @@ export default function OEDashboard({ teacherId }: Props) {
         return;
       }
 
-      // Step 3: Get OE enrollment rows for matched students (no !inner join)
-      const studentIds = Array.from(profileMap.values()).map((p: any) => p.id);
-      if (studentIds.length === 0) {
-        setUploadMsg(`❌ 0 USNs matched any students. ${usnList.length} skipped.`);
+      // Count how many USNs match a profile
+      const matchedStudentIds: string[] = [];
+      for (const { usn } of usnList) {
+        const prof = profileMap.get(usn.trim().toUpperCase());
+        if (prof) matchedStudentIds.push(prof.id);
+      }
+
+      if (matchedStudentIds.length === 0) {
+        setUploadMsg(`❌ 0 of ${usnList.length} USNs matched any student profiles.`);
         setUploading(false);
         return;
       }
 
+      // Step 3: Get OE enrollment rows for matched students
       const { data: oeEnrollments, error: enrollErr } = await supabase
         .from('subject_enrollment')
         .select('id, student_id, subject_id')
         .in('subject_id', oeSubjectIds)
-        .in('student_id', studentIds);
+        .in('student_id', matchedStudentIds);
 
       if (enrollErr) {
         console.error('Enrollment query error:', enrollErr);
@@ -382,7 +388,8 @@ export default function OEDashboard({ teacherId }: Props) {
         tenant_id: profile?.tenant_id,
       }).then(() => {});
 
-      setUploadMsg(`✅ ${updated} updated, ${skipped} skipped${fined > 0 ? `, ${fined} auto-fined` : ''}`);
+      const diagMsg = updated === 0 ? ` (${matchedStudentIds.length} USN matches, ${(oeEnrollments||[]).length} OE enrollments found)` : '';
+      setUploadMsg(`✅ ${updated} updated, ${skipped} skipped${fined > 0 ? `, ${fined} auto-fined` : ''}${diagMsg}`);
       fetchOEData();
       fetchLogs();
     } catch (err: any) {
