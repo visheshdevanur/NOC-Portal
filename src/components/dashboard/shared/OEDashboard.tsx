@@ -268,36 +268,59 @@ export default function OEDashboard({ teacherId }: Props) {
         return;
       }
 
-      // Query ALL OE enrollment rows (not just this teacher's) to find matches by USN
-      const { data: allOEEnrollments } = await supabase
-        .from('subject_enrollment')
-        .select('id, student_id, subject_id, attendance_pct, profiles!subject_enrollment_student_id_fkey(roll_number, department_id), subjects!inner(subject_type, department_id)')
-        .eq('subjects.subject_type', 'open_elective');
+      // Step 1: Get USN → student_id mapping from profiles (faculty can read profiles)
+      const usnValues = usnList.map(u => u.usn.toUpperCase());
+      const { data: matchedProfiles } = await supabase
+        .from('profiles')
+        .select('id, roll_number, department_id')
+        .eq('role', 'student')
+        .in('roll_number', usnValues);
 
-      const enrollments = (allOEEnrollments || []) as any[];
+      const profileMap = new Map<string, any>();
+      (matchedProfiles || []).forEach((p: any) => {
+        if (p.roll_number) profileMap.set(p.roll_number.toUpperCase(), p);
+      });
+
+      // Step 2: Get OE enrollment IDs for these students
+      const studentIds = Array.from(profileMap.values()).map((p: any) => p.id);
+      if (studentIds.length === 0) {
+        setUploadMsg(`❌ 0 USNs matched any students. ${usnList.length} skipped.`);
+        setUploading(false);
+        return;
+      }
+
+      const { data: oeEnrollments } = await supabase
+        .from('subject_enrollment')
+        .select('id, student_id, subject_id, subjects!inner(subject_type, department_id)')
+        .eq('subjects.subject_type', 'open_elective')
+        .in('student_id', studentIds);
+
+      const enrollMap = new Map<string, any>();
+      (oeEnrollments || []).forEach((e: any) => {
+        enrollMap.set(e.student_id, e);
+      });
 
       let updated = 0, skipped = 0, fined = 0;
 
       for (const { usn, pct } of usnList) {
-        // Match by USN across ALL OE enrollments
-        const match = enrollments.find((en: any) =>
-          en.profiles?.roll_number?.toLowerCase() === usn.toLowerCase()
-        );
-        if (!match) { skipped++; continue; }
+        const prof = profileMap.get(usn.toUpperCase());
+        if (!prof) { skipped++; continue; }
+        const enroll = enrollMap.get(prof.id);
+        if (!enroll) { skipped++; continue; }
 
         const updateData: any = {
           last_updated_by_name: profile?.full_name || null,
           updated_at: new Date().toISOString(),
         };
 
-        // Claim this student for this teacher (so they appear in faculty's OE view)
+        // Claim this student for this teacher
         if (teacherId) {
           updateData.teacher_id = teacherId;
         }
 
         if (!isNaN(pct) && pct >= 0 && pct <= 100) {
           updateData.attendance_pct = pct;
-          const deptId = match.profiles?.department_id || match.subjects?.department_id || null;
+          const deptId = prof.department_id || enroll.subjects?.department_id || null;
           const fineAmount = getFineAmount(pct, deptId);
           if (fineAmount > 0) {
             updateData.attendance_fee = fineAmount;
@@ -305,7 +328,7 @@ export default function OEDashboard({ teacherId }: Props) {
           }
         }
 
-        await supabase.from('subject_enrollment').update(updateData).eq('id', match.id);
+        await supabase.from('subject_enrollment').update(updateData).eq('id', enroll.id);
         updated++;
       }
 
