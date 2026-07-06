@@ -364,6 +364,7 @@ export default function OEDashboard({ teacherId }: Props) {
             status: 'pending',
             assignment_status: 'pending',
             teacher_id: teacherId || null,
+            tenant_id: profile?.tenant_id || null,
           };
           const { data: inserted, error: insertErr } = await supabase
             .from('subject_enrollment')
