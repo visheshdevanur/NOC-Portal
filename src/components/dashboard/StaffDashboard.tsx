@@ -830,31 +830,41 @@ export default function StaffDashboard() {
     setImportLoading(true);
     setSubjectError(null);
     try {
-      // Refresh current subjects to have the latest duplicate check
       const currentData = await getSubjectsByDepartment(profile!.department_id!);
       const currentCodes = new Set((currentData as Subject[]).map(s => s.subject_code.toUpperCase()));
-      
       const toImport = importSourceSubjects.filter(s => importSelectedSubjects.includes(s.id));
-      let imported = 0;
-      let skipped = 0;
+      let imported = 0, skipped = 0, enrollCount = 0;
       for (const sub of toImport) {
-        // Check if subject_code already exists in this department
         if (currentCodes.has(sub.subject_code.toUpperCase())) { skipped++; continue; }
         try {
-          await createSubject({
+          const srcType = (sub as any).subject_type || 'theory';
+          const created = await createSubject({
             subject_name: sub.subject_name,
             subject_code: sub.subject_code,
             department_id: profile!.department_id!,
-            semester_id: importTargetSemId
+            semester_id: importTargetSemId,
+            subject_type: srcType,
           });
           currentCodes.add(sub.subject_code.toUpperCase());
           imported++;
+          if (srcType === 'open_elective' && created && created[0]?.id) {
+            const subjectId = created[0].id;
+            const { data: semStudents } = await supabase.from('profiles').select('id').eq('role', 'student').eq('department_id', profile!.department_id!).eq('semester_id', importTargetSemId);
+            if (semStudents && semStudents.length > 0) {
+              const enrollments = semStudents.map(s => ({ student_id: s.id, subject_id: subjectId, status: 'pending', assignment_status: 'pending' }));
+              for (let i = 0; i < enrollments.length; i += 100) {
+                await supabase.from('subject_enrollment').insert(enrollments.slice(i, i + 100));
+              }
+              enrollCount += semStudents.length;
+            }
+          }
         } catch (err: any) {
-          console.warn(`Failed to import ${sub.subject_code}:`, err.message);
+          console.warn('Failed to import ' + sub.subject_code + ':', err.message);
           skipped++;
         }
       }
-      setSubjectSuccess(`Imported ${imported} subjects${skipped > 0 ? `, skipped ${skipped} duplicates` : ''}.`);
+      const oeMsg = enrollCount > 0 ? ' ' + enrollCount + ' OE students auto-enrolled.' : '';
+      setSubjectSuccess('Imported ' + imported + ' subjects' + (skipped > 0 ? ', skipped ' + skipped + ' duplicates' : '') + '.' + oeMsg);
       setShowImportSubjects(false);
       fetchSubjects();
     } catch (err: any) {

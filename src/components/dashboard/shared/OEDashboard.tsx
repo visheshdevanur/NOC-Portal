@@ -407,8 +407,20 @@ export default function OEDashboard({ teacherId }: Props) {
           ) : oeStudents.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <Globe className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No Open Elective subjects yet.</p>
-              <p className="text-xs mt-1">These will appear here once a DEO creates one.</p>
+              <p className="font-medium">{teacherId ? 'No OE students assigned yet.' : 'No Open Elective subjects yet.'}</p>
+              <p className="text-xs mt-1">{teacherId ? 'Upload an attendance Excel to claim OE students.' : 'These will appear here once a DEO creates one.'}</p>
+              {teacherId && (
+                <label className={`inline-flex items-center gap-1.5 px-5 py-2.5 mt-4 text-sm font-medium rounded-xl transition-colors border cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : 'bg-violet-500 text-white hover:bg-violet-600 border-violet-500'}`}>
+                  <Upload className="w-4 h-4" />
+                  {uploading ? 'Uploading...' : 'Upload Attendance Excel'}
+                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleAttendanceUpload} disabled={uploading} />
+                </label>
+              )}
+              {uploadMsg && (
+                <p className={`text-sm font-medium mt-3 ${uploadMsg.startsWith('❌') ? 'text-destructive' : 'text-emerald-600'}`}>
+                  {uploadMsg}
+                </p>
+              )}
             </div>
           ) : (
             <div className="flex flex-col">
