@@ -346,13 +346,35 @@ export default function OEDashboard({ teacherId }: Props) {
         enrollMap.set(e.student_id, e);
       });
 
-      let updated = 0, skipped = 0, fined = 0;
+      let updated = 0, skipped = 0, fined = 0, created = 0;
 
       for (const { usn, pct } of usnList) {
         const prof = profileMap.get(usn.trim().toUpperCase());
         if (!prof) { skipped++; continue; }
-        const enroll = enrollMap.get(prof.id);
-        if (!enroll) { skipped++; continue; }
+
+        let enroll = enrollMap.get(prof.id);
+
+        // If no OE enrollment exists for this student, CREATE one
+        if (!enroll) {
+          // Pick the first OE subject (or match by department if possible)
+          const targetSubjectId = oeSubjectIds[0];
+          const insertData: any = {
+            student_id: prof.id,
+            subject_id: targetSubjectId,
+            status: 'pending',
+            assignment_status: 'pending',
+            teacher_id: teacherId || null,
+          };
+          const { data: inserted, error: insertErr } = await supabase
+            .from('subject_enrollment')
+            .insert(insertData)
+            .select('id, student_id, subject_id')
+            .single();
+          if (insertErr) { console.error('Insert failed for', usn, insertErr); skipped++; continue; }
+          enroll = inserted;
+          enrollMap.set(prof.id, enroll);
+          created++;
+        }
 
         const updateData: any = {
           last_updated_by_name: profile?.full_name || null,
@@ -384,12 +406,11 @@ export default function OEDashboard({ teacherId }: Props) {
         action: 'bulk_upload',
         actor_id: profile?.id,
         actor_name: profile?.full_name,
-        details: `Uploaded ${file.name}: ${updated} updated, ${skipped} skipped, ${fined} fined`,
+        details: `Uploaded ${file.name}: ${updated} updated, ${created} enrolled, ${skipped} skipped, ${fined} fined`,
         tenant_id: profile?.tenant_id,
       }).then(() => {});
 
-      const diagMsg = updated === 0 ? ` (${matchedStudentIds.length} USN matches, ${(oeEnrollments||[]).length} OE enrollments found)` : '';
-      setUploadMsg(`✅ ${updated} updated, ${skipped} skipped${fined > 0 ? `, ${fined} auto-fined` : ''}${diagMsg}`);
+      setUploadMsg(`✅ ${updated} updated${created > 0 ? `, ${created} enrolled` : ''}, ${skipped} skipped${fined > 0 ? `, ${fined} auto-fined` : ''}`);
       fetchOEData();
       fetchLogs();
     } catch (err: any) {
