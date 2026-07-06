@@ -72,11 +72,23 @@ export default function OEDashboard({ teacherId }: Props) {
   const fetchOEData = async () => {
     setLoading(true);
     try {
-      // Try with last_updated_by_name first, fall back without it
+      // Step 1: Get all OE subject IDs (subjects table has open SELECT RLS)
+      const { data: oeSubjects } = await supabase
+        .from('subjects')
+        .select('id, subject_name, subject_code, subject_type, department_id')
+        .eq('subject_type', 'open_elective');
+      const oeSubjectIds = (oeSubjects || []).map(s => s.id);
+      if (oeSubjectIds.length === 0) { setOEStudents([]); setLoading(false); return; }
+
+      // Build a lookup map for subject details
+      const subjectMap = new Map<string, any>();
+      (oeSubjects || []).forEach(s => subjectMap.set(s.id, s));
+
+      // Step 2: Query enrollments by subject_id (no !inner join needed)
       let query = supabase
         .from('subject_enrollment')
-        .select('id, student_id, subject_id, teacher_id, attendance_pct, assignment_status, attendance_fee, attendance_fee_verified, updated_at, profiles!subject_enrollment_student_id_fkey(full_name, roll_number, section, semester_id, department_id, departments!profiles_department_id_fkey(name), semesters(name)), subjects!inner(subject_name, subject_code, subject_type, department_id)')
-        .eq('subjects.subject_type', 'open_elective');
+        .select('id, student_id, subject_id, teacher_id, attendance_pct, assignment_status, attendance_fee, attendance_fee_verified, updated_at, last_updated_by_name, profiles!subject_enrollment_student_id_fkey(full_name, roll_number, section, semester_id, department_id, departments!profiles_department_id_fkey(name), semesters(name))')
+        .in('subject_id', oeSubjectIds);
 
       if (teacherId) {
         query = query.eq('teacher_id', teacherId);
@@ -84,7 +96,13 @@ export default function OEDashboard({ teacherId }: Props) {
 
       const { data, error } = await query;
       if (error) throw error;
-      setOEStudents((data || []) as unknown as OEStudent[]);
+
+      // Attach subject details client-side
+      const enriched = (data || []).map((row: any) => ({
+        ...row,
+        subjects: subjectMap.get(row.subject_id) || null,
+      }));
+      setOEStudents(enriched as unknown as OEStudent[]);
     } catch (err) { console.error('OE fetch error:', err); }
     setLoading(false);
   };
@@ -268,8 +286,8 @@ export default function OEDashboard({ teacherId }: Props) {
         return;
       }
 
-      // Step 1: Get USN → student_id mapping from profiles (faculty can read profiles)
-      const usnValues = usnList.map(u => u.usn.toUpperCase());
+      // Step 1: Get USN → student_id mapping from profiles (no RLS issues)
+      const usnValues = usnList.map(u => u.usn.trim().toUpperCase());
       const { data: matchedProfiles } = await supabase
         .from('profiles')
         .select('id, roll_number, department_id')
@@ -278,10 +296,23 @@ export default function OEDashboard({ teacherId }: Props) {
 
       const profileMap = new Map<string, any>();
       (matchedProfiles || []).forEach((p: any) => {
-        if (p.roll_number) profileMap.set(p.roll_number.toUpperCase(), p);
+        if (p.roll_number) profileMap.set(p.roll_number.trim().toUpperCase(), p);
       });
 
-      // Step 2: Get OE enrollment IDs for these students
+      // Step 2: Get all OE subject IDs (subjects table has open SELECT)
+      const { data: oeSubjects } = await supabase
+        .from('subjects')
+        .select('id, department_id')
+        .eq('subject_type', 'open_elective');
+      const oeSubjectIds = (oeSubjects || []).map(s => s.id);
+
+      if (oeSubjectIds.length === 0) {
+        setUploadMsg(`❌ No OE subjects exist yet. Ask DEO to create one first.`);
+        setUploading(false);
+        return;
+      }
+
+      // Step 3: Get OE enrollment rows for matched students (no !inner join)
       const studentIds = Array.from(profileMap.values()).map((p: any) => p.id);
       if (studentIds.length === 0) {
         setUploadMsg(`❌ 0 USNs matched any students. ${usnList.length} skipped.`);
@@ -291,8 +322,8 @@ export default function OEDashboard({ teacherId }: Props) {
 
       const { data: oeEnrollments } = await supabase
         .from('subject_enrollment')
-        .select('id, student_id, subject_id, subjects!inner(subject_type, department_id)')
-        .eq('subjects.subject_type', 'open_elective')
+        .select('id, student_id, subject_id')
+        .in('subject_id', oeSubjectIds)
         .in('student_id', studentIds);
 
       const enrollMap = new Map<string, any>();
@@ -320,7 +351,7 @@ export default function OEDashboard({ teacherId }: Props) {
 
         if (!isNaN(pct) && pct >= 0 && pct <= 100) {
           updateData.attendance_pct = pct;
-          const deptId = prof.department_id || enroll.subjects?.department_id || null;
+          const deptId = prof.department_id || null;
           const fineAmount = getFineAmount(pct, deptId);
           if (fineAmount > 0) {
             updateData.attendance_fee = fineAmount;
