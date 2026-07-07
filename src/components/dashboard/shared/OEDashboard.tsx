@@ -129,7 +129,7 @@ export default function OEDashboard({ teacherId }: Props) {
     } catch (err) { /* silently ignore */ }
   };
 
-  useEffect(() => { fetchOEData(); fetchLogs(); fetchFineCategories(); }, [teacherId]);
+  useEffect(() => { fetchOEData(); if (!teacherId) { fetchLogs(); fetchFineCategories(); } }, [teacherId]);
 
   /** Lookup fine amount from admin-created categories */
   const getFineAmount = (pct: number, departmentId: string | null): number => {
@@ -346,79 +346,49 @@ export default function OEDashboard({ teacherId }: Props) {
         enrollMap.set(e.student_id, e);
       });
 
-      // Bulk-create missing enrollments via SECURITY DEFINER RPC
-      const toInsert: any[] = [];
-      for (const { usn } of usnList) {
+      // Build full payload for RPC — handles both enroll + update in one shot
+      const rpcRows: any[] = [];
+      let skipped = 0;
+      for (const { usn, pct } of usnList) {
         const prof = profileMap.get(usn.trim().toUpperCase());
-        if (!prof) continue;
-        if (enrollMap.has(prof.id)) continue;
-        toInsert.push({
+        if (!prof) { skipped++; continue; }
+        rpcRows.push({
           student_id: prof.id,
           subject_id: oeSubjectIds[0],
           teacher_id: teacherId || null,
           tenant_id: profile?.tenant_id || null,
+          attendance_pct: (!isNaN(pct) && pct >= 0 && pct <= 100) ? pct : null,
+          updated_by: profile?.full_name || null,
         });
       }
 
-      let created = 0;
-      if (toInsert.length > 0) {
-        const { data: rpcResult, error: rpcErr } = await supabase.rpc('oe_bulk_enroll', { p_rows: toInsert });
-        if (rpcErr) { console.error('Bulk enroll error:', rpcErr); }
-        else { created = rpcResult?.inserted || toInsert.length; }
-
-        // Re-fetch enrollments to get the new IDs
-        const { data: refreshed } = await supabase
-          .from('subject_enrollment')
-          .select('id, student_id, subject_id')
-          .in('subject_id', oeSubjectIds)
-          .in('student_id', toInsert.map(r => r.student_id));
-        (refreshed || []).forEach((e: any) => enrollMap.set(e.student_id, e));
+      if (rpcRows.length === 0) {
+        setUploadMsg(`❌ 0 USNs matched any student profiles. ${usnList.length} skipped.`);
+        setUploading(false);
+        return;
       }
 
-      let updated = 0, skipped = 0, fined = 0;
-
-      for (const { usn, pct } of usnList) {
-        const prof = profileMap.get(usn.trim().toUpperCase());
-        if (!prof) { skipped++; continue; }
-
-        const enroll = enrollMap.get(prof.id);
-        if (!enroll) { skipped++; continue; }
-
-        const updateData: any = {
-          last_updated_by_name: profile?.full_name || null,
-          updated_at: new Date().toISOString(),
-        };
-
-        // Claim this student for this teacher
-        if (teacherId) {
-          updateData.teacher_id = teacherId;
-        }
-
-        if (!isNaN(pct) && pct >= 0 && pct <= 100) {
-          updateData.attendance_pct = pct;
-          const deptId = prof.department_id || null;
-          const fineAmount = getFineAmount(pct, deptId);
-          if (fineAmount > 0) {
-            updateData.attendance_fee = fineAmount;
-            fined++;
-          }
-        }
-
-        const { error: updateErr } = await supabase.from('subject_enrollment').update(updateData).eq('id', enroll.id);
-        if (updateErr) { console.error('Update failed for', usn, updateErr); skipped++; continue; }
-        updated++;
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc('oe_bulk_enroll', { p_rows: rpcRows });
+      if (rpcErr) {
+        console.error('Bulk enroll error:', rpcErr);
+        setUploadMsg(`❌ DB error: ${rpcErr.message}`);
+        setUploading(false);
+        return;
       }
+
+      const enrolled = rpcResult?.enrolled || 0;
+      const updated = rpcResult?.updated || rpcRows.length;
 
       // Log the upload
       await supabase.from('oe_logs').insert({
         action: 'bulk_upload',
         actor_id: profile?.id,
         actor_name: profile?.full_name,
-        details: `Uploaded ${file.name}: ${updated} updated, ${created} enrolled, ${skipped} skipped, ${fined} fined`,
+        details: `Uploaded ${file.name}: ${updated} updated, ${enrolled} enrolled, ${skipped} skipped`,
         tenant_id: profile?.tenant_id,
       }).then(() => {});
 
-      setUploadMsg(`✅ ${updated} updated${created > 0 ? `, ${created} enrolled` : ''}, ${skipped} skipped${fined > 0 ? `, ${fined} auto-fined` : ''}`);
+      setUploadMsg(`✅ ${updated} updated${enrolled > 0 ? `, ${enrolled} enrolled` : ''}, ${skipped} skipped`);
       fetchOEData();
       fetchLogs();
     } catch (err: any) {
@@ -487,14 +457,28 @@ export default function OEDashboard({ teacherId }: Props) {
           </div>
         </div>
 
-        {/* Sub-tabs */}
-        <div className="flex gap-2 mt-6">
+        {/* Sub-tabs + Upload button */}
+        <div className="flex items-center gap-2 mt-6">
           <button onClick={() => setActiveSubTab('students')} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${activeSubTab === 'students' ? 'bg-violet-500 text-white shadow-md' : 'bg-secondary text-muted-foreground hover:bg-secondary/80'}`}>
             <Users className="w-4 h-4" /> Students
           </button>
-          <button onClick={() => setActiveSubTab('logs')} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${activeSubTab === 'logs' ? 'bg-violet-500 text-white shadow-md' : 'bg-secondary text-muted-foreground hover:bg-secondary/80'}`}>
-            <Activity className="w-4 h-4" /> Logs
-          </button>
+          {!teacherId && (
+            <button onClick={() => setActiveSubTab('logs')} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${activeSubTab === 'logs' ? 'bg-violet-500 text-white shadow-md' : 'bg-secondary text-muted-foreground hover:bg-secondary/80'}`}>
+              <Activity className="w-4 h-4" /> Logs
+            </button>
+          )}
+          {teacherId && (
+            <label className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-medium transition-all cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : 'bg-violet-500 text-white hover:bg-violet-600 shadow-md'}`}>
+              <Upload className="w-4 h-4" />
+              {uploading ? 'Uploading...' : 'Upload Attendance Excel'}
+              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleAttendanceUpload} disabled={uploading} />
+            </label>
+          )}
+          {uploadMsg && (
+            <span className={`text-sm font-medium ml-2 ${uploadMsg.startsWith('❌') ? 'text-destructive' : 'text-emerald-600'}`}>
+              {uploadMsg}
+            </span>
+          )}
         </div>
       </div>
 
@@ -686,22 +670,22 @@ export default function OEDashboard({ teacherId }: Props) {
                         <th className="p-3 font-semibold">#</th>
                         <th className="p-3 font-semibold">USN</th>
                         <th className="p-3 font-semibold">Student</th>
-                        <th className="p-3 font-semibold">OE Subject</th>
+                        {!teacherId && <th className="p-3 font-semibold">OE Subject</th>}
                         <th className="p-3 font-semibold text-center">Attendance %</th>
-                        <th className="p-3 font-semibold text-center">Status</th>
-                        <th className="p-3 font-semibold text-center">Fine</th>
+                        <th className="p-3 font-semibold text-center">Assignment Status</th>
+                        {!teacherId && <th className="p-3 font-semibold text-center">Fine</th>}
                         <th className="p-3 font-semibold">Last Updated By</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                       {filteredStudents.length === 0 ? (
-                        <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">No students found.</td></tr>
+                        <tr><td colSpan={teacherId ? 6 : 8} className="p-8 text-center text-muted-foreground">No students found.</td></tr>
                       ) : filteredStudents.map((s, idx) => (
                         <tr key={s.id} className="hover:bg-secondary/10">
                           <td className="p-3 text-sm text-muted-foreground">{idx+1}</td>
                           <td className="p-3 text-xs font-mono text-muted-foreground">{s.profiles?.roll_number || '—'}</td>
                           <td className="p-3 font-medium text-sm">{s.profiles?.full_name}</td>
-                          <td className="p-3 text-xs text-muted-foreground">{s.subjects?.subject_code} — {s.subjects?.subject_name}</td>
+                          {!teacherId && <td className="p-3 text-xs text-muted-foreground">{s.subjects?.subject_code} — {s.subjects?.subject_name}</td>}
                           {/* Attendance — editable */}
                           <td className="p-3 text-center">
                             {editingId === s.id ? (
@@ -738,7 +722,8 @@ export default function OEDashboard({ teacherId }: Props) {
                               </button>
                             )}
                           </td>
-                          {/* Fine */}
+                          {/* Fine — coordinator only */}
+                          {!teacherId && (
                           <td className="p-3 text-center">
                             {s.attendance_fee && s.attendance_fee > 0 ? (
                               <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s.attendance_fee_verified ? 'bg-emerald-500/10 text-emerald-600 line-through' : 'bg-red-500/10 text-red-600'}`}>
@@ -748,6 +733,7 @@ export default function OEDashboard({ teacherId }: Props) {
                               <span className="text-xs text-muted-foreground">—</span>
                             )}
                           </td>
+                          )}
                           {/* Last updated by */}
                           <td className="p-3 text-xs text-muted-foreground">
                             {s.last_updated_by_name ? (
@@ -768,8 +754,8 @@ export default function OEDashboard({ teacherId }: Props) {
         </div>
       )}
 
-      {/* Logs Tab */}
-      {activeSubTab === 'logs' && (
+      {/* Logs Tab — coordinator only */}
+      {activeSubTab === 'logs' && !teacherId && (
         <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
           <div className="p-5 border-b border-border">
             <h3 className="text-lg font-bold text-foreground flex items-center gap-2"><Activity className="w-5 h-5 text-violet-500" /> OE Activity Logs</h3>
