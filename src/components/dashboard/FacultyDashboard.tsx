@@ -150,39 +150,8 @@ export default function FacultyDashboard() {
 
   // Sync query data to local state (needed for local attendance edits)
   useEffect(() => {
-    // Always sync query data to local state (even when empty — students may have been removed)
     setStudents(studentsFromQuery);
     setTeacherSubjects(facultyData?.subjects || []);
-
-    if (studentsFromQuery.length > 0) {
-      // Auto-select department for clearance tab
-      if (!selectedDepartment) {
-        const depts = Array.from(new Set(studentsFromQuery.map(s => s.subjects?.departments?.name || s.profiles?.departments?.name || 'Unassigned'))).sort();
-        if (depts.length > 0) setSelectedDepartment(depts[0]);
-      }
-
-      // Auto-select department for manage IA tab
-      if (!iaDeptFilter) {
-        const iaDepts = Array.from(new Set((facultyData?.subjects || []).map((s: any) => s.departments?.name || 'Unassigned'))).sort();
-        if (iaDepts.length > 0) setIaDeptFilter(iaDepts[0]);
-      }
-
-      // Auto-select initial semester/section
-      const semsMap = new Map();
-      studentsFromQuery.forEach(s => {
-        const id = s.profiles?.semester_id;
-        const name = s.profiles?.semesters?.name || 'Unassigned Semester';
-        if (id && !semsMap.has(id)) semsMap.set(id, { id, name });
-      });
-      const semsList = Array.from(semsMap.values());
-      const initialSem = semsList.length > 0 ? semsList[0].id : null;
-      if (!selectedSemester && initialSem) setSelectedSemester(initialSem);
-      const activeSem = selectedSemester || initialSem;
-      if (activeSem) {
-        const secs = Array.from(new Set(studentsFromQuery.filter(s => s.profiles?.semester_id === activeSem).map(s => s.profiles?.section || 'Unassigned'))).sort();
-        if (secs.length > 0 && !selectedSection) setSelectedSection(secs[0] as string);
-      }
-    }
   }, [studentsFromQuery]);
 
   const fetchData = () => { refetchData(); };
@@ -1378,7 +1347,7 @@ export default function FacultyDashboard() {
 
           <div className="p-0">
             {(() => {
-              const allEnrollments = facultyData?.students || [];
+              const allEnrollments = students;
               if (allEnrollments.length === 0) return <div className="text-center text-muted-foreground py-8">No students assigned.</div>;
 
               // LEVEL 1: Department cards
