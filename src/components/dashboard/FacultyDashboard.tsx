@@ -983,7 +983,7 @@ export default function FacultyDashboard() {
                                     value={student.attendance_pct === null ? '' : student.attendance_pct}
                                     onChange={e => !attendanceFrozen && handleAttendanceChange(student.id, e.target.value)}
                                     onBlur={() => !attendanceFrozen && updateAttendance(student.id)}
-                                    onKeyDown={e => { if (e.key === 'Enter' && !attendanceFrozen) { (e.target as HTMLInputElement).blur(); } }}
+                                    onKeyDown={e => { if (e.key === 'Enter' && !attendanceFrozen) { e.preventDefault(); const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="number"][max="100"]')); const i = inputs.indexOf(e.target as HTMLInputElement); (e.target as HTMLInputElement).blur(); if (i >= 0 && i < inputs.length - 1) setTimeout(() => inputs[i+1]?.focus(), 50); } }}
                                   />
                                   <span className="text-xs text-muted-foreground font-medium">Min 85%</span>
                                 </div>
