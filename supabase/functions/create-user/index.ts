@@ -10,7 +10,7 @@ const corsHeaders = getCorsHeaders()
  * A role can only create roles that are below it in the hierarchy.
  */
 const ROLE_HIERARCHY: Record<string, string[]> = {
-  admin: ['hod', 'staff', 'faculty', 'teacher', 'accounts', 'librarian', 'principal', 'fyc', 'clerk', 'coe', 'oe', 'student'],
+  admin: ['hod', 'staff', 'faculty', 'teacher', 'accounts', 'librarian', 'principal', 'fyc', 'clerk', 'coe', 'oe', 'aicte', 'student'],
   hod: ['staff', 'faculty', 'teacher', 'student'],
   fyc: ['clerk', 'teacher'],
   staff: ['teacher', 'student'],

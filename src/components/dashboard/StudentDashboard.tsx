@@ -283,7 +283,9 @@ export default function StudentDashboard() {
   // ALSO: assignment_status must be 'submitted' (not 'pending')
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(
     e => (e.status === 'completed' || e.attendance_fee_verified === true) && ((e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true) && (e.assignment_status !== 'pending')
-  ) && aicteCleared, [enrollments, aicteCleared]);
+  ), [enrollments]);
+  // Both Faculty AND AICTE must pass before proceeding to Library
+  const preFacultyPass = allFacultyCleared && aicteCleared;
 
   // Subjects with pending assignment status
   const pendingAssignments = useMemo(() => enrollments.filter(
@@ -323,7 +325,7 @@ export default function StudentDashboard() {
   const allOtherDuesCleared = pendingOtherDues.length === 0;
 
   // Hall ticket requires: HOD approved + all faculty cleared + IA eligible + all fines paid + library + dept + other dues
-  const canDownloadHallTicket = isHodApproved && allFacultyCleared && allIAEligible && allAttendanceFinesPaid && libraryPass && deptPass && allOtherDuesCleared;
+  const canDownloadHallTicket = isHodApproved && preFacultyPass && allIAEligible && allAttendanceFinesPaid && libraryPass && deptPass && allOtherDuesCleared;
 
   if (loading) return <div className="animate-pulse flex flex-col gap-6">
     <div className="h-48 bg-card rounded-2xl w-full"></div>
@@ -485,7 +487,7 @@ export default function StudentDashboard() {
             </p>
             {!canDownloadHallTicket && (
               <p className="text-xs text-destructive mt-1 font-medium">
-                ⚠ {!aicteCleared ? 'AICTE activity clearance required.' : !allFacultyCleared ? 'All subjects must be cleared by faculty.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : !allOtherDuesCleared ? 'Pay all other pending dues first.' : `Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval.`}
+                ⚠ {!allFacultyCleared ? 'All subjects must be cleared by faculty.' : !aicteCleared ? 'AICTE activity clearance required.' : !allAttendanceFinesPaid ? 'Pay all pending attendance fines first.' : !allIAEligible ? 'Attend at least 2 IAs in every subject.' : !libraryPass ? 'Clear library dues first.' : !deptPass ? 'Clear accounts dues first.' : !allOtherDuesCleared ? 'Pay all other pending dues first.' : `Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval.`}
               </p>
             )}
           </div>
@@ -517,18 +519,18 @@ export default function StudentDashboard() {
           <div className="hidden md:block absolute top-[28px] left-[10%] right-[10%] h-[3px] bg-secondary -z-10 rounded-full">
             <div 
               className="h-full bg-primary rounded-full transition-all duration-1000 ease-in-out"
-              style={{ width: aicteCleared ? (allFacultyCleared ? (libraryPass ? (deptPass ? (isHodApproved ? '100%' : '75%') : '50%') : '25%') : '12%') : '0%' }}
+              style={{ width: allFacultyCleared ? (aicteCleared ? (libraryPass ? (deptPass ? (isHodApproved ? '100%' : '75%') : '50%') : '25%') : '12%') : '0%' }}
             ></div>
           </div>
 
-          <Step title="Faculty" description="IA + Attendance" isComplete={allFacultyCleared} isActive={!allFacultyCleared && aicteCleared} icon={<BookOpen className="w-6 h-6" />} />
-          <Step title="AICTE" description="Activity Status" isComplete={aicteCleared} isActive={!aicteCleared}
+          <Step title="Faculty" description="IA + Attendance" isComplete={allFacultyCleared} isActive={!allFacultyCleared} icon={<BookOpen className="w-6 h-6" />} />
+          <Step title="AICTE" description="Activity Status" isComplete={aicteCleared} isActive={allFacultyCleared && !aicteCleared}
             icon={<ClipboardList className="w-6 h-6" />}
             {...(aicteStatus === 'permitted' ? { isPermitted: true } : {})}
           />
-          <Step title="Library" description="Books & Fines" isComplete={allFacultyCleared && allLibraryCleared} isPermitted={allFacultyCleared && isLibraryPermitted} isActive={allFacultyCleared && !libraryPass} icon={<BookOpen className="w-6 h-6" />} />
-          <Step title="Accounts" description="College Fees" isComplete={allFacultyCleared && libraryPass && allDeptCleared} isPermitted={allFacultyCleared && libraryPass && isDeptPermitted} isActive={allFacultyCleared && libraryPass && !deptPass} icon={<Building2 className="w-6 h-6" />} />
-          <Step title={isFirstYear ? "FYC Approval" : "HOD Approval"} description="Final Sign-off" isComplete={isHodApproved} isActive={allFacultyCleared && libraryPass && deptPass && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
+          <Step title="Library" description="Books & Fines" isComplete={preFacultyPass && allLibraryCleared} isPermitted={preFacultyPass && isLibraryPermitted} isActive={preFacultyPass && !libraryPass} icon={<BookOpen className="w-6 h-6" />} />
+          <Step title="Accounts" description="College Fees" isComplete={preFacultyPass && libraryPass && allDeptCleared} isPermitted={preFacultyPass && libraryPass && isDeptPermitted} isActive={preFacultyPass && libraryPass && !deptPass} icon={<Building2 className="w-6 h-6" />} />
+          <Step title={isFirstYear ? "FYC Approval" : "HOD Approval"} description="Final Sign-off" isComplete={isHodApproved} isActive={preFacultyPass && libraryPass && deptPass && !isHodApproved} icon={<UserCog className="w-6 h-6" />} />
         </div>
       </div>
 
