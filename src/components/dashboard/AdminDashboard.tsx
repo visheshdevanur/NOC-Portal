@@ -1499,6 +1499,7 @@ export default function AdminDashboard() {
                     <option value="oe">OE (Open Elective Coordinator)</option>
                     <option value="librarian">Librarian</option>
                     <option value="coe">COE (Controller of Examinations)</option>
+                    <option value="aicte">AICTE Activity Coordinator</option>
                   </select>
                 </FormField>
                 <FormField label="Full Name">
