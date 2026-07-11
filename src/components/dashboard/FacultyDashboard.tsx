@@ -142,17 +142,19 @@ export default function FacultyDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  // Derive state from query data — exclude OE students (handled in OE Attendance tab)
-  const studentsFromQuery = (facultyData?.students || []).filter(
-    (s: any) => s.subjects?.subject_type !== 'open_elective'
-  );
   const [students, setStudents] = useState<SubjectEnrollment[]>([]);
 
   // Sync query data to local state (needed for local attendance edits)
+  // Use facultyData as dependency — studentsFromQuery is a new array every render
   useEffect(() => {
-    setStudents(studentsFromQuery);
-    setTeacherSubjects(facultyData?.subjects || []);
-  }, [studentsFromQuery]);
+    if (facultyData) {
+      const filtered = (facultyData.students || []).filter(
+        (s: any) => s.subjects?.subject_type !== 'open_elective'
+      );
+      setStudents(filtered);
+      setTeacherSubjects(facultyData.subjects || []);
+    }
+  }, [facultyData]);
 
   const fetchData = () => { refetchData(); };
 
