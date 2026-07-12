@@ -161,7 +161,7 @@ export default function AdminDashboard() {
     if (activeTab === 'subjects') { fetchSubjects(); fetchDepartments(); }
     if (activeTab === 'departments') { fetchDepartments(); fetchUsers(); }
     if (activeTab === 'allusers') { fetchAllUsers(); fetchDepartments(); }
-    if (activeTab === 'logs') fetchAdminLogs();
+    if (activeTab === 'logs') { fetchAdminLogs(); fetchDepartments(); }
     if (activeTab === 'academic') { fetchPromotionPreview(); fetchGraduatedStudents(); fetchDepartments(); }
   }, [activeTab]);
 
