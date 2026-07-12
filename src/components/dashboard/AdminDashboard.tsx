@@ -208,7 +208,9 @@ export default function AdminDashboard() {
 
   // ==================== SYSTEM LOGS ====================
   // Admin should only see logs from Librarian, HOD, and Accounts
-  const ADMIN_VISIBLE_ROLES = ['librarian', 'hod', 'accounts', 'fyc', 'coe', 'staff', 'faculty', 'teacher', 'clerk'];
+  const ADMIN_VISIBLE_ROLES = ['librarian', 'hod', 'accounts', 'fyc', 'coe', 'staff', 'faculty', 'teacher', 'clerk', 'aicte', 'oe'];
+  // Core staff filter keys that map to a single role
+  const CORE_STAFF_ROLE_MAP: Record<string, string> = { accounts: 'accounts', library: 'librarian', coe_staff: 'coe', aicte_staff: 'aicte', oe_staff: 'oe' };
   const fetchAdminLogs = async () => {
     setLogsLoading(true);
     try {
@@ -244,6 +246,7 @@ export default function AdminDashboard() {
       let deptMatch = false;
       if (logsDeptFilter === 'all') deptMatch = true;
       else if (logsDeptFilter === 'first_year' && (role === 'fyc' || role === 'clerk')) deptMatch = true;
+      else if (CORE_STAFF_ROLE_MAP[logsDeptFilter] && role === CORE_STAFF_ROLE_MAP[logsDeptFilter]) deptMatch = true;
       else if (logsDeptFilter === userDept) deptMatch = true;
 
       if (deptMatch) {
@@ -274,6 +277,7 @@ export default function AdminDashboard() {
     let deptMatch = false;
     if (logsDeptFilter === 'all') deptMatch = true;
     else if (logsDeptFilter === 'first_year' && (log.user_role === 'fyc' || log.user_role === 'clerk')) deptMatch = true;
+    else if (CORE_STAFF_ROLE_MAP[logsDeptFilter] && log.user_role === CORE_STAFF_ROLE_MAP[logsDeptFilter]) deptMatch = true;
     else if (logsDeptFilter === log.department_id) deptMatch = true;
 
     if (!deptMatch) return false;
@@ -1926,8 +1930,17 @@ export default function AdminDashboard() {
                 className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none"
               >
                 <option value="all">All Departments</option>
-                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                <option value="first_year">First Year Department</option>
+                <optgroup label="Departments">
+                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  <option value="first_year">First Year Department</option>
+                </optgroup>
+                <optgroup label="Core Staff">
+                  <option value="accounts">Accounts</option>
+                  <option value="library">Library</option>
+                  <option value="coe_staff">COE (Controller of Examinations)</option>
+                  <option value="aicte_staff">AICTE Activity Coordinator</option>
+                  <option value="oe_staff">OE Coordinator</option>
+                </optgroup>
               </select>
             </div>
 
@@ -1940,7 +1953,7 @@ export default function AdminDashboard() {
                   setLogsUserFilter('all');
                 }}
                 className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={logsDeptFilter === 'all'}
+                disabled={logsDeptFilter === 'all' || !!CORE_STAFF_ROLE_MAP[logsDeptFilter]}
               >
                 <option value="all">All Roles</option>
                 {logsDeptFilter === 'first_year' ? (
@@ -1948,7 +1961,7 @@ export default function AdminDashboard() {
                     <option value="fyc">First Year Coordinator</option>
                     <option value="clerk">Clerk</option>
                   </>
-                ) : logsDeptFilter !== 'all' ? (
+                ) : !CORE_STAFF_ROLE_MAP[logsDeptFilter] && logsDeptFilter !== 'all' ? (
                   <>
                     <option value="hod">HOD</option>
                     <option value="staff">Staff</option>
@@ -1958,6 +1971,9 @@ export default function AdminDashboard() {
               </select>
               {logsDeptFilter === 'all' && (
                 <p className="text-xs text-muted-foreground mt-1">Select a department first to filter by role.</p>
+              )}
+              {!!CORE_STAFF_ROLE_MAP[logsDeptFilter] && (
+                <p className="text-xs text-muted-foreground mt-1">Role is set by core staff selection.</p>
               )}
             </div>
 
