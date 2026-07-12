@@ -208,7 +208,7 @@ export default function AdminDashboard() {
 
   // ==================== SYSTEM LOGS ====================
   // Admin should only see logs from Librarian, HOD, and Accounts
-  const ADMIN_VISIBLE_ROLES = ['librarian', 'hod', 'accounts', 'fyc', 'coe'];
+  const ADMIN_VISIBLE_ROLES = ['librarian', 'hod', 'accounts', 'fyc', 'coe', 'staff', 'faculty', 'teacher', 'clerk'];
   const fetchAdminLogs = async () => {
     setLogsLoading(true);
     try {
@@ -243,9 +243,7 @@ export default function AdminDashboard() {
       
       let deptMatch = false;
       if (logsDeptFilter === 'all') deptMatch = true;
-      else if (logsDeptFilter === 'accounts' && role === 'accounts') deptMatch = true;
-
-      else if (logsDeptFilter === 'library' && role === 'librarian') deptMatch = true;
+      else if (logsDeptFilter === 'first_year' && (role === 'fyc' || role === 'clerk')) deptMatch = true;
       else if (logsDeptFilter === userDept) deptMatch = true;
 
       if (deptMatch) {
@@ -262,7 +260,7 @@ export default function AdminDashboard() {
       }
     });
     setLogsUsersList(Array.from(usersMap.entries()).map(([id, name]) => ({ id, name })).sort((a,b) => a.name.localeCompare(b.name)));
-    // Auto-reset user filter if the previously selected user doesn't belong to the new role filter
+    // Auto-reset user filter if the previously selected user doesn't belong to the new filters
     if (logsUserFilter !== 'all') {
       if (!Array.from(usersMap.keys()).includes(logsUserFilter)) {
         setLogsUserFilter('all');
@@ -271,20 +269,18 @@ export default function AdminDashboard() {
   }, [adminLogs, logsDeptFilter, logsRoleFilter, activeTab]);
 
   const filteredLogs = adminLogs.filter(log => {
-    // Only show librarian, HOD, and accounts logs (already filtered at fetch level, but double-check)
     if (!ADMIN_VISIBLE_ROLES.includes(log.user_role)) return false;
     
     let deptMatch = false;
     if (logsDeptFilter === 'all') deptMatch = true;
-    else if (logsDeptFilter === 'accounts' && log.user_role === 'accounts') deptMatch = true;
-
-    else if (logsDeptFilter === 'library' && log.user_role === 'librarian') deptMatch = true;
+    else if (logsDeptFilter === 'first_year' && (log.user_role === 'fyc' || log.user_role === 'clerk')) deptMatch = true;
     else if (logsDeptFilter === log.department_id) deptMatch = true;
 
     if (!deptMatch) return false;
 
     let roleMatch = false;
     if (logsRoleFilter === 'all') roleMatch = true;
+    else if (logsRoleFilter === 'faculty' && (log.user_role === 'faculty' || log.user_role === 'teacher')) roleMatch = true;
     else if (log.user_role === logsRoleFilter) roleMatch = true;
 
     if (!roleMatch) return false;
@@ -1929,11 +1925,9 @@ export default function AdminDashboard() {
                 }}
                 className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none"
               >
-                <option value="all">All Departments / Global</option>
-                <option value="accounts">Accounts</option>
-
-                <option value="library">Library</option>
+                <option value="all">All Departments</option>
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                <option value="first_year">First Year Department</option>
               </select>
             </div>
 
@@ -1945,18 +1939,25 @@ export default function AdminDashboard() {
                   setLogsRoleFilter(e.target.value);
                   setLogsUserFilter('all');
                 }}
-                className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50"
-                disabled={['accounts', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all'}
+                className="w-full p-3 bg-background border border-border rounded-xl text-foreground focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={logsDeptFilter === 'all'}
               >
                 <option value="all">All Roles</option>
-                {/* Show context-appropriate roles based on dept filter */}
-                {(logsDeptFilter === 'all' || logsDeptFilter === 'library') && <option value="librarian">Librarian</option>}
-                <option value="hod">HODs</option>
-                {(logsDeptFilter === 'all' || logsDeptFilter === 'accounts') && <option value="accounts">Accounts</option>}
-                <option value="fyc">First Year Coordinator</option>
+                {logsDeptFilter === 'first_year' ? (
+                  <>
+                    <option value="fyc">First Year Coordinator</option>
+                    <option value="clerk">Clerk</option>
+                  </>
+                ) : logsDeptFilter !== 'all' ? (
+                  <>
+                    <option value="hod">HOD</option>
+                    <option value="staff">Staff</option>
+                    <option value="faculty">Faculty</option>
+                  </>
+                ) : null}
               </select>
-              {['accounts', 'library'].includes(logsDeptFilter) && logsDeptFilter !== 'all' && (
-                <p className="text-xs text-muted-foreground mt-1">Role is implicitly set by department.</p>
+              {logsDeptFilter === 'all' && (
+                <p className="text-xs text-muted-foreground mt-1">Select a department first to filter by role.</p>
               )}
             </div>
 
