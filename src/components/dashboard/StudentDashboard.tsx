@@ -304,7 +304,7 @@ export default function StudentDashboard() {
   const pendingAttendanceDues = useMemo(() => enrollments.filter(e => (e.attendance_fee ?? 0) > 0 && !e.attendance_fee_verified), [enrollments]);
 
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
-  // This is a prerequisite for hall ticket download alongside faculty clearance
+  // Option B: Only actual DB records count — unuploaded IAs do NOT count as Present
   const { allIAEligible } = useMemo(() => {
     const bySubject: Record<string, { present: number; total: number }> = {};
     iaRecords.forEach(r => {
@@ -312,10 +312,14 @@ export default function StudentDashboard() {
       bySubject[r.subject_id].total++;
       if (r.is_present) bySubject[r.subject_id].present++;
     });
-    const ids = Object.keys(bySubject);
-    const eligible = ids.length === 0 || ids.every(sid => bySubject[sid].present >= 2);
+    // Student must have >= 2 present per subject. If no records at all for a subject, not eligible.
+    const enrolledSubjectIds = [...new Set(enrollments.map(e => e.subject_id))];
+    const eligible = enrolledSubjectIds.length === 0 || enrolledSubjectIds.every(sid => {
+      const data = bySubject[sid];
+      return data && data.present >= 2;
+    });
     return { allIAEligible: eligible };
-  }, [iaRecords]);
+  }, [iaRecords, enrollments]);
   // allAttendanceFinesPaid is derived from pendingAttendanceDues — true when all fines are resolved
   // This is already captured by allFacultyCleared (fee_verified === true), kept for explicit hall ticket check
   const allAttendanceFinesPaid = pendingAttendanceDues.length === 0;
@@ -567,13 +571,14 @@ export default function StudentDashboard() {
                 const subjectName = sorted[0]?.subjects?.subject_name || 'Unknown Subject';
                 const subjectCode = sorted[0]?.subjects?.subject_code || '';
 
-                // Build all 3 IAs — default to Present if no record exists
+                // Build all 3 IAs — show 'not_uploaded' (grey) if no record exists
                 const allIAs = [1, 2, 3].map(iaNum => {
                   const existing = sorted.find(r => r.ia_number === iaNum);
-                  return existing || { id: `default-${subjectId}-${iaNum}`, ia_number: iaNum, is_present: true, subject_id: subjectId } as IAAttendanceRecord;
+                  return existing || { id: `default-${subjectId}-${iaNum}`, ia_number: iaNum, is_present: null as any, subject_id: subjectId } as IAAttendanceRecord;
                 });
 
-                const presentCount = allIAs.filter(r => r.is_present).length;
+                // Only count actual DB records for eligibility (not defaults)
+                const presentCount = records.filter(r => r.is_present).length;
                 const isEligible = presentCount >= 2;
 
                 return (
@@ -608,13 +613,17 @@ export default function StudentDashboard() {
                           className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-background border border-border"
                         >
                           <span className="text-sm font-semibold text-foreground">IA-{record.ia_number}</span>
-                          {record.is_present ? (
+                          {record.is_present === true ? (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600">
                               <CheckCircle2 className="w-3.5 h-3.5" /> Present
                             </span>
-                          ) : (
+                          ) : record.is_present === false ? (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-destructive/15 text-destructive">
                               <XCircle className="w-3.5 h-3.5" /> Absent
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-secondary text-muted-foreground">
+                              <Clock className="w-3.5 h-3.5" /> Not Uploaded
                             </span>
                           )}
                         </div>

@@ -119,3 +119,34 @@ export const processGlobalCSV = async (csvText: string, coeUserId: string) => {
 export const generateCSVTemplate = (): string => {
   return 'USN,Subject Code,IA Name\n';
 };
+
+/** Validate CSV rows via edge function — resolves USNs and subject codes server-side */
+export const validateCSVRows = async (rows: { usn: string; subject_code: string }[]) => {
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'coe-validate-csv', rows },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data?.results || [];
+};
+
+/** Bulk mark students absent for a specific IA via edge function */
+export const bulkMarkAbsent = async (
+  records: { student_id: string; subject_id: string }[],
+  iaNumber: number,
+  teacherId: string
+) => {
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'coe-bulk-absent', records, ia_number: iaNumber, teacher_id: teacherId },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  logActivity('COE Bulk IA Upload', `Marked ${records.length} students absent for IA-${iaNumber} via CSV`);
+  return data;
+};
+
+/** Generate CSV template for bulk absent upload (USN + Subject Code) */
+export const generateBulkAbsentTemplate = (): string => {
+  return 'USN,SUBJECTCODE\n';
+};
+
