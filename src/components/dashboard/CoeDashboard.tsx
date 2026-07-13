@@ -316,8 +316,7 @@ export default function CoeDashboard() {
     try {
       const records = validRows.map((r: any) => ({ student_id: r.student_id, subject_id: r.subject_id }));
       const result = await bulkMarkAbsent(records, bulkIA, user!.id);
-      const subjectCodes = [...new Set(validRows.map((r: any) => r.subject_code))];
-      setBulkSuccess(`${result.count} students marked absent for IA-${bulkIA} across ${subjectCodes.length} subject(s).`);
+      setBulkSuccess(`IA-${bulkIA} saved! ${result.absent} absent, ${result.present} present — ${result.count} total records across all subjects.`);
       setUploadHistory(prev => [{
         timestamp: new Date().toISOString(),
         ia: bulkIA,

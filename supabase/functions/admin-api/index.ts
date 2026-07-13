@@ -392,17 +392,58 @@ serve(async (req) => {
           const { records, ia_number, teacher_id } = params
           if (!records || !Array.isArray(records) || !ia_number) return jsonResponse({ error: 'records array and ia_number required' }, 400)
 
-          const upsertRows = records.map((r: any) => ({
-            student_id: r.student_id,
-            subject_id: r.subject_id,
-            teacher_id: teacher_id || callerId,
-            ia_number: ia_number,
-            is_present: false,
-          }))
+          // Build a Set of "studentId|subjectId" for quick absent lookup
+          const absentSet = new Set()
+          for (const r of records) {
+            absentSet.add(`${r.student_id}|${r.subject_id}`)
+          }
 
-          const BATCH = 25
-          for (let i = 0; i < upsertRows.length; i += BATCH) {
-            const batch = upsertRows.slice(i, i + BATCH)
+          // Get ALL subjects grouped by department+semester
+          const { data: allSubjects, error: subErr } = await coeClient
+            .from('subjects')
+            .select('id, department_id, semester_id')
+          if (subErr) return jsonResponse({ error: subErr.message }, 500)
+
+          // Group subjects by dept+sem
+          const groups = new Map()
+          for (const sub of (allSubjects || [])) {
+            const key = `${sub.department_id}|${sub.semester_id}`
+            if (!groups.has(key)) groups.set(key, { department_id: sub.department_id, semester_id: sub.semester_id, subjects: [] })
+            groups.get(key).subjects.push(sub.id)
+          }
+
+          // For each dept+sem group, fetch all students and build records
+          const allUpsertRows = []
+          for (const [, group] of groups) {
+            let query = coeClient
+              .from('profiles')
+              .select('id')
+              .eq('role', 'student')
+              .eq('semester_id', group.semester_id)
+            if (group.department_id) {
+              query = query.eq('department_id', group.department_id)
+            }
+            const { data: students } = await query
+            if (!students || students.length === 0) continue
+
+            for (const student of students) {
+              for (const subjectId of group.subjects) {
+                const isAbsent = absentSet.has(`${student.id}|${subjectId}`)
+                allUpsertRows.push({
+                  student_id: student.id,
+                  subject_id: subjectId,
+                  teacher_id: teacher_id || callerId,
+                  ia_number: ia_number,
+                  is_present: !isAbsent,
+                })
+              }
+            }
+          }
+
+          // Batch upsert all records
+          const BATCH = 50
+          for (let i = 0; i < allUpsertRows.length; i += BATCH) {
+            const batch = allUpsertRows.slice(i, i + BATCH)
             const { error } = await coeClient
               .from('ia_attendance')
               .upsert(batch, { onConflict: 'student_id,subject_id,ia_number' })
@@ -412,8 +453,8 @@ serve(async (req) => {
             }
           }
 
-          log({ level: 'INFO', fn: 'admin-api', action: 'coe-bulk-absent', userId: callerId, meta: { count: upsertRows.length, ia: ia_number } })
-          return jsonResponse({ success: true, count: upsertRows.length })
+          log({ level: 'INFO', fn: 'admin-api', action: 'coe-bulk-absent', userId: callerId, meta: { total: allUpsertRows.length, absent: records.length, ia: ia_number } })
+          return jsonResponse({ success: true, count: allUpsertRows.length, absent: records.length, present: allUpsertRows.length - records.length })
         }
 
 
