@@ -417,68 +417,6 @@ serve(async (req) => {
         }
 
 
-        case 'coe-validate-csv': {
-          const { rows } = params
-          if (!rows || !Array.isArray(rows)) return jsonResponse({ error: 'rows array required' }, 400)
-
-          const usnArr = [...new Set(rows.map((r) => r.usn?.trim().toUpperCase()).filter(Boolean))]
-          const codeArr = [...new Set(rows.map((r) => r.subject_code?.trim().toUpperCase()).filter(Boolean))]
-
-          const usnMap = new Map()
-          const codeMap = new Map()
-
-          if (usnArr.length > 0) {
-            const { data: students } = await coeClient.from('profiles').select('id, roll_number').in('roll_number', usnArr)
-            ;(students || []).forEach((s) => usnMap.set(s.roll_number?.toUpperCase(), s.id))
-          }
-          if (codeArr.length > 0) {
-            const { data: subjects } = await coeClient.from('subjects').select('id, subject_code').in('subject_code', codeArr)
-            ;(subjects || []).forEach((s) => codeMap.set(s.subject_code?.toUpperCase(), s.id))
-          }
-
-          const results = rows.map((r) => {
-            const usn = r.usn?.trim().toUpperCase() || ''
-            const code = r.subject_code?.trim().toUpperCase() || ''
-            const studentId = usnMap.get(usn)
-            const subjectId = codeMap.get(code)
-            let status = 'valid'
-            if (!studentId && !subjectId) status = 'both_not_found'
-            else if (!studentId) status = 'usn_not_found'
-            else if (!subjectId) status = 'subject_not_found'
-            return { usn: r.usn, subject_code: r.subject_code, student_id: studentId || null, subject_id: subjectId || null, status }
-          })
-
-          return jsonResponse({ results })
-        }
-
-        case 'coe-bulk-absent': {
-          const { records, ia_number, teacher_id } = params
-          if (!records || !Array.isArray(records) || !ia_number) return jsonResponse({ error: 'records array and ia_number required' }, 400)
-
-          const upsertRows = records.map((r) => ({
-            student_id: r.student_id,
-            subject_id: r.subject_id,
-            teacher_id: teacher_id || callerId,
-            ia_number: ia_number,
-            is_present: false,
-          }))
-
-          const BATCH = 25
-          for (let i = 0; i < upsertRows.length; i += BATCH) {
-            const batch = upsertRows.slice(i, i + BATCH)
-            const { error } = await coeClient
-              .from('ia_attendance')
-              .upsert(batch, { onConflict: 'student_id,subject_id,ia_number' })
-            if (error) {
-              log({ level: 'ERROR', fn: 'admin-api', action: 'coe-bulk-absent', error: error.message, meta: { batch_index: i } })
-              return jsonResponse({ error: error.message }, 500)
-            }
-          }
-
-          log({ level: 'INFO', fn: 'admin-api', action: 'coe-bulk-absent', userId: callerId, meta: { count: upsertRows.length, ia: ia_number } })
-          return jsonResponse({ success: true, count: upsertRows.length })
-        }
-
         default:
           return jsonResponse({ error: `Unknown COE action: ${action}` }, 400)
       }
