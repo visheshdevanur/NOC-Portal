@@ -1687,6 +1687,14 @@ export default function StaffDashboard() {
                     <label className="block text-sm font-medium text-foreground mb-1.5">Subject Name</label>
                     <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={editingSubject.subject_name} onChange={e => setEditingSubject({ ...editingSubject, subject_name: e.target.value })} />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Subject Type</label>
+                    <select className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={(editingSubject as any).subject_type || 'theory'} onChange={e => setEditingSubject({ ...editingSubject, subject_type: e.target.value } as any)}>
+                      <option value="theory">Theory</option>
+                      <option value="lab">Lab</option>
+                      <option value="open_elective">Open Elective</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="flex gap-3 mt-8">
                   <button onClick={() => setEditingSubject(null)} className="flex-1 py-3 px-4 rounded-xl border border-border text-foreground font-medium hover:bg-secondary transition-all">Cancel</button>

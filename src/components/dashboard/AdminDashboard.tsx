@@ -126,6 +126,11 @@ export default function AdminDashboard() {
   const [tenantDeletionApproved, setTenantDeletionApproved] = useState(false);
   const [approvingDeletion, setApprovingDeletion] = useState(false);
 
+  // Student Login Toggle State
+  const [studentLoginEnabled, setStudentLoginEnabled] = useState(true);
+  const [togglingStudentLogin, setTogglingStudentLogin] = useState(false);
+  const [tenantId, setTenantId] = useState<string | null>(null);
+
 
   // React Query: analytics with caching
   const { data: analyticsData } = useQuery({
@@ -174,7 +179,11 @@ export default function AdminDashboard() {
         if (!userId) return;
         const { data: profileData } = await supabase.from('profiles').select('tenant_id').eq('id', userId).single();
         if (!profileData?.tenant_id) return;
-        const { data: tenantData } = await supabase.from('tenants').select('status, deletion_approved_at').eq('id', profileData.tenant_id).single();
+        const { data: tenantData } = await supabase.from('tenants').select('status, deletion_approved_at, student_login_enabled').eq('id', profileData.tenant_id).single();
+        setTenantId(profileData.tenant_id);
+        if (tenantData) {
+          setStudentLoginEnabled((tenantData as any).student_login_enabled !== false);
+        }
         if (tenantData?.status === 'pending_deletion') {
           setTenantDeletionPending(true);
           if (tenantData.deletion_approved_at) setTenantDeletionApproved(true);
@@ -1189,7 +1198,34 @@ export default function AdminDashboard() {
                 </h2>
                 <p className="text-muted-foreground mt-1">Advance all eligible students to the next semester across all departments.</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap">
+                {/* Student Login Toggle */}
+                <div className="flex items-center gap-3 bg-secondary/50 px-5 py-3 rounded-xl border border-border">
+                  <span className="text-sm font-medium text-foreground">Student Login</span>
+                  <button
+                    onClick={async () => {
+                      if (!tenantId) return;
+                      setTogglingStudentLogin(true);
+                      try {
+                        const newVal = !studentLoginEnabled;
+                        await supabase.from('tenants').update({ student_login_enabled: newVal } as any).eq('id', tenantId);
+                        setStudentLoginEnabled(newVal);
+                      } catch (err) { console.error(err); }
+                      finally { setTogglingStudentLogin(false); }
+                    }}
+                    disabled={togglingStudentLogin}
+                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none ${
+                      studentLoginEnabled ? 'bg-emerald-500' : 'bg-destructive'
+                    } ${togglingStudentLogin ? 'opacity-50' : ''}`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-300 ${
+                      studentLoginEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                  <span className={`text-xs font-bold ${studentLoginEnabled ? 'text-emerald-600' : 'text-destructive'}`}>
+                    {studentLoginEnabled ? 'ON' : 'OFF'}
+                  </span>
+                </div>
                 <button onClick={handleExportPreData} disabled={exportingPreData} className="flex items-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-5 py-3 rounded-xl font-medium border border-border transition-all shadow-sm disabled:opacity-50">
                   <Download className="w-4 h-4" />
                   {exportingPreData ? 'Exporting...' : 'Download Current Data'}

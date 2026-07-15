@@ -27,13 +27,14 @@ export const getSemestersByDepartment = async (departmentId: string) => {
   return data || [];
 };
 
-/** Fetch subjects for a given department + semester */
+/** Fetch subjects for a given department + semester (excludes lab subjects — no IA needed) */
 export const getSubjectsForDeptSem = async (departmentId: string, semesterId: string) => {
   const { data, error } = await supabase
     .from('subjects')
-    .select('id, subject_name, subject_code')
+    .select('id, subject_name, subject_code, subject_type')
     .eq('department_id', departmentId)
     .eq('semester_id', semesterId)
+    .neq('subject_type', 'lab')
     .order('subject_name');
   if (error) throw error;
   return data || [];

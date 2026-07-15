@@ -180,7 +180,7 @@ export const getTeacherSubjectsList = async (teacherId: string) => {
       .from('subject_enrollment')
       .select(
         'subject_id, subjects!subject_enrollment_subject_id_fkey(' +
-          'id, subject_name, subject_code, semester_id, department_id, ' +
+          'id, subject_name, subject_code, subject_type, semester_id, department_id, ' +
           'semesters(name), ' +
           'departments!subjects_department_id_fkey(name)' +
         ')',

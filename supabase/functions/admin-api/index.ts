@@ -398,10 +398,11 @@ serve(async (req) => {
             absentSet.add(`${r.student_id}|${r.subject_id}`)
           }
 
-          // Get ALL subjects grouped by department+semester
+          // Get ALL subjects grouped by department+semester (exclude lab subjects)
           const { data: allSubjects, error: subErr } = await coeClient
             .from('subjects')
-            .select('id, department_id, semester_id')
+            .select('id, department_id, semester_id, subject_type')
+            .neq('subject_type', 'lab')
           if (subErr) return jsonResponse({ error: subErr.message }, 500)
 
           // Group subjects by dept+sem

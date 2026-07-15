@@ -140,7 +140,7 @@ export function useAuth() {
         try {
           const { data: tenantData } = await supabase
             .from('tenants')
-            .select('status')
+            .select('status, student_login_enabled')
             .eq('id', data.tenant_id)
             .single();
 
@@ -150,6 +150,16 @@ export function useAuth() {
             setProfile(null);
             await supabase.auth.signOut();
             alert('Your institution has been suspended. Please contact the platform administrator.');
+            return;
+          }
+
+          // Block student login if admin has disabled it
+          if (data.role === 'student' && tenantData && (tenantData as any).student_login_enabled === false) {
+            console.warn('Student login disabled by admin. Forcing logout.');
+            setUser(null);
+            setProfile(null);
+            await supabase.auth.signOut();
+            alert('Student login is currently disabled by your institution. Please try again later.');
             return;
           }
         } catch {

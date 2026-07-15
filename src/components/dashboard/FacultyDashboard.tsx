@@ -25,6 +25,7 @@ type TeacherSubject = {
   id: string;
   subject_name: string;
   subject_code: string;
+  subject_type?: string | null;
   semester_id: string;
   department_id?: string;
   semesters: { name: string } | null;
@@ -146,12 +147,18 @@ export default function FacultyDashboard() {
 
   // Sync query data to local state (needed for local attendance edits)
   // Use facultyData as dependency — studentsFromQuery is a new array every render
+  const [oeStudents, setOEStudents] = useState<SubjectEnrollment[]>([]);
   useEffect(() => {
     if (facultyData) {
-      const filtered = (facultyData.students || []).filter(
+      const allStudents = facultyData.students || [];
+      const filtered = allStudents.filter(
         (s: any) => s.subjects?.subject_type !== 'open_elective'
       );
+      const oeFiltered = allStudents.filter(
+        (s: any) => s.subjects?.subject_type === 'open_elective'
+      );
       setStudents(filtered);
+      setOEStudents(oeFiltered);
       setTeacherSubjects(facultyData.subjects || []);
     }
   }, [facultyData]);
@@ -551,6 +558,8 @@ export default function FacultyDashboard() {
     if (!iasByNumber[r.ia_number]) iasByNumber[r.ia_number] = [];
     iasByNumber[r.ia_number].push(r);
   });
+  // Sort each IA group by roll_number (USN)
+  Object.values(iasByNumber).forEach(arr => arr.sort((a, b) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || '')));
   const iaNumbers = [1, 2, 3];
 
   // Clearance tab filters — Hierarchical: Department → Semester → Section
@@ -1039,7 +1048,7 @@ export default function FacultyDashboard() {
                     onClick={() => { setIaSemFilter(null); setIaSectionFilter(null); setSelectedSubjectId(null); }}
                     className={`hover:text-primary transition-colors ${iaDeptFilter && !iaSemFilter ? 'text-primary font-bold' : ''}`}
                   >
-                    {iaDeptFilter}
+                    {iaDeptFilter === '__OE__' ? 'OE Students' : iaDeptFilter}
                   </button>
                 </>
               )}
@@ -1078,9 +1087,18 @@ export default function FacultyDashboard() {
             {teacherSubjects.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">No subjects assigned to you yet.</div>
             ) : (() => {
-              // Group by department
-              const iaDepts = Array.from(new Set(teacherSubjects.map(s => s.departments?.name || 'Unassigned'))).sort();
-              const filteredByDept = iaDeptFilter ? teacherSubjects.filter(s => (s.departments?.name || 'Unassigned') === iaDeptFilter) : teacherSubjects;
+              // Separate OE subjects from regular subjects
+              const regularSubjects = teacherSubjects.filter(s => s.subject_type !== 'open_elective');
+              const oeSubjects = teacherSubjects.filter(s => s.subject_type === 'open_elective');
+              const hasOE = oeSubjects.length > 0;
+              const isOEMode = iaDeptFilter === '__OE__';
+
+              // For OE mode, use oeSubjects; for regular, use regularSubjects
+              const activeSubjects = isOEMode ? oeSubjects : regularSubjects;
+
+              // Group by department (regular subjects only for dept cards)
+              const iaDepts = Array.from(new Set(regularSubjects.map(s => s.departments?.name || 'Unassigned'))).sort();
+              const filteredByDept = iaDeptFilter && !isOEMode ? activeSubjects.filter(s => (s.departments?.name || 'Unassigned') === iaDeptFilter) : activeSubjects;
               const iaSems = Array.from(new Set(filteredByDept.map(s => s.semesters?.name ? `Sem ${s.semesters.name}` : 'Unassigned'))).sort((a, b) => {
                 const na = parseInt(a.replace('Sem ', '')) || 99;
                 const nb = parseInt(b.replace('Sem ', '')) || 99;
@@ -1088,23 +1106,24 @@ export default function FacultyDashboard() {
               });
               const filteredBySem = iaSemFilter ? filteredByDept.filter(s => (s.semesters?.name ? `Sem ${s.semesters.name}` : 'Unassigned') === iaSemFilter) : filteredByDept;
 
-              // Derive sections from student enrollment data for subjects in this semester
+              // Derive sections: use oeStudents for OE mode, regular students otherwise
               const semSubjectIds = new Set(filteredBySem.map(s => s.id));
-              const semStudents = students.filter(s => semSubjectIds.has(s.subject_id));
+              const activeStudents = isOEMode ? oeStudents : students;
+              const semStudents = activeStudents.filter(s => semSubjectIds.has(s.subject_id));
               const iaSections = Array.from(new Set(semStudents.map(s => s.profiles?.section || 'Unassigned'))).sort();
 
-              // Filter subjects by section — only show subjects that have students in the selected section
+              // Filter subjects by section
               const filteredBySection = iaSectionFilter
-                ? filteredBySem.filter(sub => students.some(s => s.subject_id === sub.id && (s.profiles?.section || 'Unassigned') === iaSectionFilter))
+                ? filteredBySem.filter(sub => activeStudents.some(s => s.subject_id === sub.id && (s.profiles?.section || 'Unassigned') === iaSectionFilter))
                 : filteredBySem;
 
               return (
                 <>
-                  {/* IA Level 1: Department Cards */}
+                  {/* IA Level 1: Department Cards + OE Card */}
                   {!iaDeptFilter && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
                       {iaDepts.map(dept => {
-                        const count = teacherSubjects.filter(s => (s.departments?.name || 'Unassigned') === dept).length;
+                        const count = regularSubjects.filter(s => (s.departments?.name || 'Unassigned') === dept).length;
                         return (
                           <button key={dept} onClick={() => setIaDeptFilter(dept)} className="bg-secondary/30 hover:bg-secondary/60 border border-border rounded-2xl p-6 text-left transition-all hover:shadow-md group">
                             <div className="flex items-center gap-3 mb-2">
@@ -1118,6 +1137,19 @@ export default function FacultyDashboard() {
                           </button>
                         );
                       })}
+                      {/* OE Students Card — only visible if teacher has OE subjects */}
+                      {hasOE && (
+                        <button onClick={() => setIaDeptFilter('__OE__')} className="bg-violet-500/5 hover:bg-violet-500/15 border-2 border-violet-500/30 hover:border-violet-500/50 rounded-2xl p-6 text-left transition-all hover:shadow-md group">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 bg-violet-500/10 rounded-xl flex items-center justify-center">
+                              <Globe className="w-5 h-5 text-violet-500" />
+                            </div>
+                            <h3 className="font-bold text-violet-600 dark:text-violet-400 text-lg group-hover:text-violet-500 transition-colors">OE Students</h3>
+                          </div>
+                          <span className="text-sm text-muted-foreground">{oeSubjects.length} OE subject{oeSubjects.length !== 1 ? 's' : ''}</span>
+                          <ChevronRight className="w-5 h-5 text-violet-400 mt-2 group-hover:text-violet-500 group-hover:translate-x-1 transition-all" />
+                        </button>
+                      )}
                     </div>
                   )}
 

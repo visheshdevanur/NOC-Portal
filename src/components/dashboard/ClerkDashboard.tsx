@@ -81,7 +81,7 @@ export default function ClerkDashboard() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loadingSubjects, setLoadingSubjects] = useState(false);
   const [showCreateSubject, setShowCreateSubject] = useState(false);
-  const [newSubject, setNewSubject] = useState({ subject_name: '', subject_code: '', semester_id: '' });
+  const [newSubject, setNewSubject] = useState({ subject_name: '', subject_code: '', semester_id: '', subject_type: 'theory' });
   const [subjectCreating, setSubjectCreating] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [subjectError, setSubjectError] = useState<string | null>(null);
@@ -776,10 +776,11 @@ export default function ClerkDashboard() {
         subject_name: newSubject.subject_name,
         subject_code: newSubject.subject_code.toUpperCase(),
         department_id: selectedDeptId,
-        semester_id: newSubject.semester_id
+        semester_id: newSubject.semester_id,
+        subject_type: newSubject.subject_type || 'theory',
       });
       setSubjectSuccess(`Subject "${newSubject.subject_name}" created!`);
-      setNewSubject({ subject_name: '', subject_code: '', semester_id: '' });
+      setNewSubject({ subject_name: '', subject_code: '', semester_id: '', subject_type: 'theory' });
       setShowCreateSubject(false);
       fetchSubjects();
     } catch (err: any) {
@@ -798,6 +799,7 @@ export default function ClerkDashboard() {
       await updateSubjectAPI(editingSubject.id, {
         subject_name: editingSubject.subject_name,
         subject_code: editingSubject.subject_code.toUpperCase(),
+        subject_type: (editingSubject as any).subject_type || 'theory',
       });
       setSubjectSuccess(`Subject "${editingSubject.subject_name}" updated!`);
       setEditingSubject(null);
@@ -882,7 +884,8 @@ export default function ClerkDashboard() {
             subject_name: sub.subject_name,
             subject_code: sub.subject_code,
             department_id: selectedDeptId,
-            semester_id: importTargetSemId
+            semester_id: importTargetSemId,
+            subject_type: (sub as any).subject_type || 'theory',
           });
           currentCodes.add(sub.subject_code.toUpperCase());
           imported++;
@@ -1480,6 +1483,14 @@ export default function ClerkDashboard() {
                     <label className="block text-sm font-medium text-foreground mb-1.5">Subject Name</label>
                     <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="e.g. Data Structures" value={newSubject.subject_name} onChange={e => setNewSubject({ ...newSubject, subject_name: e.target.value })} />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Subject Type</label>
+                    <select className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={newSubject.subject_type} onChange={e => setNewSubject({ ...newSubject, subject_type: e.target.value })}>
+                      <option value="theory">Theory</option>
+                      <option value="lab">Lab</option>
+                      <option value="open_elective">Open Elective</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="flex gap-3 mt-8">
                   <button onClick={() => setShowCreateSubject(false)} className="flex-1 py-3 px-4 rounded-xl border border-border text-foreground font-medium hover:bg-secondary transition-all">Cancel</button>
@@ -1518,6 +1529,14 @@ export default function ClerkDashboard() {
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1.5">Subject Name</label>
                     <input type="text" className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={editingSubject.subject_name} onChange={e => setEditingSubject({ ...editingSubject, subject_name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Subject Type</label>
+                    <select className="w-full px-4 py-3 bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500" value={(editingSubject as any).subject_type || 'theory'} onChange={e => setEditingSubject({ ...editingSubject, subject_type: e.target.value } as any)}>
+                      <option value="theory">Theory</option>
+                      <option value="lab">Lab</option>
+                      <option value="open_elective">Open Elective</option>
+                    </select>
                   </div>
                 </div>
                 <div className="flex gap-3 mt-8">
