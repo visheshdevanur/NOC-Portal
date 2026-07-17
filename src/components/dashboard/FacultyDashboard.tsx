@@ -198,16 +198,19 @@ export default function FacultyDashboard() {
     if (oeSubjectIds.length === 0) return;
     setOeIALoading(true);
     try {
+      // Build set of student IDs enrolled under THIS teacher for OE subjects
+      const myOEStudentIds = new Set(oeStudents.map(s => s.student_id));
+
       // Fetch IA data for all OE subjects in parallel
       const allRecords: IARecord[] = [];
       await Promise.all(oeSubjectIds.map(async (subId) => {
         try {
           const records = await getIAAttendanceForSubject(subId, user.id);
-          const filtered = (records as any[]).filter(r => r.ia_number === iaNum);
+          const filtered = (records as any[]).filter(r => r.ia_number === iaNum && myOEStudentIds.has(r.student_id));
           allRecords.push(...(filtered as unknown as IARecord[]));
         } catch { /* skip failed */ }
       }));
-      // Sort by roll_number
+      // Sort by roll_number (USN)
       allRecords.sort((a, b) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || ''));
       setOeIARecords(allRecords);
     } catch (err) {
