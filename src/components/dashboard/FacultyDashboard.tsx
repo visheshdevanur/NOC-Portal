@@ -17,7 +17,7 @@ type SubjectEnrollment = {
   remarks: string | null;
   created_at: string;
   updated_at: string;
-  subjects: { subject_name: string; subject_code: string; department_id?: string; departments?: { name: string } | null };
+  subjects: { subject_name: string; subject_code: string; subject_type?: string | null; department_id?: string; departments?: { name: string } | null };
   profiles: { full_name: string; roll_number?: string | null; section?: string | null; semester_id?: string | null; department_id?: string | null; semesters?: { name: string } | null; departments?: { name: string } | null } | null;
 };
 
@@ -113,10 +113,11 @@ export default function FacultyDashboard() {
         if (s.attendance_pct == null || s.attendance_pct === undefined) return s;
 
         const pct = s.attendance_pct;
+        const isLab = (s as any).subjects?.subject_type === 'lab';
         const studentIAs = ias.filter((ia: any) => ia.subject_id === s.subject_id && ia.student_id === s.student_id && ia.is_present);
         const iaPresentCount = studentIAs.length;
         const attendanceOk = pct >= 85;
-        const iaOk = iaPresentCount >= 2;
+        const iaOk = isLab ? true : iaPresentCount >= 2; // Lab subjects don't need IA
         const assignmentOk = s.assignment_status !== 'pending';
 
         let status: string;
@@ -1125,7 +1126,7 @@ export default function FacultyDashboard() {
               <div className="p-8 text-center text-muted-foreground">No subjects assigned to you yet.</div>
             ) : (() => {
               // Separate OE subjects from regular subjects
-              const regularSubjects = teacherSubjects.filter(s => s.subject_type !== 'open_elective');
+              const regularSubjects = teacherSubjects.filter(s => s.subject_type !== 'open_elective' && s.subject_type !== 'lab');
               const oeSubjects = teacherSubjects.filter(s => s.subject_type === 'open_elective');
               const hasOE = oeSubjects.length > 0;
               const isOEMode = iaDeptFilter === '__OE__';
