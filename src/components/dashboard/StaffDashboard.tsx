@@ -34,6 +34,7 @@ type Subject = {
   id: string;
   subject_name: string;
   subject_code: string;
+  subject_type?: string | null;
   department_id?: string;
   semester_id?: string;
   departments?: { name: string } | null;
