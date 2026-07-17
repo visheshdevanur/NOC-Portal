@@ -761,6 +761,7 @@ export default function StaffDashboard() {
       await updateSubjectAPI(editingSubject.id, {
         subject_name: editingSubject.subject_name,
         subject_code: editingSubject.subject_code.toUpperCase(),
+        subject_type: (editingSubject as any).subject_type || 'theory',
       });
       setSubjectSuccess(`Subject "${editingSubject.subject_name}" updated!`);
       setEditingSubject(null);
