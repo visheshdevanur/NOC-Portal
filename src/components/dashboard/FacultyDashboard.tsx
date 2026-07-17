@@ -85,6 +85,10 @@ export default function FacultyDashboard() {
   const [iaLoading, setIaLoading] = useState(false);
   // For viewing existing IAs (read-only)
   const [expandedIA, setExpandedIA] = useState<number | null>(null);
+  // OE manage-ia drill-down: OE Students → IA# → student list
+  const [oeSelectedIA, setOeSelectedIA] = useState<number | null>(null);
+  const [oeIARecords, setOeIARecords] = useState<IARecord[]>([]);
+  const [oeIALoading, setOeIALoading] = useState(false);
 
 
   // React Query: primary data fetch with caching + deduplication
@@ -183,6 +187,32 @@ export default function FacultyDashboard() {
       console.error('Error loading IA data:', err);
     } finally {
       setIaLoading(false);
+    }
+  };
+
+  // Load IA data for ALL OE subjects assigned to this teacher
+  const loadOEIAData = async (iaNum: number) => {
+    if (!user) return;
+    const oeSubjectIds = teacherSubjects.filter(s => s.subject_type === 'open_elective').map(s => s.id);
+    if (oeSubjectIds.length === 0) return;
+    setOeIALoading(true);
+    try {
+      // Fetch IA data for all OE subjects in parallel
+      const allRecords: IARecord[] = [];
+      await Promise.all(oeSubjectIds.map(async (subId) => {
+        try {
+          const records = await getIAAttendanceForSubject(subId, user.id);
+          const filtered = (records as any[]).filter(r => r.ia_number === iaNum);
+          allRecords.push(...(filtered as unknown as IARecord[]));
+        } catch { /* skip failed */ }
+      }));
+      // Sort by roll_number
+      allRecords.sort((a, b) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || ''));
+      setOeIARecords(allRecords);
+    } catch (err) {
+      console.error('Error loading OE IA data:', err);
+    } finally {
+      setOeIALoading(false);
     }
   };
 
@@ -1036,7 +1066,7 @@ export default function FacultyDashboard() {
             {/* IA Breadcrumb */}
             <div className="flex bg-secondary/10 p-3 items-center text-sm font-medium text-muted-foreground overflow-x-auto whitespace-nowrap border-b border-border">
               <button
-                onClick={() => { setIaDeptFilter(null); setIaSemFilter(null); setIaSectionFilter(null); setSelectedSubjectId(null); }}
+                onClick={() => { setIaDeptFilter(null); setIaSemFilter(null); setIaSectionFilter(null); setSelectedSubjectId(null); setOeSelectedIA(null); setOeIARecords([]); }}
                 className={`hover:text-primary transition-colors ${!iaDeptFilter ? 'text-primary font-bold' : ''}`}
               >
                 All Departments
@@ -1045,11 +1075,18 @@ export default function FacultyDashboard() {
                 <>
                   <ChevronRight className="w-4 h-4 mx-2" />
                   <button
-                    onClick={() => { setIaSemFilter(null); setIaSectionFilter(null); setSelectedSubjectId(null); }}
-                    className={`hover:text-primary transition-colors ${iaDeptFilter && !iaSemFilter ? 'text-primary font-bold' : ''}`}
+                    onClick={() => { setIaSemFilter(null); setIaSectionFilter(null); setSelectedSubjectId(null); setOeSelectedIA(null); setOeIARecords([]); }}
+                    className={`hover:text-primary transition-colors ${iaDeptFilter && !iaSemFilter && !oeSelectedIA ? 'text-primary font-bold' : ''}`}
                   >
                     {iaDeptFilter === '__OE__' ? 'OE Students' : iaDeptFilter}
                   </button>
+                </>
+              )}
+              {/* OE mode: show IA number in breadcrumb */}
+              {iaDeptFilter === '__OE__' && oeSelectedIA && (
+                <>
+                  <ChevronRight className="w-4 h-4 mx-2" />
+                  <span className="text-primary font-bold">IA-{oeSelectedIA}</span>
                 </>
               )}
               {iaSemFilter && (
@@ -1153,8 +1190,87 @@ export default function FacultyDashboard() {
                     </div>
                   )}
 
-                  {/* IA Level 2: Semester Cards */}
-                  {iaDeptFilter && !iaSemFilter && (
+                  {/* OE Mode: IA Number Cards */}
+                  {isOEMode && !oeSelectedIA && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+                      {[1, 2, 3].map(iaNum => (
+                        <button key={iaNum} onClick={() => { setOeSelectedIA(iaNum); loadOEIAData(iaNum); }} className="bg-violet-500/5 hover:bg-violet-500/15 border border-violet-500/20 hover:border-violet-500/40 rounded-2xl p-6 text-left transition-all hover:shadow-md group">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-12 h-12 bg-violet-500/10 rounded-xl flex items-center justify-center">
+                              <span className="text-violet-600 dark:text-violet-400 font-bold text-lg">IA-{iaNum}</span>
+                            </div>
+                            <h3 className="font-bold text-foreground text-lg group-hover:text-violet-500 transition-colors">Internal Assessment {iaNum}</h3>
+                          </div>
+                          <span className="text-sm text-muted-foreground">View OE student attendance</span>
+                          <ChevronRight className="w-5 h-5 text-violet-400 mt-2 group-hover:text-violet-500 group-hover:translate-x-1 transition-all" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* OE Mode: Student Attendance Table for selected IA */}
+                  {isOEMode && oeSelectedIA && (
+                    <div className="p-6">
+                      {oeIALoading ? (
+                        <div className="p-8 text-center text-muted-foreground animate-pulse">Loading OE IA-{oeSelectedIA} attendance...</div>
+                      ) : oeIARecords.length === 0 ? (
+                        <div className="p-8 text-center">
+                          <ClipboardList className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                          <p className="text-sm text-muted-foreground font-medium">No attendance data uploaded by COE for IA-{oeSelectedIA} yet.</p>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                              <ClipboardList className="w-5 h-5 text-violet-500" />
+                              IA-{oeSelectedIA} — OE Students ({oeIARecords.length})
+                            </h3>
+                            <div className="flex gap-3 text-sm">
+                              <span className="bg-emerald-500/10 text-emerald-600 px-3 py-1 rounded-full font-medium">{oeIARecords.filter(r => r.is_present).length} Present</span>
+                              <span className="bg-destructive/10 text-destructive px-3 py-1 rounded-full font-medium">{oeIARecords.filter(r => !r.is_present).length} Absent</span>
+                            </div>
+                          </div>
+                          <div className="border border-border rounded-2xl overflow-hidden">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-secondary/40 text-muted-foreground text-xs uppercase tracking-wider">
+                                  <th className="px-6 py-3 font-semibold">#</th>
+                                  <th className="px-6 py-3 font-semibold">Student Name</th>
+                                  <th className="px-6 py-3 font-semibold">Roll No</th>
+                                  <th className="px-6 py-3 font-semibold">Section</th>
+                                  <th className="px-6 py-3 font-semibold text-center">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border">
+                                {oeIARecords.map((record, idx) => (
+                                  <tr key={record.id || `${record.student_id}-oe-${oeSelectedIA}-${idx}`} className="hover:bg-secondary/10 transition-colors">
+                                    <td className="px-6 py-3 text-sm text-muted-foreground">{idx + 1}</td>
+                                    <td className="px-6 py-3 font-medium text-foreground">{record.profiles?.full_name || 'Unknown'}</td>
+                                    <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.roll_number || 'N/A'}</td>
+                                    <td className="px-6 py-3 text-sm text-muted-foreground">{record.profiles?.section || 'N/A'}</td>
+                                    <td className="px-6 py-3 text-center">
+                                      {record.is_present ? (
+                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600">
+                                          <CheckCircle2 className="w-3.5 h-3.5" /> Present
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-destructive/15 text-destructive">
+                                          <XCircle className="w-3.5 h-3.5" /> Absent
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* IA Level 2: Semester Cards (non-OE only) */}
+                  {iaDeptFilter && !isOEMode && !iaSemFilter && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
                       {iaSems.map(sem => {
                         const count = filteredByDept.filter(s => (s.semesters?.name ? `Sem ${s.semesters.name}` : 'Unassigned') === sem).length;
@@ -1173,8 +1289,8 @@ export default function FacultyDashboard() {
                     </div>
                   )}
 
-                  {/* IA Level 3: Section Cards */}
-                  {iaDeptFilter && iaSemFilter && !iaSectionFilter && (
+                  {/* IA Level 3: Section Cards (non-OE only) */}
+                  {iaDeptFilter && !isOEMode && iaSemFilter && !iaSectionFilter && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
                       {iaSections.length === 0 ? (
                         <div className="col-span-full p-8 text-center text-muted-foreground">No sections found in this semester.</div>
@@ -1196,8 +1312,8 @@ export default function FacultyDashboard() {
                     </div>
                   )}
 
-                  {/* IA Level 4: Subject Cards */}
-                  {iaDeptFilter && iaSemFilter && iaSectionFilter && !selectedSubjectId && (
+                  {/* IA Level 4: Subject Cards (non-OE only) */}
+                  {iaDeptFilter && !isOEMode && iaSemFilter && iaSectionFilter && !selectedSubjectId && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-6">
                       {filteredBySection.length === 0 ? (
                         <div className="col-span-full p-8 text-center text-muted-foreground">No subjects in this section.</div>
