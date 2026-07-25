@@ -308,7 +308,12 @@ export default function StudentDashboard() {
     const subs = e.subjects;
     if (!subs) return 'theory';
     const subObj = Array.isArray(subs) ? subs[0] : subs;
-    return (subObj?.subject_type || 'theory').toLowerCase();
+    const result = (subObj?.subject_type || 'theory').toLowerCase();
+    // Debug: log subject types to help diagnose lab filtering issues
+    if (subObj?.subject_code) {
+      console.log(`[getSubjectType] ${subObj.subject_code}: raw=${subObj?.subject_type}, resolved=${result}`);
+    }
+    return result;
   };
 
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present

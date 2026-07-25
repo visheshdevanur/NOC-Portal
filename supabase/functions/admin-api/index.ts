@@ -487,6 +487,26 @@ serve(async (req) => {
       return jsonResponse({ success: true })
     }
 
+    // ─── DEBUG SUBJECT (check/fix subject_type) ───
+    if (action === 'debug-subject') {
+      const { subject_code, fix_type } = body
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+      if (subject_code) {
+        const { data: subjects } = await adminClient.from('subjects').select('id, subject_code, subject_name, subject_type').ilike('subject_code', `%${subject_code}%`)
+        if (fix_type && subjects && subjects.length > 0) {
+          for (const s of subjects) {
+            await adminClient.from('subjects').update({ subject_type: fix_type }).eq('id', s.id)
+          }
+          return jsonResponse({ subjects, fixed_to: fix_type })
+        }
+        return jsonResponse({ subjects })
+      }
+      return jsonResponse({ error: 'subject_code required' }, 400)
+    }
+
     // ─── GET IA DATA (any authenticated user — bypasses RLS for faculty to see COE records) ───
     if (action === 'get-ia-data') {
       const authHeader = req.headers.get('Authorization')
