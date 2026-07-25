@@ -464,6 +464,29 @@ serve(async (req) => {
       }
     }
 
+    // ─── DELETE SUBJECT (cascade — removes enrollments, IA records, assignments) ───
+    if (action === 'delete-subject') {
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) return jsonResponse({ error: 'Missing auth token' }, 401)
+      const { subject_id } = body
+      if (!subject_id) return jsonResponse({ error: 'subject_id required' }, 400)
+
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      const adminClient = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+      // Delete related records first (order matters for FK constraints)
+      await adminClient.from('ia_attendance').delete().eq('subject_id', subject_id)
+      await adminClient.from('subject_enrollment').delete().eq('subject_id', subject_id)
+      await adminClient.from('section_teacher_assignments').delete().eq('subject_id', subject_id)
+
+      // Now delete the subject itself
+      const { error: delErr } = await adminClient.from('subjects').delete().eq('id', subject_id)
+      if (delErr) return jsonResponse({ error: delErr.message }, 500)
+
+      return jsonResponse({ success: true })
+    }
+
     // ─── GET IA DATA (any authenticated user — bypasses RLS for faculty to see COE records) ───
     if (action === 'get-ia-data') {
       const authHeader = req.headers.get('Authorization')

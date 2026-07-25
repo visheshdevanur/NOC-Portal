@@ -71,8 +71,11 @@ export const createSubject = async (subject: { subject_name: string; subject_cod
 };
 
 export const deleteSubject = async (subjectId: string) => {
-  const { error } = await supabase.from('subjects').delete().eq('id', subjectId);
+  const { data, error } = await supabase.functions.invoke('admin-api', {
+    body: { action: 'delete-subject', subject_id: subjectId },
+  });
   if (error) throw error;
+  if (data?.error) throw new Error(data.error);
 };
 
 // ── Section-Teacher Assignment Management ──
