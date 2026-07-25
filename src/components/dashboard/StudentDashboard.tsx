@@ -332,6 +332,71 @@ export default function StudentDashboard() {
   // Hall ticket requires: HOD approved + all faculty cleared + IA eligible + all fines paid + library + dept + other dues
   const canDownloadHallTicket = isHodApproved && preFacultyPass && allIAEligible && allAttendanceFinesPaid && libraryPass && deptPass && allOtherDuesCleared;
 
+  // Detailed blocking reasons for student — per-subject breakdown
+  const blockingReasons = useMemo(() => {
+    const reasons: string[] = [];
+
+    // Faculty-level: which subjects are not cleared?
+    const unclearedSubjects = enrollments.filter(e => e.status !== 'completed' && e.attendance_fee_verified !== true);
+    if (unclearedSubjects.length > 0) {
+      unclearedSubjects.forEach(e => {
+        const subName = e.subjects?.subject_code || 'Unknown';
+        const issues: string[] = [];
+        if (e.attendance_pct != null && e.attendance_pct < 85) issues.push(`Attendance ${e.attendance_pct}% (min 85%)`);
+        if (e.attendance_pct == null) issues.push('Attendance not updated');
+        if (e.assignment_status === 'pending') issues.push('Assignment pending');
+        if (e.remarks) issues.push(e.remarks);
+        if (issues.length === 0) issues.push('Not yet cleared by faculty');
+        reasons.push(`${subName}: ${issues.join(', ')}`);
+      });
+    }
+
+    // Attendance fines not paid
+    if (pendingAttendanceDues.length > 0) {
+      pendingAttendanceDues.forEach(e => {
+        reasons.push(`${e.subjects?.subject_code || 'Unknown'}: Attendance fine ₹${e.attendance_fee} unpaid`);
+      });
+    }
+
+    // IA eligibility per subject
+    const iaBySubject: Record<string, number> = {};
+    iaRecords.forEach(r => {
+      if (!iaBySubject[r.subject_id]) iaBySubject[r.subject_id] = 0;
+      if (r.is_present) iaBySubject[r.subject_id]++;
+    });
+    const nonLabEnrolled = enrollments.filter(e => (e as any).subjects?.subject_type !== 'lab');
+    nonLabEnrolled.forEach(e => {
+      const present = iaBySubject[e.subject_id] || 0;
+      if (present < 2) {
+        reasons.push(`${e.subjects?.subject_code || 'Unknown'}: IA attendance ${present}/2 (min 2 required)`);
+      }
+    });
+
+    // AICTE
+    if (!aicteCleared) reasons.push('AICTE activity status not approved');
+
+    // Library
+    if (!libraryPass) reasons.push('Library dues pending');
+
+    // Accounts
+    if (!deptPass) reasons.push('Accounts/college fees pending');
+
+    // Other dues
+    if (pendingOtherDues.length > 0) {
+      pendingOtherDues.forEach((d: any) => {
+        reasons.push(`Other due: ${d.description || 'Unnamed'} — ₹${d.amount}`);
+      });
+    }
+
+    // HOD
+    if (!isHodApproved && allFacultyCleared && aicteCleared && libraryPass && deptPass && allOtherDuesCleared) {
+      reasons.push(`Awaiting ${isFirstYear ? 'FYC' : 'HOD'} final approval`);
+    }
+
+    // Deduplicate
+    return [...new Set(reasons)];
+  }, [enrollments, pendingAttendanceDues, iaRecords, aicteCleared, libraryPass, deptPass, pendingOtherDues, isHodApproved, allFacultyCleared, allOtherDuesCleared, isFirstYear]);
+
   if (loading) return <div className="animate-pulse flex flex-col gap-6">
     <div className="h-48 bg-card rounded-2xl w-full"></div>
     <div className="h-64 bg-card rounded-2xl w-full"></div>
@@ -464,10 +529,28 @@ export default function StudentDashboard() {
           {request.status === 'rejected' && (
             <div className="mt-4 inline-flex items-center gap-2 bg-destructive/10 text-destructive px-4 py-2 rounded-lg font-medium border border-destructive/20">
               <AlertCircle size={18} />
-              Clearance has been rejected. Please review remarks and contact respective staff.
+              Clearance has been rejected. Please review the issues below.
             </div>
           )}
         </div>
+        
+        {/* Detailed Blocking Reasons */}
+        {!canDownloadHallTicket && blockingReasons.length > 0 && (
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5 mt-2">
+            <h4 className="text-sm font-bold text-amber-700 dark:text-amber-400 mb-3 flex items-center gap-2">
+              <AlertCircle size={16} />
+              Why you are not cleared ({blockingReasons.length} issue{blockingReasons.length !== 1 ? 's' : ''})
+            </h4>
+            <ul className="space-y-1.5">
+              {blockingReasons.map((reason, idx) => (
+                <li key={idx} className="text-sm text-foreground/80 flex items-start gap-2">
+                  <span className="text-destructive mt-0.5 shrink-0">•</span>
+                  <span>{reason}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         
         {/* Clearance Report View */}
         <div className={`p-6 rounded-2xl border-2 transition-all flex flex-col sm:flex-row items-start sm:items-center gap-4 ${canDownloadHallTicket ? "bg-emerald-500/10 border-emerald-500/30" : "bg-secondary border-border"}`}>
