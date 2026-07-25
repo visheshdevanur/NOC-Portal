@@ -125,7 +125,7 @@ export default function PaymentCallback() {
     doc.roundedRect(centerX - 28, y - 4, 56, 10, 3, 3, 'F');
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.text('✓ Payment Successful', centerX, y + 3, { align: 'center' });
+    doc.text('Payment Successful', centerX, y + 3, { align: 'center' });
 
     // ── Amount Box ──
     y = 55;
@@ -137,7 +137,7 @@ export default function PaymentCallback() {
     doc.text('Amount Paid', 28, y + 9);
     doc.setTextColor(22, 163, 74);
     doc.setFontSize(18);
-    doc.text(`₹${amount}`, pageW - 28, y + 10, { align: 'right' });
+    doc.text(`Rs. ${amount}`, pageW - 28, y + 10, { align: 'right' });
 
     // ── Details ──
     y = 85;
@@ -154,7 +154,7 @@ export default function PaymentCallback() {
       ['Order ID', orderData.order_id],
       ['Transaction ID', txnId],
       ['Payment Method', payMethod],
-      ['Status', '✅ Charged'],
+      ['Status', 'Charged (Success)'],
       ['Date & Time', receiptDate],
     ];
 
