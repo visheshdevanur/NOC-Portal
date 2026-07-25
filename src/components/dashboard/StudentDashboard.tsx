@@ -277,12 +277,32 @@ export default function StudentDashboard() {
 
   const isFirstYear = useMemo(() => isFirstYearSem(semesterName), [semesterName]);
   const isHodApproved = request?.current_stage === 'cleared';
+
+  // Helper to extract subject_type from enrollment (handles both object and array relation formats)
+  const getSubjectType = (e: any): string => {
+    const subs = e.subjects;
+    if (!subs) return 'theory';
+    const subObj = Array.isArray(subs) ? subs[0] : subs;
+    return (subObj?.subject_type || 'theory').toLowerCase();
+  };
+
   // A subject is "faculty cleared" when ANY of these is true:
   // 1. Faculty marked it 'completed' (attendance >= 85%) AND no outstanding fine
   // 2. The attendance fine has been paid (verified by HDFC/cash)
   // ALSO: assignment_status must be 'submitted' (not 'pending')
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(
-    e => (e.status === 'completed' || e.attendance_fee_verified === true) && ((e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true) && (e.assignment_status !== 'pending')
+    e => {
+      const isCleared = (e.status === 'completed' || e.attendance_fee_verified === true) && ((e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true) && (e.assignment_status !== 'pending');
+      if (isCleared) return true;
+      // Lab subjects: skip IA-related rejections (labs don't have IA)
+      if (getSubjectType(e) === 'lab') {
+        const attendanceOk = (e.attendance_pct ?? 0) >= 85 || e.attendance_fee_verified === true;
+        const fineOk = (e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true;
+        const assignOk = e.assignment_status !== 'pending';
+        return attendanceOk && fineOk && assignOk;
+      }
+      return false;
+    }
   ), [enrollments]);
   // Both Faculty AND AICTE must pass before proceeding to Library
   const preFacultyPass = allFacultyCleared && aicteCleared;
@@ -303,18 +323,6 @@ export default function StudentDashboard() {
   // Note: if allFacultyCleared is true, this will be empty since all fines are verified
   const pendingAttendanceDues = useMemo(() => enrollments.filter(e => (e.attendance_fee ?? 0) > 0 && !e.attendance_fee_verified), [enrollments]);
 
-  // Helper to extract subject_type from enrollment (handles both object and array relation formats)
-  const getSubjectType = (e: any): string => {
-    const subs = e.subjects;
-    if (!subs) return 'theory';
-    const subObj = Array.isArray(subs) ? subs[0] : subs;
-    const result = (subObj?.subject_type || 'theory').toLowerCase();
-    // Debug: log subject types to help diagnose lab filtering issues
-    if (subObj?.subject_code) {
-      console.log(`[getSubjectType] ${subObj.subject_code}: raw=${subObj?.subject_type}, resolved=${result}`);
-    }
-    return result;
-  };
 
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
   // Option B: Only actual DB records count — unuploaded IAs do NOT count as Present
@@ -350,7 +358,17 @@ export default function StudentDashboard() {
     const reasons: string[] = [];
 
     // Faculty-level: which subjects are not cleared?
-    const unclearedSubjects = enrollments.filter(e => e.status !== 'completed' && e.attendance_fee_verified !== true);
+    const unclearedSubjects = enrollments.filter(e => {
+      if (e.status === 'completed' || e.attendance_fee_verified === true) return false;
+      // Lab subjects: consider cleared if attendance + fine + assignment are OK (skip IA)
+      if (getSubjectType(e) === 'lab') {
+        const attendanceOk = (e.attendance_pct ?? 0) >= 85 || !!e.attendance_fee_verified;
+        const fineOk = (e.attendance_fee ?? 0) === 0 || !!e.attendance_fee_verified;
+        const assignOk = e.assignment_status !== 'pending';
+        if (attendanceOk && fineOk && assignOk) return false;
+      }
+      return true;
+    });
     if (unclearedSubjects.length > 0) {
       unclearedSubjects.forEach(e => {
         const subName = e.subjects?.subject_code || 'Unknown';
