@@ -37,7 +37,7 @@ type SubjectEnrollment = {
   remarks: string | null;
   created_at: string;
   updated_at: string;
-  subjects: { subject_name: string; subject_code: string; exam_date: string | null; exam_time: string | null };
+  subjects: { subject_name: string; subject_code: string; subject_type?: string | null; exam_date: string | null; exam_time: string | null };
   profiles: { full_name: string } | null;
 };
 
@@ -312,8 +312,9 @@ export default function StudentDashboard() {
       bySubject[r.subject_id].total++;
       if (r.is_present) bySubject[r.subject_id].present++;
     });
-    // Student must have >= 2 present per subject. If no records at all for a subject, not eligible.
-    const enrolledSubjectIds = [...new Set(enrollments.map(e => e.subject_id))];
+    // Student must have >= 2 present per subject. Lab subjects are exempt (no IA).
+    const nonLabEnrollments = enrollments.filter(e => (e as any).subjects?.subject_type !== 'lab');
+    const enrolledSubjectIds = [...new Set(nonLabEnrollments.map(e => e.subject_id))];
     const eligible = enrolledSubjectIds.length === 0 || enrolledSubjectIds.every(sid => {
       const data = bySubject[sid];
       return data && data.present >= 2;
