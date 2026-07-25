@@ -95,7 +95,21 @@ export default function PaymentCallback() {
     if (!orderData) return;
 
     const { default: jsPDF } = await import('jspdf');
+    const { createClient } = await import('@supabase/supabase-js');
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+
+    // Fetch tenant name
+    let tenantName = 'NO DUE PORTAL';
+    if ((profile as any)?.tenant_id) {
+      try {
+        const supabase = createClient(
+          import.meta.env.VITE_SUPABASE_URL,
+          import.meta.env.VITE_SUPABASE_ANON_KEY
+        );
+        const { data } = await supabase.from('tenants').select('name').eq('id', (profile as any).tenant_id).single();
+        if (data?.name) tenantName = data.name;
+      } catch {}
+    }
 
     const hdfcRes = orderData.hdfc_response || {};
     const receiptDate = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
@@ -115,7 +129,7 @@ export default function PaymentCallback() {
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
-    doc.text('NO DUE PORTAL', centerX, y, { align: 'center' });
+    doc.text(tenantName, centerX, y, { align: 'center' });
     y += 8;
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
