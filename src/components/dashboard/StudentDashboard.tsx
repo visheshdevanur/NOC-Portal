@@ -303,6 +303,14 @@ export default function StudentDashboard() {
   // Note: if allFacultyCleared is true, this will be empty since all fines are verified
   const pendingAttendanceDues = useMemo(() => enrollments.filter(e => (e.attendance_fee ?? 0) > 0 && !e.attendance_fee_verified), [enrollments]);
 
+  // Helper to extract subject_type from enrollment (handles both object and array relation formats)
+  const getSubjectType = (e: any): string => {
+    const subs = e.subjects;
+    if (!subs) return 'theory';
+    const subObj = Array.isArray(subs) ? subs[0] : subs;
+    return (subObj?.subject_type || 'theory').toLowerCase();
+  };
+
   // Check IA eligibility: for each subject that has IA records, student must have >= 2 present
   // Option B: Only actual DB records count — unuploaded IAs do NOT count as Present
   const { allIAEligible } = useMemo(() => {
@@ -313,7 +321,7 @@ export default function StudentDashboard() {
       if (r.is_present) bySubject[r.subject_id].present++;
     });
     // Student must have >= 2 present per subject. Lab subjects are exempt (no IA).
-    const nonLabEnrollments = enrollments.filter(e => (e as any).subjects?.subject_type !== 'lab');
+    const nonLabEnrollments = enrollments.filter(e => getSubjectType(e) !== 'lab');
     const enrolledSubjectIds = [...new Set(nonLabEnrollments.map(e => e.subject_id))];
     const eligible = enrolledSubjectIds.length === 0 || enrolledSubjectIds.every(sid => {
       const data = bySubject[sid];
@@ -364,7 +372,7 @@ export default function StudentDashboard() {
       if (!iaBySubject[r.subject_id]) iaBySubject[r.subject_id] = 0;
       if (r.is_present) iaBySubject[r.subject_id]++;
     });
-    const nonLabEnrolled = enrollments.filter(e => (e as any).subjects?.subject_type !== 'lab');
+    const nonLabEnrolled = enrollments.filter(e => getSubjectType(e) !== 'lab');
     nonLabEnrolled.forEach(e => {
       const present = iaBySubject[e.subject_id] || 0;
       if (present < 2) {

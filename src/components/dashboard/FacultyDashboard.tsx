@@ -113,7 +113,8 @@ export default function FacultyDashboard() {
         if (s.attendance_pct == null || s.attendance_pct === undefined) return s;
 
         const pct = s.attendance_pct;
-        const isLab = (s as any).subjects?.subject_type === 'lab';
+        const subType = ((s as any).subjects?.subject_type || '').toLowerCase();
+        const isLab = subType === 'lab';
         const studentIAs = ias.filter((ia: any) => ia.subject_id === s.subject_id && ia.student_id === s.student_id && ia.is_present);
         const iaPresentCount = studentIAs.length;
         const attendanceOk = pct >= 85;
