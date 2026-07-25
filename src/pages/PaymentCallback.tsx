@@ -91,8 +91,11 @@ export default function PaymentCallback() {
     window.location.href = '/';
   };
 
-  const handleDownloadReceipt = () => {
+  const handleDownloadReceipt = async () => {
     if (!orderData) return;
+
+    const { default: jsPDF } = await import('jspdf');
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
     const hdfcRes = orderData.hdfc_response || {};
     const receiptDate = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
@@ -102,187 +105,89 @@ export default function PaymentCallback() {
     const usn = (profile as any)?.roll_number || 'N/A';
     const amount = orderData.amount || paymentAmount || '0';
 
-    // Generate receipt HTML and trigger print dialog
-    const receiptWindow = window.open('', '_blank', 'width=600,height=800');
-    if (!receiptWindow) {
-      alert('Please allow popups to download the receipt.');
-      return;
-    }
+    const pageW = doc.internal.pageSize.getWidth();
+    const centerX = pageW / 2;
+    let y = 20;
 
-    receiptWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Payment Receipt - ${orderData.order_id}</title>
-        <meta charset="utf-8">
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
-            background: #f8f9fa; 
-            padding: 20px;
-            color: #1a1a2e;
-          }
-          .receipt {
-            max-width: 500px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-            overflow: hidden;
-          }
-          .receipt-header {
-            background: linear-gradient(135deg, #004bca, #0066ff);
-            color: white;
-            padding: 32px 24px;
-            text-align: center;
-          }
-          .receipt-header h1 {
-            font-size: 20px;
-            font-weight: 700;
-            margin-bottom: 4px;
-            letter-spacing: 1px;
-          }
-          .receipt-header p {
-            font-size: 13px;
-            opacity: 0.85;
-          }
-          .success-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.3);
-            border-radius: 24px;
-            padding: 8px 20px;
-            margin-top: 16px;
-            font-weight: 600;
-            font-size: 14px;
-          }
-          .receipt-body { padding: 24px; }
-          .receipt-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            padding: 12px 0;
-            border-bottom: 1px solid #f0f0f0;
-          }
-          .receipt-row:last-child { border-bottom: none; }
-          .receipt-label {
-            font-size: 13px;
-            color: #666;
-            font-weight: 500;
-          }
-          .receipt-value {
-            font-size: 14px;
-            font-weight: 600;
-            text-align: right;
-            max-width: 60%;
-            word-break: break-all;
-          }
-          .amount-row {
-            background: #f0fdf4;
-            border-radius: 12px;
-            padding: 16px;
-            margin: 16px 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          }
-          .amount-row .receipt-label { font-size: 16px; font-weight: 600; color: #333; }
-          .amount-row .receipt-value { font-size: 24px; color: #16a34a; }
-          .receipt-footer {
-            border-top: 2px dashed #e5e5e5;
-            padding: 20px 24px;
-            text-align: center;
-            color: #999;
-            font-size: 11px;
-            line-height: 1.6;
-          }
-          @media print {
-            body { background: white; padding: 0; }
-            .receipt { box-shadow: none; border-radius: 0; }
-            .no-print { display: none !important; }
-          }
-          .print-btn {
-            display: block;
-            width: calc(100% - 48px);
-            margin: 0 24px 24px;
-            padding: 14px;
-            background: #004bca;
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-          }
-          .print-btn:hover { background: #003ba3; }
-        </style>
-      </head>
-      <body>
-        <div class="receipt">
-          <div class="receipt-header">
-            <h1>NO DUE PORTAL</h1>
-            <p>Payment Receipt</p>
-            <div class="success-badge">
-              ✓ Payment Successful
-            </div>
-          </div>
+    // ── Header ──
+    doc.setFillColor(0, 75, 202);
+    doc.rect(0, 0, pageW, 45, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('NO DUE PORTAL', centerX, y, { align: 'center' });
+    y += 8;
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Payment Receipt', centerX, y, { align: 'center' });
+    y += 10;
+    doc.setFillColor(34, 197, 94);
+    doc.roundedRect(centerX - 28, y - 4, 56, 10, 3, 3, 'F');
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('✓ Payment Successful', centerX, y + 3, { align: 'center' });
 
-          <div class="receipt-body">
-            <div class="amount-row">
-              <span class="receipt-label">Amount Paid</span>
-              <span class="receipt-value">₹${amount}</span>
-            </div>
+    // ── Amount Box ──
+    y = 55;
+    doc.setFillColor(240, 253, 244);
+    doc.roundedRect(20, y, pageW - 40, 20, 4, 4, 'F');
+    doc.setTextColor(50, 50, 50);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Amount Paid', 28, y + 9);
+    doc.setTextColor(22, 163, 74);
+    doc.setFontSize(18);
+    doc.text(`₹${amount}`, pageW - 28, y + 10, { align: 'right' });
 
-            <div class="receipt-row">
-              <span class="receipt-label">Student Name</span>
-              <span class="receipt-value">${studentName}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">USN</span>
-              <span class="receipt-value">${usn}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Description</span>
-              <span class="receipt-value">${paymentDescription || orderData.due_type || 'Attendance Fine'}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Order ID</span>
-              <span class="receipt-value" style="font-family: monospace; font-size: 12px;">${orderData.order_id}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Transaction ID</span>
-              <span class="receipt-value" style="font-family: monospace; font-size: 12px;">${txnId}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Payment Method</span>
-              <span class="receipt-value">${payMethod}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Status</span>
-              <span class="receipt-value" style="color: #16a34a;">✅ Charged</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Date & Time</span>
-              <span class="receipt-value">${receiptDate}</span>
-            </div>
-          </div>
+    // ── Details ──
+    y = 85;
+    const leftCol = 28;
+    const rightCol = pageW - 28;
+    doc.setTextColor(100, 100, 100);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
 
-          <button class="print-btn no-print" onclick="window.print()">
-            📄 Download / Print Receipt
-          </button>
+    const rows = [
+      ['Student Name', studentName],
+      ['USN', usn],
+      ['Description', orderData.description || 'attendance_fine'],
+      ['Order ID', orderData.order_id],
+      ['Transaction ID', txnId],
+      ['Payment Method', payMethod],
+      ['Status', '✅ Charged'],
+      ['Date & Time', receiptDate],
+    ];
 
-          <div class="receipt-footer">
-            This is a computer-generated receipt and does not require a physical signature.<br>
-            For any payment-related queries, contact the accounts department.
-          </div>
-        </div>
-      </body>
-      </html>
-    `);
-    receiptWindow.document.close();
+    rows.forEach(([label, value]) => {
+      doc.setDrawColor(230, 230, 230);
+      doc.line(leftCol, y + 4, rightCol, y + 4);
+      doc.setTextColor(120, 120, 120);
+      doc.setFont('helvetica', 'normal');
+      doc.text(label, leftCol, y);
+      doc.setTextColor(30, 30, 30);
+      doc.setFont('helvetica', 'bold');
+      // Truncate long values
+      const maxW = rightCol - centerX - 5;
+      const valText = doc.splitTextToSize(value, maxW);
+      doc.text(valText, rightCol, y, { align: 'right' });
+      y += valText.length > 1 ? 12 : 10;
+    });
+
+    // ── Footer ──
+    y += 8;
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineDashPattern([2, 2], 0);
+    doc.line(leftCol, y, rightCol, y);
+    y += 8;
+    doc.setFontSize(8);
+    doc.setTextColor(160, 160, 160);
+    doc.setFont('helvetica', 'normal');
+    doc.text('This is a computer-generated receipt and does not require a physical signature.', centerX, y, { align: 'center' });
+    y += 5;
+    doc.text('For any payment-related queries, contact the accounts department.', centerX, y, { align: 'center' });
+
+    // Download
+    doc.save(`Receipt_${orderData.order_id}.pdf`);
   };
 
   return (
