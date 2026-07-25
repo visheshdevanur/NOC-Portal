@@ -343,7 +343,8 @@ export default function ClerkDashboard() {
       // 2. Teachers imported into departments via imported_teachers table
       const { data: importedData } = await supabase
         .from('imported_teachers')
-        .select('profiles!inner(*, departments!profiles_department_id_fkey(name))');
+        .select('profiles!inner(*, departments!profiles_department_id_fkey(name))')
+        .eq('department_id', selectedDeptId);
       const importedTeachers = (importedData || []).map((imp: any) => imp.profiles).filter(Boolean);
 
       // Merge and deduplicate
@@ -953,7 +954,8 @@ export default function ClerkDashboard() {
       // Also get teachers imported via imported_teachers table
       const { data: importedData } = await supabase
         .from('imported_teachers')
-        .select('profiles!inner(*)');
+        .select('profiles!inner(*)')
+        .eq('department_id', selectedDeptId);
       const importedTeachers = (importedData || []).map((imp: any) => imp.profiles).filter(Boolean);
 
       // Merge and deduplicate

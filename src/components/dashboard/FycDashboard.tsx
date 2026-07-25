@@ -216,7 +216,8 @@ export default function FycDashboard() {
       // Also get teachers imported via imported_teachers table
       const { data: importedData } = await supabase
         .from('imported_teachers')
-        .select('profiles!inner(*, departments!profiles_department_id_fkey(name))');
+        .select('profiles!inner(*, departments!profiles_department_id_fkey(name))')
+        .eq('created_by', user.id);
       const importedTeachers = (importedData || []).map((imp: any) => imp.profiles).filter(Boolean);
 
       // Merge and deduplicate
@@ -301,7 +302,8 @@ export default function FycDashboard() {
       // Also get teachers imported via imported_teachers table
       const { data: importedData } = await supabase
         .from('imported_teachers')
-        .select('profiles!inner(id, full_name, role, section, email, created_at)');
+        .select('profiles!inner(id, full_name, role, section, email, created_at)')
+        .eq('created_by', user.id);
       const importedTeachers = (importedData || []).map((imp: any) => imp.profiles).filter(Boolean);
 
       // Merge and deduplicate
@@ -548,7 +550,7 @@ export default function FycDashboard() {
     if (!confirm(`Remove "${userName}" from your imported list? (This will NOT delete their account)`)) return;
     try {
       // Remove from imported_teachers table
-      const { error } = await supabase.from('imported_teachers').delete().eq('teacher_id', userId);
+      const { error } = await supabase.from('imported_teachers').delete().eq('teacher_id', userId).eq('created_by', user!.id);
       if (error) throw error;
       
       await supabase.from('activity_logs').insert([{
