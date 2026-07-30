@@ -110,7 +110,7 @@ serve(async (req) => {
     // ── HDFC credentials ──
     const hdfcApiKey = Deno.env.get('HDFC_API_KEY')
     const hdfcMerchantId = Deno.env.get('HDFC_MERCHANT_ID')
-    const hdfcBaseUrl = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
+    const hdfcBaseUrl = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfc.bank.in'
 
     if (!hdfcApiKey || !hdfcMerchantId) {
       return jsonResponse({ error: 'Payment service not configured' }, 500, undefined, req.headers.get('Origin') || '')

@@ -170,7 +170,7 @@ serve(async (req) => {
     const hdfcApiKey = Deno.env.get('HDFC_API_KEY')
     const hdfcMerchantId = Deno.env.get('HDFC_MERCHANT_ID')
     const hdfcClientId = Deno.env.get('HDFC_PAYMENT_PAGE_CLIENT_ID')
-    const hdfcBaseUrl = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfcuat.bank.in'
+    const hdfcBaseUrl = Deno.env.get('HDFC_BASE_URL') || 'https://smartgateway.hdfc.bank.in'
     const hdfcResponseKey = Deno.env.get('HDFC_RESPONSE_KEY') || ''
 
     if (!hdfcApiKey || !hdfcMerchantId || !hdfcClientId) {
