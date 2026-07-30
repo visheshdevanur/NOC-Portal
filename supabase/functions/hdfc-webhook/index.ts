@@ -25,6 +25,24 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
+    // ── Verify Basic Auth from HDFC ──
+    const expectedUser = Deno.env.get('HDFC_WEBHOOK_USERNAME')
+    const expectedPass = Deno.env.get('HDFC_WEBHOOK_PASSWORD')
+    if (expectedUser && expectedPass) {
+      const authHeader = req.headers.get('Authorization') || ''
+      if (authHeader.startsWith('Basic ')) {
+        const decoded = atob(authHeader.slice(6))
+        const [user, pass] = decoded.split(':')
+        if (user !== expectedUser || pass !== expectedPass) {
+          log('WEBHOOK', 'AUTH_FAILED', 'Invalid webhook credentials')
+          return jsonResponse({ error: 'Unauthorized' }, 401, undefined, req.headers.get('Origin') || '')
+        }
+      } else {
+        log('WEBHOOK', 'AUTH_MISSING', 'No Basic Auth header')
+        return jsonResponse({ error: 'Unauthorized' }, 401, undefined, req.headers.get('Origin') || '')
+      }
+    }
+
     const adminClient = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
