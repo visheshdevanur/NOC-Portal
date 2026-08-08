@@ -144,6 +144,7 @@ export default function StudentDashboard() {
           teacher_id: null,
           attendance_pct: null,
           status: 'pending',
+          assignment_status: 'submitted',
           remarks: null
         }));
       
@@ -283,7 +284,19 @@ export default function StudentDashboard() {
     const subs = e.subjects;
     if (!subs) return 'theory';
     const subObj = Array.isArray(subs) ? subs[0] : subs;
-    return (subObj?.subject_type || 'theory').toLowerCase();
+    // If subject_type is explicitly set, use it
+    const dbType = (subObj?.subject_type || '').toLowerCase().trim();
+    if (dbType === 'lab' || dbType === 'practical') return 'lab';
+    if (dbType && dbType !== '') return dbType;
+    // Fallback: detect from subject name/code patterns
+    const name = (subObj?.subject_name || '').toLowerCase();
+    const code = (subObj?.subject_code || '').toLowerCase();
+    if (
+      name.includes('lab') || name.includes('practical') || name.includes('workshop') ||
+      code.endsWith('l') || code.endsWith('lab') ||
+      /\blab\b/.test(name) || /\bpract\b/.test(name)
+    ) return 'lab';
+    return 'theory';
   };
 
   // A subject is "faculty cleared" when ANY of these is true:

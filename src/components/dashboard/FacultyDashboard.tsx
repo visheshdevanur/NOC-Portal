@@ -113,8 +113,11 @@ export default function FacultyDashboard() {
         if (s.attendance_pct == null || s.attendance_pct === undefined) return s;
 
         const pct = s.attendance_pct;
-        const subType = ((s as any).subjects?.subject_type || '').toLowerCase();
-        const isLab = subType === 'lab';
+        const subType = ((s as any).subjects?.subject_type || '').toLowerCase().trim();
+        const subName = ((s as any).subjects?.subject_name || '').toLowerCase();
+        const subCode = ((s as any).subjects?.subject_code || '').toLowerCase();
+        const isLab = subType === 'lab' || subType === 'practical' ||
+          (!subType && (subName.includes('lab') || subName.includes('practical') || subName.includes('workshop') || subCode.endsWith('l') || subCode.endsWith('lab')));
         const studentIAs = ias.filter((ia: any) => ia.subject_id === s.subject_id && ia.student_id === s.student_id && ia.is_present);
         const iaPresentCount = studentIAs.length;
         const attendanceOk = pct >= 85;
