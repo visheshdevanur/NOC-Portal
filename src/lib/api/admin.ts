@@ -350,7 +350,7 @@ export const assignTeacherToSelectedStudents = async (subjectId: string, section
         subject_id: subjectId,
         teacher_id: teacherId,
         status: 'pending',
-        assignment_status: 'pending',
+        assignment_status: 'submitted',
       })
       .select()
       .single();

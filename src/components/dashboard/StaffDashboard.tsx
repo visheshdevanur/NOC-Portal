@@ -735,7 +735,7 @@ export default function StaffDashboard() {
         const subjectId = created[0].id;
         const { data: semStudents } = await supabase.from('profiles').select('id').eq('role', 'student').eq('department_id', profile!.department_id!).eq('semester_id', newSubject.semester_id);
         if (semStudents && semStudents.length > 0) {
-          const enrollments = semStudents.map(s => ({ student_id: s.id, subject_id: subjectId, status: 'pending', assignment_status: 'pending' }));
+          const enrollments = semStudents.map(s => ({ student_id: s.id, subject_id: subjectId, status: 'pending', assignment_status: 'submitted' }));
           for (let i = 0; i < enrollments.length; i += 100) {
             await supabase.from('subject_enrollment').insert(enrollments.slice(i, i + 100));
           }
@@ -853,7 +853,7 @@ export default function StaffDashboard() {
             const subjectId = created[0].id;
             const { data: semStudents } = await supabase.from('profiles').select('id').eq('role', 'student').eq('department_id', profile!.department_id!).eq('semester_id', importTargetSemId);
             if (semStudents && semStudents.length > 0) {
-              const enrollments = semStudents.map(s => ({ student_id: s.id, subject_id: subjectId, status: 'pending', assignment_status: 'pending' }));
+              const enrollments = semStudents.map(s => ({ student_id: s.id, subject_id: subjectId, status: 'pending', assignment_status: 'submitted' }));
               for (let i = 0; i < enrollments.length; i += 100) {
                 await supabase.from('subject_enrollment').insert(enrollments.slice(i, i + 100));
               }
