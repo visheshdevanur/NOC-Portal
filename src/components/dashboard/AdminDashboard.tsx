@@ -1940,7 +1940,7 @@ export default function AdminDashboard() {
 
       {/* ========= OTHER DUES TAB (read-only for admin) ========= */}
       {activeTab === 'otherDues' && (
-        <OtherDuesTab role="admin" />
+        <OtherDuesTab role="admin" tenantId={tenantId} />
       )}
 
       {/* Logs Tab */}

@@ -16,9 +16,10 @@ interface OtherDuesTabProps {
   departmentId?: string;
   role: 'hod' | 'fyc' | 'admin';
   userId?: string;
+  tenantId?: string | null;
 }
 
-export default function OtherDuesTab({ departmentId, role, userId }: OtherDuesTabProps) {
+export default function OtherDuesTab({ departmentId, role, userId, tenantId }: OtherDuesTabProps) {
   const [dues, setDues] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,16 +55,16 @@ export default function OtherDuesTab({ departmentId, role, userId }: OtherDuesTa
 
   useEffect(() => {
     fetchDues();
-  }, [departmentId, role]);
+  }, [departmentId, role, tenantId]);
 
   const fetchDues = async () => {
     setLoading(true);
     try {
       let data: any[];
       if (departmentId) {
-        data = await getOtherDuesForDept(departmentId);
+        data = await getOtherDuesForDept(departmentId, tenantId);
       } else {
-        data = await getOtherDuesGlobal();
+        data = await getOtherDuesGlobal(tenantId);
       }
 
       // Filter by semester based on role

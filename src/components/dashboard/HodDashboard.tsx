@@ -1765,7 +1765,7 @@ export default function HodDashboard() {
 
       {/* ========= OTHER DUES TAB ========= */}
       {activeTab === 'otherDues' && profile?.department_id && (
-        <OtherDuesTab departmentId={profile.department_id} role="hod" userId={user?.id} />
+        <OtherDuesTab departmentId={profile.department_id} role="hod" userId={user?.id} tenantId={(profile as any)?.tenant_id} />
       )}
 
     </div>

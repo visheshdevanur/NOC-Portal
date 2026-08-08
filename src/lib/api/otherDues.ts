@@ -7,16 +7,18 @@ import { supabase } from '../supabase';
 /**
  * Fetch all other_dues for a specific department, with student profile info.
  */
-export const getOtherDuesForDept = async (departmentId: string) => {
+export const getOtherDuesForDept = async (departmentId: string, tenantId?: string | null) => {
   let allData: any[] = [];
   let offset = 0;
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from('other_dues')
       .select('*, profiles!other_dues_student_id_fkey(full_name, roll_number, section, department_id, semester_id, semesters(name), departments!profiles_department_id_fkey(name))')
       .eq('department_id', departmentId)
       .order('created_at', { ascending: false })
       .range(offset, offset + 999);
+    if (tenantId) query = query.eq('tenant_id', tenantId);
+    const { data, error } = await query;
     if (error) throw error;
     allData = [...allData, ...(data || [])];
     if (!data || data.length < 1000) break;
@@ -28,15 +30,17 @@ export const getOtherDuesForDept = async (departmentId: string) => {
 /**
  * Fetch all other_dues globally (for FYC / Admin).
  */
-export const getOtherDuesGlobal = async () => {
+export const getOtherDuesGlobal = async (tenantId?: string | null) => {
   let allData: any[] = [];
   let offset = 0;
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from('other_dues')
       .select('*, profiles!other_dues_student_id_fkey(full_name, roll_number, section, department_id, semester_id, semesters(name), departments!profiles_department_id_fkey(name))')
       .order('created_at', { ascending: false })
       .range(offset, offset + 999);
+    if (tenantId) query = query.eq('tenant_id', tenantId);
+    const { data, error } = await query;
     if (error) throw error;
     allData = [...allData, ...(data || [])];
     if (!data || data.length < 1000) break;

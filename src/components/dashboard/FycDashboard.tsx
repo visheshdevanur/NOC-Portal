@@ -136,6 +136,17 @@ export default function FycDashboard() {
   });
   const departments = deptsData || [];
 
+  // Tenant isolation
+  const [tenantId, setTenantId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      supabase.from('profiles').select('tenant_id').eq('id', user.id).single().then(({ data }) => {
+        if (data?.tenant_id) setTenantId(data.tenant_id);
+      });
+    }
+  }, [user]);
+
   useEffect(() => {
     if (user) {
       if (activeTab === 'approvals') fetchRequests();
@@ -2056,7 +2067,7 @@ export default function FycDashboard() {
 
       {/* ========= OTHER DUES TAB ========= */}
       {activeTab === 'otherDues' && (
-        <OtherDuesTab role="fyc" userId={user?.id} />
+        <OtherDuesTab role="fyc" userId={user?.id} tenantId={tenantId} />
       )}
 
     </div>
