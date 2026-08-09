@@ -202,43 +202,15 @@ serve(async (req) => {
           const { subject_id } = params
           if (!subject_id) return jsonResponse({ error: 'subject_id required' }, 400)
 
-          // Get the subject's department, semester, and type
+          // Get the subject's department and semester
           const { data: subject, error: subErr } = await coeClient
             .from('subjects')
-            .select('department_id, semester_id, subject_type')
+            .select('department_id, semester_id')
             .eq('id', subject_id)
             .single()
           if (subErr || !subject) return jsonResponse({ error: 'Subject not found' }, 404)
 
-          // For OE subjects, fetch ENROLLED students (they come from other depts)
-          if (subject.subject_type === 'open_elective') {
-            const { data: enrolled, error: enrErr } = await coeClient
-              .from('subject_enrollment')
-              .select('student_id, profiles!subject_enrollment_student_id_fkey(id, full_name, roll_number, section)')
-              .eq('subject_id', subject_id)
-              .order('created_at')
-            if (enrErr) return jsonResponse({ error: enrErr.message }, 500)
-
-            // Deduplicate by student_id and map
-            const seen = new Set<string>()
-            const mapped = (enrolled || [])
-              .filter((e: any) => {
-                if (!e.student_id || seen.has(e.student_id)) return false
-                seen.add(e.student_id)
-                return true
-              })
-              .map((e: any) => {
-                const p = Array.isArray(e.profiles) ? e.profiles[0] : e.profiles
-                return {
-                  student_id: e.student_id,
-                  profiles: { id: p?.id || e.student_id, full_name: p?.full_name || '', roll_number: p?.roll_number || '', section: p?.section || '' }
-                }
-              })
-              .sort((a: any, b: any) => (a.profiles.roll_number || '').localeCompare(b.profiles.roll_number || ''))
-            return jsonResponse({ data: mapped })
-          }
-
-          // For regular subjects, fetch ALL students in that department + semester
+          // Fetch ALL students in that department + semester
           let query = coeClient
             .from('profiles')
             .select('id, full_name, roll_number, section')
