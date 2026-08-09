@@ -202,22 +202,34 @@ export default function FacultyDashboard() {
     if (oeSubjectIds.length === 0) return;
     setOeIALoading(true);
     try {
+      // Build set of student IDs enrolled under THIS teacher for OE subjects
+      const myOEStudentIds = new Set(oeStudents.map(s => s.student_id));
+      console.log('[OE-IA] My OE student count:', myOEStudentIds.size, 'oeStudents.length:', oeStudents.length);
+
       // Collect ALL unique subject IDs: teacher's OE subject IDs +
       // the subject_ids from each OE student's enrollment (COE may have saved
       // IA data under a different department's OE subject)
       const enrolledSubjectIds = new Set(oeStudents.map(s => s.subject_id).filter(Boolean));
       const allOESubjectIds = [...new Set([...oeSubjectIds, ...enrolledSubjectIds])];
 
-      // Fetch IA data for all OE subjects in parallel — show ALL records
-      // (no student_id filter — COE uploads for entire dept, not just enrolled students)
+      // Fetch IA data for all OE subjects in parallel
       const allRecords: IARecord[] = [];
       const seenKeys = new Set<string>();
       await Promise.all(allOESubjectIds.map(async (subId) => {
         try {
           const records = await getIAAttendanceForSubject(subId, user.id);
-          const filtered = (records as any[]).filter(r => r.ia_number === iaNum);
+          // Filter to only this IA number + only students enrolled under this teacher
+          const forIA = (records as any[]).filter(r => r.ia_number === iaNum);
+          const filtered = forIA.filter(r => myOEStudentIds.has(r.student_id));
+          console.log(`[OE-IA] Subject ${subId}: ${forIA.length} IA-${iaNum} records, ${filtered.length} match my students`);
+          if (forIA.length > 0 && filtered.length === 0 && myOEStudentIds.size > 0) {
+            // Debug mismatch
+            const sampleIA = forIA[0].student_id;
+            const sampleOE = oeStudents[0]?.student_id;
+            console.log(`[OE-IA] MISMATCH: IA student_id sample="${sampleIA}", OE enrollment student_id sample="${sampleOE}"`);
+          }
           filtered.forEach(r => {
-            const key = `${r.student_id}_${r.ia_number}_${r.subject_id}`;
+            const key = `${r.student_id}_${r.ia_number}`;
             if (!seenKeys.has(key)) {
               seenKeys.add(key);
               allRecords.push(r as unknown as IARecord);
@@ -227,6 +239,7 @@ export default function FacultyDashboard() {
           console.error(`[OE-IA] Error fetching IA for subject ${subId}:`, err);
         }
       }));
+      console.log(`[OE-IA] Final: ${allRecords.length} records for IA-${iaNum}`);
       // Sort by roll_number (USN)
       allRecords.sort((a, b) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || ''));
       setOeIARecords(allRecords);
