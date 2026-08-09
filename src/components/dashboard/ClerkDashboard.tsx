@@ -635,9 +635,10 @@ export default function ClerkDashboard() {
   };
 
   const downloadSubjectTemplate = () => {
-    const csvContent = "branch,semester,subject_name,subject_code\n" +
-      "FY,1,Introduction to Computer Science,CS101\n" +
-      "FY,2,Calculus II,MA202";
+    const csvContent = "branch,semester,subject_name,subject_code,type\n" +
+      "FY,1,Introduction to Computer Science,CS101,T\n" +
+      "FY,2,Open Elective Subject,OE101,OE\n" +
+      "FY,1,Computer Science Lab,CS102L,L";
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -670,6 +671,7 @@ export default function ClerkDashboard() {
       const colCode = resCol('subject_code');
       const colSubName = resCol('subject_name');
       const colSemName = resCol('semester_name', 'semester');
+      const colType = resCol('type');
 
       for (const req of [colCode, colSubName, colSemName]) {
         if (!headers.includes(req)) throw new Error(`Missing required CSV column: ${req}. Expected: branch, semester, subject_name, subject_code`);
@@ -700,6 +702,8 @@ export default function ClerkDashboard() {
         const subject_code = getVal(colCode).toUpperCase();
         const subject_name = getVal(colSubName);
         const semester_name = getVal(colSemName);
+        const typeRaw = (getVal(colType) || 'T').toUpperCase();
+        const subject_type = typeRaw === 'OE' ? 'open_elective' : typeRaw === 'L' ? 'lab' : 'theory';
         
         if (!subject_code || !subject_name || !semester_name) {
           errorCount++;
@@ -720,6 +724,7 @@ export default function ClerkDashboard() {
           subject_name,
           semester_id: sem.id,
           department_id: selectedDeptId,
+          subject_type,
         };
 
         const { error } = await supabase.from('subjects').insert(subjectData);

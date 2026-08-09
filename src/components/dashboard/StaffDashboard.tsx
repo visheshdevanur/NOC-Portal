@@ -594,9 +594,10 @@ export default function StaffDashboard() {
 
   const downloadSubjectTemplate = () => {
     const csvContent = "data:text/csv;charset=utf-8," + 
-      "subject_code,subject_name,semester_name\n" +
-      "CS101,Introduction to Computer Science,Semester 1\n" +
-      "MA202,Calculus II,Semester 2";
+      "subject_code,subject_name,semester_name,type\n" +
+      "CS101,Introduction to Computer Science,Semester 1,T\n" +
+      "OE101,Open Elective Subject,Semester 2,OE\n" +
+      "CS102L,Computer Science Lab,Semester 1,L";
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -652,6 +653,8 @@ export default function StaffDashboard() {
         const subject_code = getVal('subject_code').toUpperCase();
         const subject_name = getVal('subject_name');
         const semester_name = getVal('semester_name');
+        const typeRaw = getVal('type').toUpperCase();
+        const subject_type = typeRaw === 'OE' ? 'open_elective' : typeRaw === 'L' ? 'lab' : 'theory';
         
         if (!subject_code || !subject_name || !semester_name) {
           errorCount++;
@@ -672,6 +675,7 @@ export default function StaffDashboard() {
           subject_name,
           semester_id: sem.id,
           department_id: profile.department_id,
+          subject_type,
         };
 
         const { error } = await supabase.from('subjects').insert(subjectData);
