@@ -205,13 +205,27 @@ export default function FacultyDashboard() {
       // Build set of student IDs enrolled under THIS teacher for OE subjects
       const myOEStudentIds = new Set(oeStudents.map(s => s.student_id));
 
+      // Collect ALL unique subject IDs to search: teacher's OE subject IDs +
+      // the subject_ids from each OE student's enrollment (COE may have saved
+      // IA data under a different department's OE subject)
+      const enrolledSubjectIds = new Set(oeStudents.map(s => s.subject_id).filter(Boolean));
+      const allOESubjectIds = [...new Set([...oeSubjectIds, ...enrolledSubjectIds])];
+
       // Fetch IA data for all OE subjects in parallel
       const allRecords: IARecord[] = [];
-      await Promise.all(oeSubjectIds.map(async (subId) => {
+      const seenKeys = new Set<string>();
+      await Promise.all(allOESubjectIds.map(async (subId) => {
         try {
           const records = await getIAAttendanceForSubject(subId, user.id);
           const filtered = (records as any[]).filter(r => r.ia_number === iaNum && myOEStudentIds.has(r.student_id));
-          allRecords.push(...(filtered as unknown as IARecord[]));
+          // Deduplicate by student_id (a student might appear in multiple subject queries)
+          filtered.forEach(r => {
+            const key = `${r.student_id}_${r.ia_number}`;
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key);
+              allRecords.push(r as unknown as IARecord);
+            }
+          });
         } catch { /* skip failed */ }
       }));
       // Sort by roll_number (USN)
