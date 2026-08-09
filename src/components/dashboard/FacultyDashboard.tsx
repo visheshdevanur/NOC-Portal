@@ -545,12 +545,33 @@ export default function FacultyDashboard() {
     const pct = parseInt(pctString);
     if (isNaN(pct) && pctString !== '') return;
     let newPct = isNaN(pct) ? null : Math.min(100, Math.max(0, pct));
-    // Preview badge: only attendance check here (IA checked on save)
-    const previewStatus = (newPct !== null && newPct < 85) ? 'rejected' : (newPct !== null && newPct >= 85) ? 'pending' : undefined;
+    // Live recalculate status + remarks
     setStudents(prev => prev.map(s => {
       if (s.id !== id) return s;
       const updated = { ...s, attendance_pct: newPct };
-      if (previewStatus) updated.status = previewStatus;
+      if (newPct == null) return updated;
+
+      // Lab detection
+      const st = ((s as any).subjects?.subject_type || '').toLowerCase().trim();
+      const sn = ((s as any).subjects?.subject_name || '').toLowerCase();
+      const sc = ((s as any).subjects?.subject_code || '').toLowerCase();
+      const isLab = st === 'lab' || st === 'practical' ||
+        (!st && (sn.includes('lab') || sn.includes('practical') || sn.includes('workshop') || sc.endsWith('l') || sc.endsWith('lab')));
+
+      // IA check from cached data
+      const ias = facultyData?.ias || [];
+      const iaPresentCount = ias.filter((ia: any) => ia.subject_id === s.subject_id && ia.student_id === s.student_id && ia.is_present).length;
+      const attendanceOk = newPct >= 85;
+      const iaOk = isLab ? true : iaPresentCount >= 2;
+      const assignmentOk = s.assignment_status !== 'pending';
+
+      const issues: string[] = [];
+      if (!attendanceOk) issues.push(`Low Attendance (${newPct}% < 85%)`);
+      if (!iaOk) issues.push(`Insufficient IA Attendance (${iaPresentCount}/2 required)`);
+      if (!assignmentOk) issues.push('Assignment not submitted');
+
+      updated.status = issues.length === 0 ? 'completed' : 'rejected';
+      updated.remarks = issues.join(' | ') || '';
       return updated;
     }));
   };
@@ -567,33 +588,35 @@ export default function FacultyDashboard() {
       
       const pct = Math.min(100, Math.max(0, enrollment.attendance_pct || 0));
 
+      // Detect if this is a lab subject
+      const subType = ((enrollment as any).subjects?.subject_type || '').toLowerCase().trim();
+      const subName = ((enrollment as any).subjects?.subject_name || '').toLowerCase();
+      const subCode = ((enrollment as any).subjects?.subject_code || '').toLowerCase();
+      const isLab = subType === 'lab' || subType === 'practical' ||
+        (!subType && (subName.includes('lab') || subName.includes('practical') || subName.includes('workshop') || subCode.endsWith('l') || subCode.endsWith('lab')));
+
       // Fetch IA data fresh from DB — query by subject_ids to include COE-uploaded records
       const freshIAs = await getTeacherIAAttendance(user!.id, [enrollment.subject_id]) || [];
       const subjectIAs = freshIAs.filter((ia: any) => ia.subject_id === enrollment.subject_id);
       const iaPresentCount = subjectIAs.filter((ia: any) => ia.student_id === enrollment.student_id && ia.is_present).length;
 
-      // BOTH conditions ALWAYS required for COMPLETED:
-      // 1. Attendance >= 85%
-      // 2. Minimum 2 IAs present (strictly enforced regardless of IAs conducted count)
       const attendanceOk = pct >= 85;
-      const iaOk = iaPresentCount >= 2;
+      const iaOk = isLab ? true : iaPresentCount >= 2; // Lab subjects don't need IA
+      const assignmentOk = enrollment.assignment_status !== 'pending';
 
       let status: string;
-      let remarks: string;
+      const issues: string[] = [];
 
-      if (attendanceOk && iaOk) {
+      if (!attendanceOk) issues.push(`Low Attendance (${pct}% < 85%)`);
+      if (!iaOk) issues.push(`Insufficient IA Attendance (${iaPresentCount}/2 required)`);
+      if (!assignmentOk) issues.push('Assignment not submitted');
+
+      if (issues.length === 0) {
         status = 'completed';
-        remarks = ''; // No remarks for cleared students
-      } else if (!attendanceOk && !iaOk) {
-        status = 'rejected';
-        remarks = `Low Attendance (<85%) & Insufficient IA Attendance (${iaPresentCount}/2 required)`;
-      } else if (!attendanceOk) {
-        status = 'rejected';
-        remarks = `Low Attendance (<85%)`;
       } else {
         status = 'rejected';
-        remarks = `Insufficient IA Attendance (${iaPresentCount}/2 required)`;
       }
+      const remarks = issues.join(' | ');
 
       await markFacultySubjectStatus(id, status, pct, remarks);
       setStudents(prev => prev.map(s => s.id === id ? { ...s, status, remarks, attendance_pct: pct } : s));
