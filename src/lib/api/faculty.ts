@@ -187,7 +187,6 @@ export const getTeacherSubjectsList = async (teacherId: string) => {
         ')',
       )
       .eq('teacher_id', teacherId)
-      .order('subject_code')
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw error;
@@ -203,7 +202,7 @@ export const getTeacherSubjectsList = async (teacherId: string) => {
       subjectMap.set(row.subject_id, row.subjects);
     }
   });
-  return Array.from(subjectMap.values());
+  return Array.from(subjectMap.values()).sort((a, b) => (a.subject_code || '').localeCompare(b.subject_code || ''));
 };
 
 export const getIACountForSubject = async (subjectId: string, _teacherId: string, section?: string | null) => {
