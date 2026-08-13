@@ -80,6 +80,17 @@ export const markFacultySubjectStatus = async (
     if (error.code === 'PGRST116') throw new Error('Enrollment not found or you are not authorized to modify it.');
     throw error;
   }
+
+  // Sync to co-teachers: update all other enrollment rows for the same student+subject
+  if (data) {
+    await supabase
+      .from('subject_enrollment')
+      .update(updatePayload)
+      .eq('student_id', data.student_id)
+      .eq('subject_id', data.subject_id)
+      .neq('teacher_id', user.id);
+  }
+
   const studentName = data?.profiles?.full_name || 'student';
   logActivity(status === 'completed' ? 'Cleared Subject' : 'Rejected Subject', `Marked attendance ${attendancePct}% for ${studentName}`);
   return data;
@@ -137,13 +148,25 @@ export const batchMarkFacultyAttendance = async (
           payload.attendance_fee_verified = false;
         }
 
-        const { error } = await supabase
+        const { data: updated, error } = await supabase
           .from('subject_enrollment')
           .update(payload)
           .eq('id', enrollmentId)
-          .eq('teacher_id', user.id); // RLS + ownership check
+          .eq('teacher_id', user.id)
+          .select('student_id, subject_id')
+          .single();
 
         if (error) throw error;
+
+        // Sync to co-teachers
+        if (updated) {
+          await supabase
+            .from('subject_enrollment')
+            .update(payload)
+            .eq('student_id', updated.student_id)
+            .eq('subject_id', updated.subject_id)
+            .neq('teacher_id', user.id);
+        }
       }),
     );
 
