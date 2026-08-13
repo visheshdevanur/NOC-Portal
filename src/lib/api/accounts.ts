@@ -74,7 +74,8 @@ export const getStaffStudentDues = async (departmentId: string) => {
   const { data, error } = await supabase
     .from('student_dues')
     .select('*, profiles!inner(full_name, section, roll_number, department_id, email, semesters(name))')
-    .eq('profiles.department_id', departmentId);
+    .eq('profiles.department_id', departmentId)
+    .order('roll_number');
   if (error) throw error;
   return data;
 };

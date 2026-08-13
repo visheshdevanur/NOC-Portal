@@ -329,17 +329,12 @@ export const assignTeacherToSelectedStudents = async (subjectId: string, section
       .select('id')
       .eq('student_id', studentId)
       .eq('subject_id', subjectId)
+      .eq('teacher_id', teacherId)
       .maybeSingle();
     
     if (existing) {
-      // Update teacher_id on existing enrollment
-      const { data: updated } = await supabase
-        .from('subject_enrollment')
-        .update({ teacher_id: teacherId })
-        .eq('id', existing.id)
-        .select()
-        .single();
-      if (updated) results.push(updated);
+      // Already enrolled with this teacher — skip
+      results.push(existing);
       continue;
     }
 

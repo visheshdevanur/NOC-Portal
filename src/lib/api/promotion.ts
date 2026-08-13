@@ -157,31 +157,51 @@ export const bulkAssignSections = async (assignments: { student_id: string; sect
 export const bulkAssignSectionsCSV = async (departmentId: string, rows: { roll_number: string; section: string }[]) => {
   let updated = 0;
   const errors: string[] = [];
+
+  // Pre-fetch all student profiles in this department in ONE query
+  const rollNumbers = rows.map(r => r.roll_number).filter(Boolean);
+  const { data: allStudents, error: fetchErr } = await supabase
+    .from('profiles')
+    .select('id, roll_number')
+    .eq('department_id', departmentId)
+    .eq('role', 'student')
+    .in('roll_number', rollNumbers);
+  if (fetchErr) throw fetchErr;
+
+  // Build roll_number → id map
+  const rollToId = new Map((allStudents || []).map(s => [s.roll_number, s.id]));
+
+  // Group updates by section for batch processing
+  const sectionGroups = new Map<string, string[]>(); // section → student_ids
   for (let i = 0; i < rows.length; i++) {
     const { roll_number, section } = rows[i];
-    try {
-      const { data: students, error: findErr } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('department_id', departmentId)
-        .eq('roll_number', roll_number)
-        .eq('role', 'student')
-        .limit(1);
-      if (findErr) throw findErr;
-      if (!students || students.length === 0) {
-        errors.push(`Row ${i + 1}: Student '${roll_number}' not found`);
-        continue;
-      }
+    const studentId = rollToId.get(roll_number);
+    if (!studentId) {
+      errors.push(`Row ${i + 1}: Student '${roll_number}' not found`);
+      continue;
+    }
+    const sec = section ? section.toUpperCase() : '';
+    if (!sectionGroups.has(sec)) sectionGroups.set(sec, []);
+    sectionGroups.get(sec)!.push(studentId);
+  }
+
+  // Batch update each section group
+  for (const [section, studentIds] of sectionGroups) {
+    const BATCH = 200;
+    for (let b = 0; b < studentIds.length; b += BATCH) {
+      const batch = studentIds.slice(b, b + BATCH);
       const { error: upErr } = await supabase
         .from('profiles')
-        .update({ section: section ? section.toUpperCase() : null })
-        .eq('id', students[0].id);
-      if (upErr) throw upErr;
-      updated++;
-    } catch (err: any) {
-      errors.push(`Row ${i + 1} (${roll_number}): ${err.message}`);
+        .update({ section: section || null })
+        .in('id', batch);
+      if (upErr) {
+        errors.push(`Batch update error for section ${section}: ${upErr.message}`);
+      } else {
+        updated += batch.length;
+      }
     }
   }
+
   logActivity('CSV Section Assignment', `Assigned sections to ${updated}/${rows.length} students in department`);
   return { updated, errors };
 };

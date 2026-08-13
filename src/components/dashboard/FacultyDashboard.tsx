@@ -1256,7 +1256,7 @@ export default function FacultyDashboard() {
                   {/* All 3 IAs */}
                   <div className="space-y-3">
                     {iaNumbers.map(iaNum => {
-                      const records = iasByNumber[iaNum] || [];
+                      const records = [...(iasByNumber[iaNum] || [])].sort((a, b) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || ''));
                       const presentCount = records.filter(r => r.is_present).length;
                       const absentCount = records.filter(r => !r.is_present).length;
                       const hasData = records.length > 0;
@@ -1521,7 +1521,9 @@ export default function FacultyDashboard() {
               }
 
               // LEVEL 5: Students table for selected subject
-              const subjectStudents = secItems.filter((e: any) => `${e.subjects?.subject_code || ''} — ${e.subjects?.subject_name || 'Unknown'}` === asnSubject);
+              const subjectStudents = secItems
+                .filter((e: any) => `${e.subjects?.subject_code || ''} — ${e.subjects?.subject_name || 'Unknown'}` === asnSubject)
+                .sort((a: any, b: any) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || ''));
               if (subjectStudents.length === 0) return <div className="p-8 text-center text-muted-foreground">No students found.</div>;
               const submitted = subjectStudents.filter((e: any) => e.assignment_status !== 'pending').length;
               const pending = subjectStudents.length - submitted;

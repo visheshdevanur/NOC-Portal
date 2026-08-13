@@ -309,7 +309,7 @@ export default function AdminDashboard() {
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'principal', 'librarian', 'fyc', 'coe', 'oe', 'aicte']).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'principal', 'librarian', 'fyc', 'coe', 'oe', 'aicte']).order('full_name');
       if (error) throw error;
       setUsers(data || []);
     } catch (err: any) { console.error('Failed to fetch users:', err); }
@@ -669,7 +669,7 @@ export default function AdminDashboard() {
           .from('profiles')
           .select(selectFields)
           .neq('role', 'student')
-          .order('created_at', { ascending: false })
+          .order('full_name')
           .range(staffOffset, staffOffset + 999);
         if (staffBatch.error) throw staffBatch.error;
         allStaff = [...allStaff, ...(staffBatch.data || [])];
@@ -680,7 +680,7 @@ export default function AdminDashboard() {
       let allStudents: any[] = [];
       let offset = 0;
       while (true) {
-        const batch = await supabase.from('profiles').select(selectFields).eq('role', 'student').order('created_at', { ascending: false }).range(offset, offset + 999);
+        const batch = await supabase.from('profiles').select(selectFields).eq('role', 'student').order('roll_number').range(offset, offset + 999);
         if (batch.error) throw batch.error;
         allStudents = [...allStudents, ...(batch.data || [])];
         if (!batch.data || batch.data.length < 1000) break;

@@ -680,9 +680,9 @@ export default function ClerkDashboard() {
       // Fetch fresh semesters directly to ensure accuracy
       const fetchedSemesters = await import('../../lib/api').then(m => m.getSemestersByDepartment(selectedDeptId));
       
-      let successCount = 0;
       let errorCount = 0;
       let errorDetails: string[] = [];
+      const validSubjects: any[] = [];
 
       for (let i = 1; i < lines.length; i++) {
         // Parse simple CSV row
@@ -716,23 +716,31 @@ export default function ClerkDashboard() {
         if (!sem) {
           errorCount++;
           errorDetails.push(`Row ${i + 1} (${subject_code}): Target semester "${semester_name}" not found in database.`);
-          continue; // Target semester not found
+          continue;
         }
 
-        const subjectData = {
+        validSubjects.push({
           subject_code,
           subject_name,
           semester_id: sem.id,
           department_id: selectedDeptId,
           subject_type,
-        };
+        });
+      }
 
-        const { error } = await supabase.from('subjects').insert(subjectData);
-        if (error) { 
-           errorCount++;
-           errorDetails.push(`Row ${i + 1} (${subject_code}): DB Error - ${error.message}`);
-        } else {
-           successCount++;
+      // Batch insert all valid subjects at once
+      let successCount = 0;
+      if (validSubjects.length > 0) {
+        const BATCH_SIZE = 500;
+        for (let b = 0; b < validSubjects.length; b += BATCH_SIZE) {
+          const batch = validSubjects.slice(b, b + BATCH_SIZE);
+          const { error, data } = await supabase.from('subjects').insert(batch).select('id');
+          if (error) {
+            errorCount += batch.length;
+            errorDetails.push(`Batch insert error: ${error.message}`);
+          } else {
+            successCount += data?.length || batch.length;
+          }
         }
       }
       

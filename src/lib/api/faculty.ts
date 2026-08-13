@@ -31,6 +31,7 @@ export const getFacultyPendingStudents = async (facultyId: string) => {
         'subjects(*, departments!subjects_department_id_fkey(name))',
       )
       .eq('teacher_id', facultyId)
+      .order('created_at')
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw error;
@@ -186,6 +187,7 @@ export const getTeacherSubjectsList = async (teacherId: string) => {
         ')',
       )
       .eq('teacher_id', teacherId)
+      .order('subject_code')
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw error;

@@ -98,10 +98,12 @@ export default function OEDashboard({ teacherId }: Props) {
       if (error) throw error;
 
       // Attach subject details client-side
-      const enriched = (data || []).map((row: any) => ({
-        ...row,
-        subjects: subjectMap.get(row.subject_id) || null,
-      }));
+      const enriched = (data || [])
+        .map((row: any) => ({
+          ...row,
+          subjects: subjectMap.get(row.subject_id) || null,
+        }))
+        .sort((a: any, b: any) => (a.profiles?.roll_number || '').localeCompare(b.profiles?.roll_number || ''));
       setOEStudents(enriched as unknown as OEStudent[]);
     } catch (err) { console.error('OE fetch error:', err); }
     setLoading(false);
