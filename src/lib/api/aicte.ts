@@ -22,7 +22,7 @@ export type AicteClearance = {
 };
 
 /** Fetch all students with AICTE clearance status (for AICTE dashboard) */
-export const getAllAicteClearances = async (): Promise<AicteClearance[]> => {
+export const getAllAicteClearances = async (tenantId?: string | null): Promise<AicteClearance[]> => {
   const PAGE_SIZE = 1000;
 
   const fetchAllPaged = async (table: string, select: string, filters?: (q: any) => any) => {
@@ -44,8 +44,12 @@ export const getAllAicteClearances = async (): Promise<AicteClearance[]> => {
   // Fetch students and AICTE records in parallel
   const [allStudents, allRecords] = await Promise.all([
     fetchAllPaged('profiles',
-      'id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name)',
-      q => q.eq('role', 'student').order('roll_number')
+      'id, full_name, section, roll_number, department_id, departments!profiles_department_id_fkey(name), semester_id, semesters!profiles_semester_id_fkey(name), tenant_id',
+      q => {
+        let query = q.eq('role', 'student').order('roll_number');
+        if (tenantId) query = query.eq('tenant_id', tenantId);
+        return query;
+      }
     ),
     fetchAllPaged('aicte_clearance', 'id, student_id, status, updated_by, updated_at'),
   ]);

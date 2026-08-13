@@ -35,11 +35,12 @@ export default function AicteDashboard() {
   const [selectedSem, setSelectedSem] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
 
-  // Fetch all students with AICTE status
+  // Fetch all students with AICTE status (filtered by tenant)
   const { data: aicteData, isLoading: loading, refetch } = useQuery({
-    queryKey: ['aicteClearances'],
-    queryFn: getAllAicteClearances,
+    queryKey: ['aicteClearances', profile?.tenant_id],
+    queryFn: () => getAllAicteClearances(profile?.tenant_id),
     refetchInterval: 30_000,
+    enabled: !!profile,
   });
   const records = (aicteData || []) as AicteRecord[];
 

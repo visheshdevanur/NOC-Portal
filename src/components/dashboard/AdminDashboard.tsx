@@ -309,7 +309,7 @@ export default function AdminDashboard() {
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'principal', 'librarian', 'fyc', 'coe', 'oe']).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('profiles').select('*').in('role', ['hod', 'admin', 'accounts', 'principal', 'librarian', 'fyc', 'coe', 'oe', 'aicte']).order('created_at', { ascending: false });
       if (error) throw error;
       setUsers(data || []);
     } catch (err: any) { console.error('Failed to fetch users:', err); }
@@ -1030,6 +1030,7 @@ export default function AdminDashboard() {
     staff: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
     hod: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     admin: 'bg-red-500/10 text-red-600 dark:text-red-400',
+    aicte: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
 
   };
 
