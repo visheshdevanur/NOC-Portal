@@ -299,19 +299,23 @@ export default function StudentDashboard() {
     return 'theory';
   };
 
-  // A subject is "faculty cleared" when ANY of these is true:
-  // 1. Faculty marked it 'completed' (attendance >= 85%) AND no outstanding fine
-  // 2. The attendance fine has been paid (verified by HDFC/cash)
-  // ALSO: assignment_status must be 'submitted' (not 'pending')
+  // A subject is "faculty cleared" when ALL of these are true:
+  // 1. Attendance >= 85% OR the attendance fine has been paid (verified)
+  // 2. Faculty marked it 'completed' OR fine verified
+  // 3. No outstanding unpaid fine
+  // 4. Assignment is submitted (not 'pending')
   const allFacultyCleared = useMemo(() => enrollments.length > 0 && enrollments.every(
     e => {
-      const isCleared = (e.status === 'completed' || e.attendance_fee_verified === true) && ((e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true) && (e.assignment_status !== 'pending');
-      if (isCleared) return true;
-      // Lab subjects: skip IA-related rejections (labs don't have IA)
+      // Attendance must be >= 85% OR fine must be paid — no exceptions
+      const attendanceOk = (e.attendance_pct ?? 0) >= 85 || e.attendance_fee_verified === true;
+      const statusOk = e.status === 'completed' || e.attendance_fee_verified === true;
+      const fineOk = (e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true;
+      const assignOk = e.assignment_status !== 'pending';
+
+      if (attendanceOk && statusOk && fineOk && assignOk) return true;
+
+      // Lab subjects: same rules apply
       if (getSubjectType(e) === 'lab') {
-        const attendanceOk = (e.attendance_pct ?? 0) >= 85 || e.attendance_fee_verified === true;
-        const fineOk = (e.attendance_fee ?? 0) === 0 || e.attendance_fee_verified === true;
-        const assignOk = e.assignment_status !== 'pending';
         return attendanceOk && fineOk && assignOk;
       }
       return false;
