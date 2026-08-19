@@ -1,6 +1,6 @@
 # 🎓 NOC Portal — No Due Clearance Management System
 
-> A full-stack, multi-tenant SaaS platform for managing student No Due Certificates (NDC), attendance fines, library dues, and HDFC payment processing for higher-education institutions.
+> A full-stack, multi-tenant SaaS platform for managing student No Due Certificates (NDC), attendance fines, library dues, IA attendance tracking, and HDFC payment processing for higher-education institutions.
 
 **Live Demo:** [mitmysore.in/nodue](https://mitmysore.in/nodue)
 
@@ -29,32 +29,48 @@
 
 The **NOC Portal** (No Due Clearance Portal) is an enterprise-grade, multi-tenant web application built for educational institutions. It digitizes and automates the end-to-end process of issuing No Due Certificates — replacing paper-based clearance workflows with a structured, role-gated digital pipeline.
 
-The system tracks student dues across **attendance fines**, **library dues**, and **miscellaneous charges**, collects payments via **HDFC SmartGateway**, and issues clearance through a structured multi-stage approval workflow involving faculty, HODs, librarians, accounts staff, the COE, and the principal.
+The system tracks student dues across **attendance fines**, **library dues**, **IA attendance**, and **miscellaneous charges**, collects payments via **HDFC SmartGateway**, and issues clearance through a structured multi-stage approval workflow involving faculty, AICTE coordinators, HODs, librarians, accounts staff, the COE, and the principal.
 
 ---
 
 ## Key Features
 
 ### 🏫 Clearance Workflow
-- Multi-stage clearance pipeline (Faculty → HOD → FYC → Librarian → Accounts → COE → Principal)
+- Multi-stage clearance pipeline (Faculty → AICTE → Librarian → Accounts → HOD/FYC → Principal)
 - Automatic demotion when new dues are added post-clearance
 - Real-time stage tracking visible to students on their dashboard
+- Hard attendance gate: students with <85% attendance AND no paid fine are blocked from clearance
 - Downloadable No Due Certificate (PDF) upon full clearance
 
 ### 💰 Dues & Payments
 - **Attendance Fine Management** — auto-calculated fines based on attendance shortfall, configurable per-category thresholds
 - **Library Dues** — per-student book tracking with overdue fine calculation
-- **Miscellaneous Dues** — manual due assignment by clerks/staff with bulk support
-- **HDFC SmartGateway** — fully integrated payment flow with webhook-based confirmation
+- **Miscellaneous Dues** — manual due assignment by clerks/staff with bulk CSV support
+- **HDFC SmartGateway** — fully integrated payment flow with webhook-based confirmation and HMAC verification
 - PDF payment receipts generated client-side via `html2pdf.js`
 - Bulk payment orders and batch-payment RPCs for mass processing
+- Amount tamper detection and duplicate transaction prevention
+
+### 📝 Internal Assessments & Attendance
+- Faculty-managed IA attendance tracking per subject
+- Minimum 2 IA attendance required per subject for clearance
+- Multi-teacher support — same subject+section can be assigned to multiple teachers
+- Co-teacher sync — changes by one teacher auto-reflect to all co-teachers
+- Bulk CSV/Excel attendance upload with parallel chunked processing
+
+### 🎓 AICTE Compliance
+- AICTE Activity Coordinator role for tracking student activity status
+- Tenant-scoped AICTE dashboard for managing student clearances
+- Bulk CSV upload for AICTE status with RPC batching
 
 ### 👥 User Management
-- Bulk CSV import of students, faculty, and staff
-- Role-based access control (RBAC) across 10+ distinct roles
+- Bulk CSV import of students, faculty, and staff with batch DB operations
+- Role-based access control (RBAC) across 12+ distinct roles
 - Parallel chunked bulk user creation via Edge Functions (bypasses timeout limits)
+- Multi-teacher subject assignment — same subject+section can have multiple teachers
 - Imported teacher visibility via junction table (`imported_teachers`)
 - Password reset flow with session-aware routing
+- Secure email change via Edge Function
 
 ### 📊 Reporting & Logs
 - Per-role activity logs (Admin, HOD, Staff, FYC)
@@ -75,6 +91,7 @@ The system tracks student dues across **attendance fines**, **library dues**, an
 - Drag-and-drop resizable panels (via `react-rnd`)
 - Lazy-loaded dashboard routes for fast initial load
 - Error Boundary and Tab-Error Boundary for resilient rendering
+- Global sorting: students by roll number, staff by name (alphabetical)
 
 ---
 
@@ -82,7 +99,7 @@ The system tracks student dues across **attendance fines**, **library dues**, an
 
 | Layer | Technology |
 |---|---|
-| **Frontend Framework** | React 19 + TypeScript |
+| **Frontend Framework** | React 19 + TypeScript 5.9 |
 | **Build Tool** | Vite 8 |
 | **Styling** | Tailwind CSS v3 + custom CSS variables |
 | **Routing** | React Router v7 |
@@ -92,10 +109,10 @@ The system tracks student dues across **attendance fines**, **library dues**, an
 | **Edge Functions** | Supabase Edge Functions (Deno runtime) |
 | **Payment Gateway** | HDFC SmartGateway |
 | **PDF Generation** | html2pdf.js + jsPDF |
-| **CSV Parsing** | PapaParse |
+| **CSV/Excel Parsing** | PapaParse + xlsx |
 | **Icons** | Lucide React |
 | **Testing** | Vitest + Testing Library + happy-dom |
-| **Deployment** | Vercel / Netlify |
+| **Deployment** | Vercel / Netlify / Apache |
 
 ---
 
@@ -123,7 +140,7 @@ The system tracks student dues across **attendance fines**, **library dues**, an
 │  │              PostgreSQL 15 Database                      ││
 │  │  • Row-Level Security (RLS) on all tables                ││
 │  │  • Tenant isolation via tenant_id                        ││
-│  │  • 100+ migrations, triggers, and stored procedures      ││
+│  │  • 113 migrations, triggers, and stored procedures       ││
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
                            │
@@ -150,12 +167,15 @@ The system implements a hierarchical RBAC model with the following roles:
 | **clerk** | Administrative clerk | Manual dues assignment, student management |
 | **librarian** | Library staff | Library dues management, clearance approval |
 | **accounts** | Accounts department | Payment verification, financial dues |
+| **coe** | Controller of Examinations | Hall ticket management, exam clearance |
+| **oe** | Open Elective Coordinator | OE subject coordination, attendance management |
+| **aicte** | AICTE Activity Coordinator | Student activity compliance tracking |
 | **student** | Enrolled student | View dues, make payments, download NDC |
 
 ### Clearance Pipeline
 
 ```
-Student → Faculty → HOD → [FYC if 1st year] → Librarian → Accounts → Principal
+Student → Faculty → AICTE → Librarian → Accounts → HOD/FYC → Principal
 ```
 
 ---
@@ -192,9 +212,13 @@ NOC/
 │   │   │   ├── ClerkDashboard.tsx      # Clerk operations
 │   │   │   ├── AccountsDashboard.tsx   # Accounts management
 │   │   │   ├── CoeDashboard.tsx        # COE module
+│   │   │   ├── OECoordinatorDashboard.tsx # OE Coordinator
+│   │   │   ├── AicteDashboard.tsx      # AICTE compliance
 │   │   │   └── shared/
 │   │   │       ├── AttendanceFinesTab.tsx
+│   │   │       ├── OEDashboard.tsx
 │   │   │       ├── OtherDuesTab.tsx
+│   │   │       ├── DashboardPrimitives.tsx
 │   │   │       └── StudentDuesOverviewTab.tsx
 │   │   ├── layout/                # Shell layout with navbar
 │   │   ├── ThemeProvider.tsx      # Dark/light/system theme
@@ -206,6 +230,14 @@ NOC/
 │       ├── useTenant.tsx          # Tenant metadata hook
 │       ├── database.types.ts      # Auto-generated DB types
 │       ├── api/                   # API layer (organized by domain)
+│       │   ├── faculty.ts         # Faculty clearance & attendance
+│       │   ├── admin.ts           # Admin operations & teacher assignment
+│       │   ├── hod.ts             # HOD operations
+│       │   ├── accounts.ts        # Accounts & college dues
+│       │   ├── library.ts         # Library dues processing
+│       │   ├── promotion.ts       # Student promotion & section assignment
+│       │   ├── aicte.ts           # AICTE compliance
+│       │   └── otherDues.ts       # Miscellaneous dues
 │       ├── hooks/                 # Shared React hooks
 │       ├── errorHandler.ts        # Centralized error handling
 │       ├── invokeWithRetry.ts     # Edge Function retry wrapper
@@ -219,10 +251,11 @@ NOC/
 │   │   ├── hdfc-order-status/     # Payment status polling
 │   │   ├── hdfc-webhook/          # HDFC webhook receiver
 │   │   ├── admin-api/             # Admin RPC proxy
+│   │   ├── change-user-email/     # Secure email updates
 │   │   ├── provision-tenant/      # New tenant setup
 │   │   ├── log-error/             # Platform error logger
 │   │   └── _shared/               # Shared Deno utilities
-│   └── migrations/                # 104 sequential SQL migrations
+│   └── migrations/                # 113 sequential SQL migrations
 ├── public/
 │   └── .htaccess                  # Apache SPA routing fallback
 ├── index.html
@@ -237,7 +270,7 @@ NOC/
 
 ## Database Schema
 
-The PostgreSQL database has **104 sequential migrations** covering:
+The PostgreSQL database has **113 sequential migrations** covering:
 
 ### Core Tables
 
@@ -248,23 +281,28 @@ The PostgreSQL database has **104 sequential migrations** covering:
 | `departments` | Academic departments per tenant |
 | `semesters` | Semester definitions per department |
 | `subjects` | Subject catalog per department |
-| `subject_enrollment` | Student-subject-teacher assignments |
+| `subject_enrollment` | Student-subject-teacher assignments (supports multi-teacher) |
 | `clearance_requests` | Per-student clearance state machine |
 | `student_dues` | Attendance & misc dues per student |
 | `library_dues` | Library-specific dues per student |
+| `other_dues` | Miscellaneous dues per student |
 | `payment_orders` | HDFC payment order tracking |
 | `ia_attendance` | Internal assessment attendance records |
 | `attendance_fine_categories` | Configurable fine slabs per category |
 | `imported_teachers` | Junction table for FYC-imported faculty |
+| `section_teacher_assignments` | Section-teacher-subject assignment mapping |
+| `aicte_student_clearances` | AICTE activity compliance records |
 | `activity_logs` | Role-scoped audit trail |
 | `audit_logs` | Sensitive-mutation audit log |
 | `hall_ticket_templates` | Customizable COE hall ticket layout |
+| `platform_error_logs` | Frontend runtime error tracking |
 
 ### Key Database Patterns
 
 - **Row-Level Security (RLS)** enabled on all tables with tenant-scoped restrictive policies
 - **Triggers** for auto-populating `tenant_id`, auto-creating student dues on enrollment, clearance demotion on new dues
 - **Stored Procedures / RPCs** for bulk operations, atomic payment creation, and promotion/graduation logic
+- **Multi-teacher support** via `UNIQUE(student_id, subject_id, teacher_id)` constraint with co-teacher sync
 - **Performance indexes** on all `tenant_id`, `user_id`, and foreign key columns
 
 ---
@@ -277,10 +315,11 @@ All Edge Functions run on the **Deno runtime** and communicate via the Supabase 
 |---|---|
 | `bulk-create-users` | Creates users in parallel chunks (avoids timeout limits); handles CSV batch imports |
 | `create-user` | Single user creation with role assignment and profile bootstrapping |
-| `create-hdfc-session` | Initiates an HDFC SmartGateway payment session; returns a redirect URL |
-| `hdfc-order-status` | Polls HDFC for payment status; updates `payment_orders` on success |
-| `hdfc-webhook` | Receives HDFC payment webhooks; verifies signature and marks dues as paid |
-| `admin-api` | Proxies privileged admin operations (user deletion, role changes) |
+| `create-hdfc-session` | Initiates an HDFC SmartGateway payment session; computes amount server-side (tamper-proof) |
+| `hdfc-order-status` | Polls HDFC for payment status; validates amounts, detects duplicates, updates `payment_orders` |
+| `hdfc-webhook` | Receives HDFC payment webhooks; verifies HMAC signature and marks dues as paid |
+| `admin-api` | Proxies privileged admin operations (user deletion, role changes, IA data) |
+| `change-user-email` | Secure email address updates for authenticated users |
 | `provision-tenant` | Full tenant onboarding: creates schema seed data for a new institution |
 | `log-error` | Accepts platform error reports from the frontend and stores them in `platform_error_logs` |
 
@@ -301,6 +340,7 @@ Student clicks "Pay"
       │
       ▼
 Frontend calls create-hdfc-session (Edge Function)
+      │  Amount computed SERVER-SIDE from DB (never trusts client)
       │  HDFC credentials stored only in Edge Function secrets
       ▼
 Edge Function creates order → returns payment page URL
@@ -311,6 +351,7 @@ Student redirected to HDFC payment page
       ▼
 HDFC posts webhook → hdfc-webhook Edge Function
       │  Verifies HMAC signature
+      │  Validates amount matches stored order
       ▼
 payment_orders table updated → student_dues marked paid
       │
@@ -324,6 +365,9 @@ PaymentCallback.tsx polls hdfc-order-status → renders receipt
 ### Security Notes
 
 - **No HDFC credentials are ever exposed to the browser.** All API keys (`HDFC_API_KEY`, `HDFC_MERCHANT_ID`, `HDFC_RESELLER_ID`) are stored exclusively as Supabase Edge Function secrets.
+- **Server-side amount computation** — amounts are always derived from database records, never from client input.
+- **Amount tamper detection** — response amounts are compared against stored orders; mismatches are flagged as `TAMPERED`.
+- **Duplicate transaction prevention** — `txn_id` is checked for reuse across orders.
 - Webhook signature is verified using HMAC before any state change.
 - Payment orders are created atomically via an RPC to prevent double-booking.
 
@@ -370,8 +414,8 @@ Accessible at `/nodue/superadmin`, the Super Admin portal is **completely isolat
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-org/noc-portal.git
-cd noc-portal
+git clone https://github.com/visheshdevanur/NOC-Portal.git
+cd NOC-Portal
 ```
 
 ### 2. Install Dependencies
@@ -407,6 +451,7 @@ supabase functions deploy create-hdfc-session
 supabase functions deploy hdfc-order-status
 supabase functions deploy hdfc-webhook
 supabase functions deploy admin-api
+supabase functions deploy change-user-email
 supabase functions deploy provision-tenant
 supabase functions deploy log-error
 ```
@@ -442,6 +487,7 @@ The app is served at `http://localhost:5173/nodue` (base path: `/nodue`).
 |---|---|---|
 | `VITE_SUPABASE_URL` | `.env` | Your Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | `.env` | Supabase anonymous/public key |
+| `VITE_BASE_PATH` | `.env` | Custom base route (default: `/nodue/`) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Function secrets | Service role key for privileged operations |
 | `HDFC_API_KEY` | Edge Function secrets | HDFC merchant API key |
 | `HDFC_MERCHANT_ID` | Edge Function secrets | HDFC merchant ID |
@@ -497,6 +543,7 @@ The NOC Portal was designed with security as a first-class concern:
 - **Row-Level Security (RLS)** — All database tables have RLS enabled. No data is accessible without appropriate policies.
 - **Tenant Isolation** — Restrictive RLS policies ensure users from one institution can **never** access another institution's data.
 - **No frontend secrets** — Payment credentials live only in Edge Function secrets. The browser never sees them.
+- **Server-side amount computation** — Payment amounts are computed from DB records, not client input. Tampered amounts are flagged.
 - **Input Sanitization** — All CSV uploads and user inputs pass through `csvSanitizer.ts` and `sanitize.ts` before hitting the database.
 - **Search Path Hardening** — All stored procedures set `search_path = public, pg_catalog` explicitly to prevent schema injection.
 - **HMAC Webhook Verification** — HDFC webhook payloads are verified with HMAC signatures before state changes.
