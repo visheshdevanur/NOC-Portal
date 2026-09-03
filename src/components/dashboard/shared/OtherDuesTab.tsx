@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, X, CheckCircle2, Upload, Download, Trash2, Banknote, AlertCircle, Plus } from 'lucide-react';
+import Papa from 'papaparse';
 import { supabase } from '../../../lib/supabase';
 import {
   getOtherDuesForDept,
@@ -187,70 +188,75 @@ export default function OtherDuesTab({ departmentId, role, userId, tenantId }: O
     setUploadResult(null);
     setErrorMsg(null);
 
-    try {
-      const text = await file.text();
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const data = results.data as any[];
+          if (data.length === 0) {
+            setErrorMsg('CSV file is empty or invalid.');
+            setUploading(false);
+            return;
+          }
 
-      if (lines.length < 2) {
-        setErrorMsg('CSV must have a header row and at least one data row.');
-        setUploading(false);
-        return;
-      }
+          // Normalize keys for case-insensitive matching
+          const usnKey = Object.keys(data[0]).find(k => ['usn', 'roll_number', 'roll number'].includes(k.trim().toLowerCase()));
+          const amountKey = Object.keys(data[0]).find(k => ['amount', 'dues amount', 'dues_amount', 'fine'].includes(k.trim().toLowerCase()));
+          const remarksKey = Object.keys(data[0]).find(k => ['remarks', 'remark', 'reason'].includes(k.trim().toLowerCase()));
 
-      // Parse header
-      const header = lines[0].toLowerCase().replace(/"/g, '');
-      const cols = header.split(',').map(c => c.trim());
-      const usnIdx = cols.findIndex(c => c === 'usn' || c === 'roll_number' || c === 'roll number');
-      const amountIdx = cols.findIndex(c => c === 'amount' || c === 'dues amount' || c === 'dues_amount' || c === 'fine');
-      const remarksIdx = cols.findIndex(c => c === 'remarks' || c === 'remark' || c === 'reason');
+          if (!usnKey || !amountKey) {
+            setErrorMsg('CSV must have "USN" and "Amount" columns. Optional: "Remarks" column.');
+            setUploading(false);
+            return;
+          }
 
-      if (usnIdx === -1 || amountIdx === -1) {
-        setErrorMsg('CSV must have "USN" and "Amount" columns. Optional: "Remarks" column.');
-        setUploading(false);
-        return;
-      }
+          const records: { usn: string; amount: number; remarks: string }[] = [];
+          for (const row of data) {
+            const usn = row[usnKey]?.trim();
+            // Remove commas from amount strings like "1,500.00" before parsing
+            const rawAmount = row[amountKey]?.replace(/,/g, '');
+            const amount = parseFloat(rawAmount);
+            const remarks = remarksKey ? (row[remarksKey] || '').trim() : '';
 
-      // Parse rows
-      const records: { usn: string; amount: number; remarks: string }[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-        const usn = vals[usnIdx]?.trim();
-        const amount = parseFloat(vals[amountIdx]);
-        const remarks = remarksIdx >= 0 ? (vals[remarksIdx] || '') : '';
+            if (!usn || isNaN(amount)) continue;
+            records.push({ usn, amount, remarks });
+          }
 
-        if (!usn || isNaN(amount)) {
-          continue; // Skip invalid rows
+          if (records.length === 0) {
+            setErrorMsg('No valid rows found in CSV. Check format: USN, Amount, Remarks');
+            setUploading(false);
+            return;
+          }
+
+          // Get tenant_id
+          let tenantId: string | null = null;
+          if (userId) {
+            const { data: prof } = await supabase.from('profiles').select('tenant_id').eq('id', userId).single();
+            tenantId = prof?.tenant_id || null;
+          }
+
+          const result = await bulkUpsertOtherDues(records, departmentId || null, userId || '', tenantId);
+
+          setUploadResult(result);
+          if (result.success > 0) {
+            setSuccessMsg(`✅ CSV processed: ${result.success} dues added/updated.`);
+            setTimeout(() => setSuccessMsg(null), 8000);
+          }
+          fetchDues();
+        } catch (err: any) {
+          setErrorMsg('CSV processing failed: ' + (err.message || 'Unknown error'));
+        } finally {
+          setUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
         }
-        records.push({ usn, amount, remarks });
-      }
-
-      if (records.length === 0) {
-        setErrorMsg('No valid rows found in CSV. Check format: USN, Amount, Remarks');
+      },
+      error: (error) => {
+        setErrorMsg('Error parsing CSV: ' + error.message);
         setUploading(false);
-        return;
+        if (fileInputRef.current) fileInputRef.current.value = '';
       }
-
-      // Get tenant_id
-      let tenantId: string | null = null;
-      if (userId) {
-        const { data: prof } = await supabase.from('profiles').select('tenant_id').eq('id', userId).single();
-        tenantId = prof?.tenant_id || null;
-      }
-
-      const result = await bulkUpsertOtherDues(records, departmentId || null, userId || '', tenantId);
-
-      setUploadResult(result);
-      if (result.success > 0) {
-        setSuccessMsg(`✅ CSV processed: ${result.success} dues added/updated.`);
-        setTimeout(() => setSuccessMsg(null), 8000);
-      }
-      fetchDues();
-    } catch (err: any) {
-      setErrorMsg('CSV processing failed: ' + (err.message || 'Unknown error'));
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    });
   };
 
   const handleExportCSV = () => {
